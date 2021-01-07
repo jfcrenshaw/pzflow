@@ -28,7 +28,7 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Test with pytest
       run: |
-        python -m pytest --cov=./package --cov-report=xml
+        python -m pytest --cov=./pzflow --cov-report=xml
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
       with:
@@ -40,7 +40,7 @@ jobs:
     - name: Lint with pylint
       run: |
         # stop the build if there are Pylint errors
-        pylint --disable=all --extension-pkg-whitelist=numpy --init-hook='import sys; sys.setrecursionlimit(8 * sys.getrecursionlimit())' package
+        pylint --disable=all --extension-pkg-whitelist=numpy --init-hook='import sys; sys.setrecursionlimit(8 * sys.getrecursionlimit())' pzflow
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
