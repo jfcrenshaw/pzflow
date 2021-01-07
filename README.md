@@ -1,5 +1,5 @@
-![build](https://github.com/jfcrenshaw/python-package/workflows/build/badge.svg)
-[![codecov](https://codecov.io/gh/jfcrenshaw/python-package/branch/main/graph/badge.svg?token=3P3LYKA7EV)](https://codecov.io/gh/jfcrenshaw/python-package)
+![build](https://github.com/jfcrenshaw/pzflow/workflows/build/badge.svg)
+[![codecov](https://codecov.io/gh/jfcrenshaw/pzflow/branch/main/graph/badge.svg?token=qR5cey0swQ)](https://codecov.io/gh/jfcrenshaw/pzflow)
 
 # python-package
 Template repo for a python package
