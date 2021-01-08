@@ -1,3 +1,4 @@
+from pzflow.bijectors.neural_splines import NeuralSplineCoupling
 import pytest
 from pzflow.bijectors import *
 import jax.numpy as np
@@ -21,6 +22,7 @@ x = np.array(
         (Scale, (2,)),
         (Shuffle, ()),
         (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
+        (NeuralSplineCoupling, ()),
     ],
 )
 class TestBijectors:
