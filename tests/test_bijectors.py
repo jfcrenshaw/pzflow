@@ -1,4 +1,3 @@
-from pzflow.bijectors.neural_splines import NeuralSplineCoupling
 import pytest
 from pzflow.bijectors import *
 import jax.numpy as np
