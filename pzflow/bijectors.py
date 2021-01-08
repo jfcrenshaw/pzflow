@@ -79,7 +79,7 @@ def ColorTransform(ref_idx, ref_mean, ref_stdd):
                 outputs, ops.index[:, 2:], outputs[:, 1, None] - outputs[:, 2:]
             )
 
-            log_det = 1 / np.log(1 / ref_stdd) * np.ones(data.shape[0])
+            log_det = 1 / np.log(1 / ref_stdd) * np.ones(inputs.shape[0])
 
             return outputs, log_det
 
@@ -91,7 +91,7 @@ def ColorTransform(ref_idx, ref_mean, ref_stdd):
                     -np.diff(inputs[:, 1:]),  # colors
                 )
             )
-            log_det = np.log(1 / ref_stdd) * np.ones(data.shape[0])
+            log_det = np.log(1 / ref_stdd) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -105,18 +105,18 @@ def Chain(*init_funs):
         all_params, forward_funs, inverse_funs = [], [], []
         for init_f in init_funs:
             rng, layer_rng = random.split(rng)
-            param, forward_fun, inverse_fun = init_f(layer_rng, input_dim)
+            param, forward_f, inverse_f = init_f(layer_rng, input_dim)
 
             all_params.append(param)
-            forward_funs.append(forward_fun)
-            inverse_funs.append(inverse_fun)
+            forward_funs.append(forward_f)
+            inverse_funs.append(inverse_f)
 
         def bijector_chain(params, bijectors, inputs):
             log_dets = np.zeros(inputs.shape[0])
             for bijector, param in zip(bijectors, params):
                 inputs, log_det = bijector(param, inputs, **kwargs)
                 log_dets += log_det
-            return inputs, log_det
+            return inputs, log_dets
 
         def forward_fun(params, inputs, **kwargs):
             return bijector_chain(params, forward_funs, inputs)
