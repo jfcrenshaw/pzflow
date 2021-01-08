@@ -15,12 +15,12 @@ x = np.array(
 @pytest.mark.parametrize(
     "bijector,args",
     [
-        (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
         (ColorTransform, (3, 20, 5)),
         (Reverse, ()),
         (Roll, (2,)),
         (Scale, (2,)),
         (Shuffle, ()),
+        (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
     ],
 )
 class TestBijectors:
