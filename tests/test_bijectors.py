@@ -1,7 +1,7 @@
 import pytest
 from pzflow.bijectors import *
 import jax.numpy as np
-from jax import random
+from jax import random, jit
 
 x = np.array(
     [
@@ -46,3 +46,19 @@ class TestBijectors:
 
         assert np.allclose(inv_outputs, x)
         assert np.allclose(fwd_log_det, -inv_log_det)
+
+    def test_is_jittable(self, bijector, args):
+        init_fun = bijector(*args)
+        params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
+
+        fwd_outputs_1, fwd_log_det_1 = forward_fun(params, x)
+        forward_fun = jit(forward_fun)
+        fwd_outputs_2, fwd_log_det_2 = forward_fun(params, x)
+        assert np.allclose(fwd_outputs_1, fwd_outputs_2)
+        assert np.allclose(fwd_log_det_1, fwd_log_det_2)
+
+        inv_outputs_1, inv_log_det_1 = inverse_fun(params, x)
+        inverse_fun = jit(inverse_fun)
+        inv_outputs_2, inv_log_det_2 = inverse_fun(params, x)
+        assert np.allclose(inv_outputs_1, inv_outputs_2)
+        assert np.allclose(inv_log_det_1, inv_log_det_2)
