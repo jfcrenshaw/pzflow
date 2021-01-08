@@ -1,37 +1,47 @@
-from pzflow.bijectors import Reverse, Scale
+import pytest
+from pzflow.bijectors import *
 import jax.numpy as np
 from jax import random
 
-
-def test_Reverse():
-    rng = random.PRNGKey(0)
-    x = np.array([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]])
-
-    init_fun = Reverse()
-    params, forward_fun, inverse_fun = init_fun(rng, x.shape[-1])
-    outputs, log_det = forward_fun(params, x)
-
-    assert np.allclose(outputs, x[:, ::-1])
-    assert np.allclose(log_det, np.zeros(x.shape[0]))
-
-    outputs, log_det = inverse_fun(params, outputs)
-    assert np.allclose(outputs, x)
-    assert np.allclose(log_det, np.zeros(x.shape[0]))
+x = np.array(
+    [
+        [0.2, 24, 23, 27, 26, 24, 24],
+        [1.4, 26, 26, 17, 14, 36, 23],
+        [3.4, -1, 12, 74, 44, -6, 97],
+    ]
+)
 
 
-def test_Scale():
-    rng = random.PRNGKey(0)
-    x = np.array([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]])
+@pytest.mark.parametrize(
+    "bijector,args",
+    [
+        (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
+        (ColorTransform, (3, 20, 5)),
+        (Reverse, ()),
+        (Roll, (2,)),
+        (Scale, (2,)),
+        (Shuffle, ()),
+    ],
+)
+class TestBijectors:
+    def test_returns_correct_shape(self, bijector, args):
+        init_fun = bijector(*args)
+        params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
-    init_fun = Scale(scale=2)
-    params, forward_fun, inverse_fun = init_fun(rng, x.shape[-1])
-    outputs, fwd_log_det = forward_fun(params, x)
+        fwd_outputs, fwd_log_det = forward_fun(params, x)
+        assert fwd_outputs.shape == x.shape
+        assert fwd_log_det.shape == x.shape[:1]
 
-    assert np.allclose(outputs, 2 * x)
-    assert np.allclose(fwd_log_det, np.log(2 ** x.shape[-1]) * np.ones(x.shape[0]))
+        inv_outputs, inv_log_det = inverse_fun(params, x)
+        assert inv_outputs.shape == x.shape
+        assert inv_log_det.shape == x.shape[:1]
 
-    outputs, inv_log_det = inverse_fun(params, outputs)
-    assert np.allclose(outputs, x)
-    assert np.allclose(inv_log_det, -np.log(2 ** x.shape[-1]) * np.ones(x.shape[0]))
+    def test_is_bijective(self, bijector, args):
+        init_fun = bijector(*args)
+        params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
-    assert np.allclose(fwd_log_det + inv_log_det, np.zeros(fwd_log_det.shape))
+        fwd_outputs, fwd_log_det = forward_fun(params, x)
+        inv_outputs, inv_log_det = inverse_fun(params, fwd_outputs)
+
+        assert np.allclose(inv_outputs, x)
+        assert np.allclose(fwd_log_det, -inv_log_det)

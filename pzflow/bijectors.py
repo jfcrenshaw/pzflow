@@ -1,8 +1,9 @@
 import jax.numpy as np
 from jax import random, ops
+from typing import Callable, Sequence
 
 
-def Chain(*init_funs):
+def Chain(*init_funs: Sequence[Callable]) -> Callable:
     def init_fun(rng, input_dim, **kwargs):
 
         all_params, forward_funs, inverse_funs = [], [], []
@@ -32,7 +33,7 @@ def Chain(*init_funs):
     return init_fun
 
 
-def ColorTransform(ref_idx, ref_mean, ref_stdd):
+def ColorTransform(ref_idx: int, ref_mean: float, ref_stdd: float) -> Callable:
     def init_fun(rng, input_dim, **kwargs):
         def forward_fun(params, inputs, **kwargs):
             # calculate reference magnitude,
@@ -71,7 +72,7 @@ def ColorTransform(ref_idx, ref_mean, ref_stdd):
     return init_fun
 
 
-def Reverse():
+def Reverse() -> Callable:
     def init_fun(rng, input_dim, **kwargs):
         def forward_fun(params, inputs, **kwargs):
             return inputs[:, ::-1], np.zeros(inputs.shape[0])
@@ -84,7 +85,7 @@ def Reverse():
     return init_fun
 
 
-def Roll(shift=1):
+def Roll(shift: int = 1) -> Callable:
     def init_fun(rng, input_dim, **kwargs):
         def forward_fun(params, inputs, **kwargs):
             return np.roll(inputs, shift=shift, axis=-1), np.zeros(inputs.shape[0])
@@ -97,7 +98,7 @@ def Roll(shift=1):
     return init_fun
 
 
-def Scale(scale):
+def Scale(scale: float) -> Callable:
     def init_fun(rng, input_dim, **kwargs):
         def forward_fun(params, inputs, **kwargs):
             outputs = scale * inputs
@@ -114,7 +115,7 @@ def Scale(scale):
     return init_fun
 
 
-def Shuffle():
+def Shuffle() -> Callable:
     def init_fun(rng, input_dim, **kwargs):
 
         perm = random.permutation(rng, np.arange(input_dim))
