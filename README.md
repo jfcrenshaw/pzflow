@@ -14,7 +14,7 @@ E.g., `conda activate pzflow`
 3. Install pzflow in edit mode with the `dev` flag  
 I.e., in the root directory, `pip install -e .[dev]`
 
-If you want to run pzflow on a GPU with CUDA, then you need to follow the GPU-enabled installation instructions for jaxlib [here](https://github.com/google/jax).  
+If you want to run pzflow on a GPU with CUDA, then you need to follow the GPU-enabled installation instructions for jaxlib [here](https://github.com/google/jax).
 You make also need to add the following to your `.bashrc`:
 ```
 # cuda setup
