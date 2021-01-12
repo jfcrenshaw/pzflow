@@ -3,33 +3,11 @@ from typing import Callable
 
 import dill
 import jax.numpy as np
-import numpy as onp
 from jax import grad, jit, random
-from jax.experimental import optimizers
-from jax.scipy.stats import multivariate_normal
+from jax.experimental.optimizers import Optimizer, adam
 
 from pzflow.bijectors import RollingSplineCoupling
-
-
-class _Normal:
-    def __init__(self, input_dim: int):
-        self.input_dim = input_dim
-
-    def log_prob(self, inputs: np.ndarray):
-        return multivariate_normal.logpdf(
-            x=inputs,
-            mean=np.zeros(self.input_dim),
-            cov=np.identity(self.input_dim),
-        )
-
-    def sample(self, nsamples: int, seed: int = None):
-        seed = onp.random.randint(1e18) if seed is None else seed
-        return random.multivariate_normal(
-            key=random.PRNGKey(seed),
-            mean=np.zeros(self.input_dim),
-            cov=np.identity(self.input_dim),
-            shape=(nsamples,),
-        )
+from pzflow.utils import Normal
 
 
 class Flow:
@@ -54,7 +32,7 @@ class Flow:
             _, forward_fun, inverse_fun = self._bijector(
                 random.PRNGKey(0), self.input_dim
             )
-        else:
+        elif isinstance(input_dim, int) and input_dim > 0:
             self.input_dim = input_dim
             self._bijector = (
                 RollingSplineCoupling(self.input_dim) if bijector is None else bijector
@@ -62,11 +40,13 @@ class Flow:
             self.params, forward_fun, inverse_fun = self._bijector(
                 random.PRNGKey(0), input_dim
             )
+        else:
+            raise ValueError("input_dim must be a positive integer")
 
         self._forward = forward_fun
         self._inverse = inverse_fun
 
-        self.prior = _Normal(self.input_dim)
+        self.prior = Normal(self.input_dim)
 
     def save(self, file: str):
         save_dict = {
@@ -112,12 +92,12 @@ class Flow:
         inputs: np.ndarray,
         epochs: int = 200,
         batch_size: int = 512,
-        step_size: float = 1e-3,
+        optimizer: Optimizer = adam(step_size=1e-3),
         seed: int = 0,
         verbose: bool = False,
     ) -> list:
 
-        opt_init, opt_update, get_params = optimizers.adam(step_size=step_size)
+        opt_init, opt_update, get_params = optimizer
         opt_state = opt_init(self.params)
 
         @jit
