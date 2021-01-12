@@ -80,7 +80,6 @@ def _RationalQuadraticSpline(
         )
         c = -input_sk * (masked_inputs - input_yk)
 
-        assert all(b ** 2 - 4 * a * c >= 0)
         relx = 2 * c / (-b - np.sqrt(b ** 2 - 4 * a * c))
         outputs = np.where(out_of_bounds, inputs, relx * input_wk + input_xk)
 
