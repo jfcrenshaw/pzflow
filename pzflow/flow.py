@@ -4,7 +4,7 @@ from jax.experimental import optimizers
 from jax.scipy.stats import multivariate_normal
 import numpy as onp
 import itertools
-from pzflow.bijectors import DefaultBijector
+from pzflow.bijectors import RollingSplineCoupling
 from typing import Callable
 
 
@@ -34,7 +34,7 @@ class Flow:
 
         # add some checks here to make sure that input_dim or file is supplied
 
-        bijector = DefaultBijector(input_dim) if bijector is None else bijector
+        bijector = RollingSplineCoupling(input_dim) if bijector is None else bijector
         self.input_dim = input_dim
 
         self.prior = _Normal(input_dim)
@@ -44,23 +44,23 @@ class Flow:
         self._forward = forward_fun
         self._inverse = inverse_fun
 
-    def forward(self, inputs):
+    def forward(self, inputs: np.ndarray) -> np.ndarray:
         return self._forward(self.params, inputs)[0]
 
-    def inverse(self, inputs):
+    def inverse(self, inputs: np.ndarray) -> np.ndarray:
         return self._inverse(self.params, inputs)[0]
 
-    def sample(self, nsamples: int = 1, seed: int = None):
+    def sample(self, nsamples: int = 1, seed: int = None) -> np.ndarray:
         u = self.prior.sample(nsamples, seed)
         x = self.forward(u)
         return x
 
-    def log_prob(self, inputs: np.ndarray):
+    def log_prob(self, inputs: np.ndarray) -> np.ndarray:
         u, log_det = self._inverse(self.params, inputs)
         log_prob = self.prior.log_prob(u)
         return log_prob + log_det
 
-    def pz_estimate(self, inputs, zmin=0, zmax=2, dz=0.02):
+    def pz_estimate(self, inputs: np.ndarray, zmin=0, zmax=2, dz=0.02) -> np.ndarray:
         zs = np.arange(zmin, zmax + dz, dz)
         X = np.stack(
             (
@@ -76,13 +76,13 @@ class Flow:
 
     def train(
         self,
-        inputs,
+        inputs: np.ndarray,
         epochs: int = 200,
         batch_size: int = 512,
         step_size: float = 1e-3,
         seed: int = 0,
         verbose: bool = False,
-    ):
+    ) -> list:
 
         opt_init, opt_update, get_params = optimizers.adam(step_size=step_size)
         opt_state = opt_init(self.params)
