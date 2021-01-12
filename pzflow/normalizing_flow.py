@@ -101,18 +101,20 @@ class Flow:
         opt_state = opt_init(self.params)
 
         @jit
-        def loss(params, inputs):
-            u, log_det = self._inverse(params, inputs)
+        def loss(params, x):
+            u, log_det = self._inverse(params, x)
             log_prob = self.prior.log_prob(u)
             return -np.mean(log_prob + log_det)
 
         @jit
-        def step(i, opt_state, inputs):
+        def step(i, opt_state, x):
             params = get_params(opt_state)
-            gradients = grad(loss)(params, inputs)
+            gradients = grad(loss)(params, x)
             return opt_update(i, gradients, opt_state)
 
-        losses = []
+        losses = [loss(self.params, inputs)]
+        print(f"{losses[-1]:.4f}")
+
         itercount = itertools.count()
         rng = random.PRNGKey(seed)
         for epoch in range(epochs):

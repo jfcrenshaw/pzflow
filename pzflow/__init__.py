@@ -1,2 +1,2 @@
 __version__ = "0.0.1"
-from .flow import Flow
+from .normalizing_flow import Flow
