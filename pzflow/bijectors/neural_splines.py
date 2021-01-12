@@ -75,11 +75,12 @@ def _RationalQuadraticSpline(
         a = (input_hk) * (input_sk - input_dk) + (masked_inputs - input_yk) * (
             input_dkp1 + input_dk - 2 * input_sk
         )
-        b = (input_hk) * input_dk + (masked_inputs - input_yk) * (
+        b = (input_hk) * input_dk - (masked_inputs - input_yk) * (
             input_dkp1 + input_dk - 2 * input_sk
         )
         c = -input_sk * (masked_inputs - input_yk)
 
+        assert all(b ** 2 - 4 * a * c >= 0)
         relx = 2 * c / (-b - np.sqrt(b ** 2 - 4 * a * c))
         outputs = np.where(out_of_bounds, inputs, relx * input_wk + input_xk)
 
