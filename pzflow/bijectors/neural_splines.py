@@ -1,6 +1,4 @@
-from textwrap import dedent
 import jax.numpy as np
-from jax import random, ops
 from jax.experimental.stax import serial, Dense, Relu
 from jax.nn import softmax, softplus
 from typing import Callable
