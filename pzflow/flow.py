@@ -1,11 +1,14 @@
+import itertools
+from typing import Callable
+
+import dill
 import jax.numpy as np
-from jax import random, grad, jit
+import numpy as onp
+from jax import grad, jit, random
 from jax.experimental import optimizers
 from jax.scipy.stats import multivariate_normal
-import numpy as onp
-import itertools
+
 from pzflow.bijectors import RollingSplineCoupling
-from typing import Callable
 
 
 class _Normal:
@@ -30,19 +33,49 @@ class _Normal:
 
 
 class Flow:
-    def __init__(self, input_dim: int, bijector: Callable = None, file: str = None):
+    def __init__(
+        self, input_dim: int = None, bijector: Callable = None, file: str = None
+    ):
 
-        # add some checks here to make sure that input_dim or file is supplied
+        if input_dim is None and file is None:
+            raise ValueError("User must provide either input_dim or file")
 
-        bijector = RollingSplineCoupling(input_dim) if bijector is None else bijector
-        self.input_dim = input_dim
+        if file is not None and any((input_dim != None, bijector != None)):
+            raise ValueError(
+                "If file is provided, please do not provide input_dim or bijector"
+            )
 
-        self.prior = _Normal(input_dim)
+        if file is not None:
+            with open(file, "rb") as handle:
+                save_dict = dill.load(handle)
+            self.input_dim = save_dict["input_dim"]
+            self._bijector = save_dict["bijector"]
+            self.params = save_dict["params"]
+            _, forward_fun, inverse_fun = self._bijector(
+                random.PRNGKey(0), self.input_dim
+            )
+        else:
+            self.input_dim = input_dim
+            self._bijector = (
+                RollingSplineCoupling(self.input_dim) if bijector is None else bijector
+            )
+            self.params, forward_fun, inverse_fun = self._bijector(
+                random.PRNGKey(0), input_dim
+            )
 
-        params, forward_fun, inverse_fun = bijector(random.PRNGKey(0), input_dim)
-        self.params = params
         self._forward = forward_fun
         self._inverse = inverse_fun
+
+        self.prior = _Normal(self.input_dim)
+
+    def save(self, file: str):
+        save_dict = {
+            "input_dim": self.input_dim,
+            "bijector": self._bijector,
+            "params": self.params,
+        }
+        with open(file, "wb") as handle:
+            dill.dump(save_dict, handle, recurse=True)
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         return self._forward(self.params, inputs)[0]
@@ -118,9 +151,3 @@ class Flow:
 
         self.params = get_params(opt_state)
         return losses
-
-    def save(self):
-        # this will save the flow to a file that can be loaded during
-        # flow construction
-        # make sure that only a file or input dim/bijector are supplied
-        pass

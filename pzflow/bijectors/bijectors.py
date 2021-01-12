@@ -1,6 +1,7 @@
-import jax.numpy as np
-from jax import random, ops
 from typing import Callable, Sequence
+
+import jax.numpy as np
+from jax import ops, random
 
 
 def Chain(*init_funs: Sequence[Callable]) -> Callable:

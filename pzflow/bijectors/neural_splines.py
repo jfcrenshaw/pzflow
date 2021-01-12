@@ -1,8 +1,9 @@
+from typing import Callable, Sequence
+
 import jax.numpy as np
-from jax.experimental.stax import serial, Dense, Relu
+from jax.experimental.stax import Dense, Relu, serial
 from jax.nn import softmax, softplus
 from pzflow.bijectors.bijectors import Chain, Roll
-from typing import Callable, Sequence, Tuple
 
 
 def _FCNN(out_dim: int, hidden_dim: int):
