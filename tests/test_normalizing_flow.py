@@ -31,9 +31,9 @@ def test_returns_correct_shape():
     assert flow.sample(2).shape == x.shape
     assert flow.log_prob(x).shape == (x.shape[0],)
 
-    zmin, zmax, dz = -1, 1, 0.1
-    zs = np.arange(zmin, zmax + dz, dz)
-    assert flow.pz_estimate(x, zmin, zmax, dz).shape == (x.shape[0], zs.size)
+    grid = np.arange(0, 2.1, 0.12)
+    assert flow.posterior(x, grid=grid).shape == (x.shape[0], grid.size)
+    assert flow.posterior(x[:, 1:], grid=grid).shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
 
@@ -70,3 +70,19 @@ def test_control_sample_randomness():
 
     assert np.all(~np.isclose(flow.sample(2), flow.sample(2)))
     assert np.allclose(flow.sample(2, seed=0), flow.sample(2, seed=0))
+
+
+@pytest.mark.parametrize(
+    "inputs,column,mode",
+    [
+        (np.zeros((2, 2)), 0, "fake"),
+        (np.zeros((2, 2)), 0, "insert"),
+        (np.zeros((2, 1)), 0, "replace"),
+        (np.zeros((2, 3)), 0, "auto"),
+        (np.zeros((2, 2)), 0.0, "auto"),
+    ],
+)
+def test_posterior_inputs(inputs, column, mode):
+    flow = Flow(2, Reverse())
+    with pytest.raises(ValueError):
+        flow.posterior(inputs, column=column, mode=mode)
