@@ -15,7 +15,7 @@ E.g., `conda activate pzflow`
 I.e., in the root directory, `pip install -e .[dev]`
 
 If you want to run pzflow on a GPU with CUDA, then you need to follow the GPU-enabled installation instructions for jaxlib [here](https://github.com/google/jax).
-You make also need to add the following to your `.bashrc`:
+You may also need to add the following to your `.bashrc`:
 ```
 # cuda setup
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
