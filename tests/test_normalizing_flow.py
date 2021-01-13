@@ -35,7 +35,7 @@ def test_returns_correct_shape():
     zs = np.arange(zmin, zmax + dz, dz)
     assert flow.pz_estimate(x, zmin, zmax, dz).shape == (x.shape[0], zs.size)
 
-    assert len(flow.train(x, epochs=11)) == 12
+    assert len(flow.train(x, epochs=11, verbose=True)) == 12
 
 
 def test_flow_bijection():
