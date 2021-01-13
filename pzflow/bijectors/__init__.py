@@ -1,2 +1,2 @@
 from .bijectors import *
-from .neural_splines import NeuralSplineCoupling
+from .neural_splines import NeuralSplineCoupling, RollingSplineCoupling

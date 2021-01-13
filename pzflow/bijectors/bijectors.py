@@ -1,6 +1,7 @@
-import jax.numpy as np
-from jax import random, ops
 from typing import Callable, Sequence
+
+import jax.numpy as np
+from jax import ops, random
 
 
 def Chain(*init_funs: Sequence[Callable]) -> Callable:
@@ -33,14 +34,17 @@ def Chain(*init_funs: Sequence[Callable]) -> Callable:
     return init_fun
 
 
-def ColorTransform(ref_idx: int, ref_mean: float, ref_stdd: float) -> Callable:
+def ColorTransform(
+    ref_idx: int, ref_mean: float, ref_stdd: float, z_sharp: float = 10
+) -> Callable:
     def init_fun(rng, input_dim, **kwargs):
         def forward_fun(params, inputs, **kwargs):
             # calculate reference magnitude,
             # and convert all colors to be in terms of the first magnitude, mag[0]
             outputs = np.hstack(
                 (
-                    inputs[:, 0, None],  # redshift unchanged
+                    np.log(1 + np.exp(z_sharp * inputs[:, 0, None]))
+                    / z_sharp,  # softplus to force redshift positive
                     inputs[:, 1, None] * ref_stdd + ref_mean,  # reference mag
                     np.cumsum(inputs[:, 2:], axis=-1),  # all colors --> mag[0] - mag[i]
                 )
@@ -53,18 +57,19 @@ def ColorTransform(ref_idx: int, ref_mean: float, ref_stdd: float) -> Callable:
             outputs = ops.index_update(
                 outputs, ops.index[:, 2:], outputs[:, 1, None] - outputs[:, 2:]
             )
-            log_det = np.log(ref_stdd) * np.ones(inputs.shape[0])
+            log_det = np.log(ref_stdd * (1 - np.exp(-z_sharp * outputs[:, 0])))
             return outputs, log_det
 
         def inverse_fun(params, inputs, **kwargs):
             outputs = np.hstack(
                 (
-                    inputs[:, 0, None],  # redshift
+                    np.log(-1 + np.exp(z_sharp * inputs[:, 0, None]))
+                    / z_sharp,  # inverse of softplus
                     (inputs[:, ref_idx, None] - ref_mean) / ref_stdd,  # ref mag
                     -np.diff(inputs[:, 1:]),  # colors
                 )
             )
-            log_det = -np.log(ref_stdd) * np.ones(inputs.shape[0])
+            log_det = -np.log(ref_stdd * (1 - np.exp(-z_sharp * inputs[:, 0])))
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
