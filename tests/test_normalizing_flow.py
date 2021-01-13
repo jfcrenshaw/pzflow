@@ -68,5 +68,5 @@ def test_load_flow(tmp_path):
 def test_control_sample_randomness():
     flow = Flow(2, Reverse())
 
-    assert ~np.allclose(flow.sample(2), flow.sample(2))
+    assert np.all(~np.isclose(flow.sample(2), flow.sample(2)))
     assert np.allclose(flow.sample(2, seed=0), flow.sample(2, seed=0))
