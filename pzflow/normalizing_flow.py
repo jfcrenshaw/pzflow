@@ -3,7 +3,7 @@ from typing import Callable, Any
 
 import dill
 import jax.numpy as np
-from jax import grad, jit, random
+from jax import grad, jit, random, ops
 from jax.experimental.optimizers import Optimizer, adam
 
 from pzflow.bijectors import RollingSplineCoupling
@@ -78,21 +78,64 @@ class Flow:
     def log_prob(self, inputs: np.ndarray) -> np.ndarray:
         u, log_det = self._inverse(self._params, inputs)
         log_prob = self.prior.log_prob(u)
-        return log_prob + log_det
+        return np.nan_to_num(log_prob + log_det, nan=np.NINF)
 
-    def pz_estimate(self, inputs: np.ndarray, zmin=0, zmax=2, dz=0.02) -> np.ndarray:
-        zs = np.arange(zmin, zmax + dz, dz)
-        X = np.stack(
-            (
-                np.tile(zs, inputs.shape[0]),
-                *[np.repeat(inputs[:, i], len(zs)) for i in range(1, inputs.shape[1])],
-            ),
-            axis=-1,
-        )
-        log_prob = self.log_prob(X).reshape((inputs.shape[0], len(zs)))
+    def posterior(
+        self,
+        inputs,
+        grid: np.ndarray = np.arange(0, 2.02, 0.02),
+        column: int = 0,
+        mode: str = "auto",
+    ) -> np.ndarray:
+
+        nrows, ncols = inputs.shape
+
+        # validate inputs
+        if mode not in ["auto", "insert", "replace"]:
+            raise ValueError(
+                f"mode `{mode}` is invalid. Accepted values are `auto`, `insert`, and `replace`"
+            )
+        elif mode == "insert" and ncols != self.input_dim - 1:
+            raise ValueError(
+                "When using mode=`insert`, inputs.shape[1] must be equal to input_dim-1"
+            )
+        elif mode == "replace" and ncols != self.input_dim:
+            raise ValueError(
+                "When using mode=`insert`, inputs.shape[1] must be equal to input_dim"
+            )
+        elif ncols not in [self.input_dim, self.input_dim - 1]:
+            raise ValueError(
+                "inputs.shape[1] must be equal to input_dim or input_dim-1"
+            )
+        elif not isinstance(column, int):
+            raise ValueError("`column` must be an integer")
+
+        if mode == "auto":
+            if ncols == self.input_dim - 1:
+                mode = "insert"
+            elif ncols == self.input_dim:
+                mode = "replace"
+
+        if mode == "insert":
+            inputs = np.hstack(
+                (
+                    np.repeat(inputs[:, :column], len(grid), axis=0),
+                    np.tile(grid, nrows)[:, None],
+                    np.repeat(inputs[:, column:], len(grid), axis=0),
+                )
+            )
+        elif mode == "replace":
+            inputs = ops.index_update(
+                np.repeat(inputs, len(grid), axis=0),
+                ops.index[:, column],
+                np.tile(grid, nrows),
+            )
+
+        log_prob = self.log_prob(inputs).reshape((nrows, len(grid)))
         pdfs = np.exp(log_prob)
-        pdfs = pdfs / (pdfs * dz).sum(axis=1).reshape(-1, 1)
-        return pdfs
+        pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
+
+        return np.nan_to_num(pdfs, nan=0.0)
 
     def train(
         self,
