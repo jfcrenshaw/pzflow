@@ -33,7 +33,7 @@ class Flow:
             self.input_dim = save_dict["input_dim"]
             self.info = save_dict["info"]
             self._bijector = save_dict["bijector"]
-            self.params = save_dict["params"]
+            self._params = save_dict["params"]
             _, forward_fun, inverse_fun = self._bijector(
                 random.PRNGKey(0), self.input_dim
             )
@@ -43,7 +43,7 @@ class Flow:
             self._bijector = (
                 RollingSplineCoupling(self.input_dim) if bijector is None else bijector
             )
-            self.params, forward_fun, inverse_fun = self._bijector(
+            self._params, forward_fun, inverse_fun = self._bijector(
                 random.PRNGKey(0), input_dim
             )
         else:
@@ -59,16 +59,16 @@ class Flow:
             "input_dim": self.input_dim,
             "info": self.info,
             "bijector": self._bijector,
-            "params": self.params,
+            "params": self._params,
         }
         with open(file, "wb") as handle:
             dill.dump(save_dict, handle, recurse=True)
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
-        return self._forward(self.params, inputs)[0]
+        return self._forward(self._params, inputs)[0]
 
     def inverse(self, inputs: np.ndarray) -> np.ndarray:
-        return self._inverse(self.params, inputs)[0]
+        return self._inverse(self._params, inputs)[0]
 
     def sample(self, nsamples: int = 1, seed: int = None) -> np.ndarray:
         u = self.prior.sample(nsamples, seed)
@@ -76,7 +76,7 @@ class Flow:
         return x
 
     def log_prob(self, inputs: np.ndarray) -> np.ndarray:
-        u, log_det = self._inverse(self.params, inputs)
+        u, log_det = self._inverse(self._params, inputs)
         log_prob = self.prior.log_prob(u)
         return log_prob + log_det
 
@@ -105,7 +105,7 @@ class Flow:
     ) -> list:
 
         opt_init, opt_update, get_params = optimizer
-        opt_state = opt_init(self.params)
+        opt_state = opt_init(self._params)
 
         @jit
         def loss(params, x):
@@ -119,7 +119,7 @@ class Flow:
             gradients = grad(loss)(params, x)
             return opt_update(i, gradients, opt_state)
 
-        losses = [loss(self.params, inputs)]
+        losses = [loss(self._params, inputs)]
         if verbose:
             print(f"{losses[-1]:.4f}")
 
@@ -139,5 +139,5 @@ class Flow:
             if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
                 print(f"{losses[-1]:.4f}")
 
-        self.params = get_params(opt_state)
+        self._params = get_params(opt_state)
         return losses
