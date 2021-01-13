@@ -31,6 +31,7 @@ class Flow:
             with open(file, "rb") as handle:
                 save_dict = dill.load(handle)
             self.input_dim = save_dict["input_dim"]
+            self.info = save_dict["info"]
             self._bijector = save_dict["bijector"]
             self.params = save_dict["params"]
             _, forward_fun, inverse_fun = self._bijector(
@@ -38,6 +39,7 @@ class Flow:
             )
         elif isinstance(input_dim, int) and input_dim > 0:
             self.input_dim = input_dim
+            self.info = info
             self._bijector = (
                 RollingSplineCoupling(self.input_dim) if bijector is None else bijector
             )
@@ -52,11 +54,10 @@ class Flow:
 
         self.prior = Normal(self.input_dim)
 
-        self.info = info
-
     def save(self, file: str):
         save_dict = {
             "input_dim": self.input_dim,
+            "info": self.info,
             "bijector": self._bijector,
             "params": self.params,
         }

@@ -22,8 +22,19 @@ def test_bad_inputs(input_dim, bijector, file):
 
 
 def test_simple_flow():
-    flow = Flow(2, Reverse())
+    flow = Flow(2, Reverse(), info=["random", 42])
     x = np.array([[1, 2], [3, 4]])
     xrev = np.array([[2, 1], [4, 3]])
     assert np.allclose(flow.forward(x), xrev)
     assert np.allclose(flow.inverse(flow.forward(x)), x)
+    assert flow.info == ["random", 42]
+    flow.save("test-flow.dill")
+
+
+def test_load_flow():
+    flow = Flow(file="test-flow.dill")
+    x = np.array([[1, 2], [3, 4]])
+    xrev = np.array([[2, 1], [4, 3]])
+    assert np.allclose(flow.forward(x), xrev)
+    assert np.allclose(flow.inverse(flow.forward(x)), x)
+    assert flow.info == ["random", 42]
