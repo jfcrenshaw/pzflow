@@ -1,5 +1,5 @@
 import itertools
-from typing import Callable
+from typing import Callable, Any
 
 import dill
 import jax.numpy as np
@@ -12,7 +12,11 @@ from pzflow.utils import Normal
 
 class Flow:
     def __init__(
-        self, input_dim: int = None, bijector: Callable = None, file: str = None
+        self,
+        input_dim: int = None,
+        bijector: Callable = None,
+        file: str = None,
+        info: Any = None,
     ):
 
         if input_dim is None and file is None:
@@ -47,6 +51,8 @@ class Flow:
         self._inverse = inverse_fun
 
         self.prior = Normal(self.input_dim)
+
+        self.info = info
 
     def save(self, file: str):
         save_dict = {
@@ -113,7 +119,8 @@ class Flow:
             return opt_update(i, gradients, opt_state)
 
         losses = [loss(self.params, inputs)]
-        print(f"{losses[-1]:.4f}")
+        if verbose:
+            print(f"{losses[-1]:.4f}")
 
         itercount = itertools.count()
         rng = random.PRNGKey(seed)
@@ -128,7 +135,7 @@ class Flow:
             params = get_params(opt_state)
             losses.append(loss(params, inputs))
 
-            if verbose and epoch % int(0.05 * epochs) == 0:
+            if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
                 print(f"{losses[-1]:.4f}")
 
         self.params = get_params(opt_state)
