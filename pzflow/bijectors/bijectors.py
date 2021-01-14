@@ -4,11 +4,32 @@ from typing import Callable, Sequence, Tuple, Union
 import jax.numpy as np
 from jax import ops, random
 
-
+# define a type alias for Jax Pytrees
 Pytree = Union[tuple, list]
 
 
 class ForwardFunction:
+    """Return the output and log_det of the forward bijection on the inputs.
+
+    ForwardFunction of a Bijector, originally returned by the
+    InitFunction of the Bijector.
+
+    Parameters
+    ----------
+    params : a Jax pytree
+        A pytree of bijector parameters.
+        This usually looks like a nested tuple or list of parameters.
+    inputs : np.ndarray
+        The data to be transformed by the bijection.
+
+    Returns
+    -------
+    outputs : np.ndarray
+        Result of the forward bijection applied to the inputs.
+    log_det : np.ndarray
+        The log determinant of the Jacobian evaluated at the inputs.
+    """
+
     def __init__(self, func: Callable):
         self._func = func
 
@@ -19,6 +40,27 @@ class ForwardFunction:
 
 
 class InverseFunction:
+    """Return the output and log_det of the inverse bijection on the inputs.
+
+    InverseFunction of a Bijector, originally returned by the
+    InitFunction of the Bijector.
+
+    Parameters
+    ----------
+    params : a Jax pytree
+        A pytree of bijector parameters.
+        This usually looks like a nested tuple or list of parameters.
+    inputs : np.ndarray
+        The data to be transformed by the bijection.
+
+    Returns
+    -------
+    outputs : np.ndarray
+        Result of the inverse bijection applied to the inputs.
+    log_det : np.ndarray
+        The log determinant of the Jacobian evaluated at the inputs.
+    """
+
     def __init__(self, func: Callable):
         self._func = func
 
@@ -29,6 +71,28 @@ class InverseFunction:
 
 
 class InitFunction:
+    """Initialize the corresponding Bijector.
+
+    InitFunction returned by the initialization of a Bijector.
+
+    Parameters
+    ----------
+    rng : np.ndarray
+        A Random Number Key from jax.random.PRNGKey.
+    input_dim : int
+        The input dimension of the bijection.
+
+    Returns
+    -------
+    params : a Jax pytree
+        A pytree of bijector parameters.
+        This usually looks like a nested tuple or list of parameters.
+    forward_fun : ForwardFunction
+        The forward function of the Bijector.
+    inverse_fun : InverseFunction
+        The inverse function of the Bijector.
+    """
+
     def __init__(self, func: Callable):
         self._func = func
 
@@ -39,6 +103,8 @@ class InitFunction:
 
 
 class Bijector:
+    """Wrapper class for bijector functions"""
+
     def __init__(self, func: Callable):
         self._func = func
         update_wrapper(self, func)
@@ -49,6 +115,19 @@ class Bijector:
 
 @Bijector
 def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
+    """Bijector that chains multiple InitFunctions into a single InitFunction.
+
+    Parameters
+    ----------
+    init_funs : Sequence[InitFunction]
+        A contained of Bijector InitFunctions to be chained together.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the total chained Bijector.
+    """
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
@@ -85,6 +164,60 @@ def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
 def ColorTransform(
     ref_idx: int, ref_mean: float, ref_stdd: float, z_sharp: float = 10
 ) -> InitFunction:
+    """Bijector that converts colors to magnitudes and constrains redshift positive.
+
+    Using ColorTransform restricts the order of columns in the corresponding
+    normalizing flow. Redshift must be the first column, and the following
+    columns must be adjacent color magnitudes,
+    e.g.: redshift, R, u-g, g-r, r-i --> redshift, u, g, r, i
+
+    Parameters
+    ----------
+    ref_idx : int
+        The index corresponding to the column of the reference band.
+    ref_mean : float
+        The mean magnitude of the reference band.
+    ref_std : float
+        The standard deviation of the reference band.
+    z_sharp : float, default=10
+        The sharpness of the softplus applied to the redshift column.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the the ColorTransform Bijector.
+
+    Notes
+    -----
+    This Bijector takes a redshift parameter, a normalized reference magnitude,
+    and a series of galaxy colors, and converts them to redshift and galaxy
+    magnitudes. Here is an example of the bijection:
+
+    redshift_param, R, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
+
+    where
+    redshift = softplus(redshift_param)
+    r = R * ref_std + ref_mean
+
+    This transformation is useful at the very end of your Bijector Chain,
+    as redshifts correlate with galaxy colors more directly than galaxy
+    magnitudes. In addition, the softplus applied to the redshift parameter
+    ensures that the sampled redshifts are always positive.
+
+    In the example above, the r band was used as the reference magnitude to
+    serve as a proxy for overall galaxy luminosity. In this example, this
+    would be achieved by setting ref_idx=3 as that is the index of the column
+    corresponding to the r band in my data. You also need to provide the mean
+    and standard deviation of the r band as ref_mean and ref_std, respectively.
+    You can use another band by changing these values appropriately. E.g., in
+    the example above, you can set ref_idx=4 for the i band.
+
+    Note that using ColorTransform restricts the order of columns in the
+    corresponding normalizing flow. Redshift must be the first column, and
+    the following columns must be adjacent color magnitudes,
+    e.g.: redshift, R, u-g, g-r, r-i --> redshift, u, g, r, i
+    """
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
@@ -130,6 +263,14 @@ def ColorTransform(
 
 @Bijector
 def Reverse() -> InitFunction:
+    """Bijector that reverses the order of inputs.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the the Reverse Bijector.
+    """
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
@@ -147,6 +288,19 @@ def Reverse() -> InitFunction:
 
 @Bijector
 def Roll(shift: int = 1) -> InitFunction:
+    """Bijector that rolls inputs along their last column using np.roll.
+
+    Parameters
+    ----------
+    shift : int, default=1
+        The number of places to roll.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the the Roll Bijector.
+    """
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
@@ -164,6 +318,19 @@ def Roll(shift: int = 1) -> InitFunction:
 
 @Bijector
 def Scale(scale: float) -> InitFunction:
+    """Bijector that multiplies inputs by a scalar.
+
+    Parameters
+    ----------
+    scale : float
+        Factor by which to scale inputs.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the the Scale Bijector.
+    """
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
@@ -185,6 +352,14 @@ def Scale(scale: float) -> InitFunction:
 
 @Bijector
 def Shuffle() -> InitFunction:
+    """Bijector that randomly permutes inputs.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the the Shuffle Bijector.
+    """
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
