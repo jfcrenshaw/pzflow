@@ -1,10 +1,51 @@
-from typing import Callable, Sequence
+from functools import update_wrapper
+from typing import Callable, Sequence, Tuple, Union
 
 import jax.numpy as np
 from jax import ops, random
 
 
-def Chain(*init_funs: Sequence[Callable]) -> Callable:
+Pytree = Union[tuple, list]
+
+
+class ForwardFunction:
+    def __init__(self, func: Callable):
+        self._func = func
+
+    def __call__(self, params: Pytree, inputs: np.ndarray, **kwargs) -> np.ndarray:
+        return self._func(params, inputs, **kwargs)
+
+
+class InverseFunction:
+    def __init__(self, func: Callable):
+        self._func = func
+
+    def __call__(self, params: Pytree, inputs: np.ndarray, **kwargs) -> np.ndarray:
+        return self._func(params, inputs, **kwargs)
+
+
+class InitFunction:
+    def __init__(self, func: Callable):
+        self._func = func
+
+    def __call__(
+        self, rng: np.ndarray, input_dim: int, **kwargs
+    ) -> Tuple[Pytree, ForwardFunction, InverseFunction]:
+        return self._func(rng, input_dim, **kwargs)
+
+
+class Bijector:
+    def __init__(self, func: Callable):
+        self._func = func
+        update_wrapper(self, func)
+
+    def __call__(self, *args, **kwargs) -> InitFunction:
+        return self._func(*args, **kwargs)
+
+
+@Bijector
+def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
+    @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
         all_params, forward_funs, inverse_funs = [], [], []
@@ -23,9 +64,11 @@ def Chain(*init_funs: Sequence[Callable]) -> Callable:
                 log_dets += log_det
             return inputs, log_dets
 
+        @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             return bijector_chain(params, forward_funs, inputs)
 
+        @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             return bijector_chain(params[::-1], inverse_funs[::-1], inputs)
 
@@ -34,10 +77,13 @@ def Chain(*init_funs: Sequence[Callable]) -> Callable:
     return init_fun
 
 
+@Bijector
 def ColorTransform(
     ref_idx: int, ref_mean: float, ref_stdd: float, z_sharp: float = 10
-) -> Callable:
+) -> InitFunction:
+    @InitFunction
     def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             # calculate reference magnitude,
             # and convert all colors to be in terms of the first magnitude, mag[0]
@@ -60,6 +106,7 @@ def ColorTransform(
             log_det = np.log(ref_stdd * (1 - np.exp(-z_sharp * outputs[:, 0])))
             return outputs, log_det
 
+        @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = np.hstack(
                 (
@@ -77,11 +124,15 @@ def ColorTransform(
     return init_fun
 
 
-def Reverse() -> Callable:
+@Bijector
+def Reverse() -> InitFunction:
+    @InitFunction
     def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             return inputs[:, ::-1], np.zeros(inputs.shape[0])
 
+        @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             return inputs[:, ::-1], np.zeros(inputs.shape[0])
 
@@ -90,11 +141,15 @@ def Reverse() -> Callable:
     return init_fun
 
 
-def Roll(shift: int = 1) -> Callable:
+@Bijector
+def Roll(shift: int = 1) -> InitFunction:
+    @InitFunction
     def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             return np.roll(inputs, shift=shift, axis=-1), np.zeros(inputs.shape[0])
 
+        @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             return np.roll(inputs, shift=-shift, axis=-1), np.zeros(inputs.shape[0])
 
@@ -103,13 +158,17 @@ def Roll(shift: int = 1) -> Callable:
     return init_fun
 
 
-def Scale(scale: float) -> Callable:
+@Bijector
+def Scale(scale: float) -> InitFunction:
+    @InitFunction
     def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = scale * inputs
             log_det = np.log(scale ** inputs.shape[-1]) * np.ones(inputs.shape[0])
             return outputs, log_det
 
+        @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = 1 / scale * inputs
             log_det = -np.log(scale ** inputs.shape[-1]) * np.ones(inputs.shape[0])
@@ -120,15 +179,19 @@ def Scale(scale: float) -> Callable:
     return init_fun
 
 
-def Shuffle() -> Callable:
+@Bijector
+def Shuffle() -> InitFunction:
+    @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
         perm = random.permutation(rng, np.arange(input_dim))
         inv_perm = np.argsort(perm)
 
+        @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             return inputs[:, perm], np.zeros(inputs.shape[0])
 
+        @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             return inputs[:, inv_perm], np.zeros(inputs.shape[0])
 
