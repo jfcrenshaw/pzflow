@@ -198,15 +198,15 @@ class Flow:
         Parameters
         ----------
         nsamples : int, default=1
-            The number of samples to be returned
+            The number of samples to be returned.
         seed : int, optional
-            Sets the random seed for the samples
+            Sets the random seed for the samples.
 
         Returns
         -------
         pd.DataFrame
             Pandas DataFrame with columns flow.data_columns and
-            number of rows equal to nsamples
+            number of rows equal to nsamples.
         """
         u = self.prior.sample(nsamples, seed)
         x = self._forward(self._params, u)[0]
@@ -264,7 +264,7 @@ class Flow:
         seed : int, default=0
             A random seed to control the batching.
         verbose : bool, default=False
-            If true, print the training loss every 5% of epochs
+            If true, print the training loss every 5% of epochs.
 
         Returns
         -------
