@@ -1,10 +1,11 @@
 import itertools
-from typing import Callable, Any
+from typing import Callable, Any, Sequence
 
 import dill
 import jax.numpy as np
 from jax import grad, jit, random, ops
 from jax.experimental.optimizers import Optimizer, adam
+import pandas as pd
 
 from pzflow.bijectors import RollingSplineCoupling
 from pzflow.utils import Normal
@@ -13,50 +14,48 @@ from pzflow.utils import Normal
 class Flow:
     def __init__(
         self,
-        input_dim: int = None,
+        data_columns: Sequence = None,
         bijector: Callable = None,
         file: str = None,
         info: Any = None,
     ):
 
-        if input_dim is None and file is None:
-            raise ValueError("User must provide either input_dim or file")
+        if data_columns is None and file is None:
+            raise ValueError("User must provide either data_columns or file")
 
-        if file is not None and any((input_dim != None, bijector != None)):
+        if file is not None and any((data_columns != None, bijector != None)):
             raise ValueError(
-                "If file is provided, please do not provide input_dim or bijector"
+                "If file is provided, please do not provide data_columns or bijector"
             )
 
         if file is not None:
             with open(file, "rb") as handle:
                 save_dict = dill.load(handle)
-            self.input_dim = save_dict["input_dim"]
+            self.data_columns = save_dict["data_columns"]
+            self._input_dim = len(self.data_columns)
             self.info = save_dict["info"]
             self._bijector = save_dict["bijector"]
             self._params = save_dict["params"]
-            _, forward_fun, inverse_fun = self._bijector(
-                random.PRNGKey(0), self.input_dim
-            )
-        elif isinstance(input_dim, int) and input_dim > 0:
-            self.input_dim = input_dim
-            self.info = info
-            self._bijector = (
-                RollingSplineCoupling(self.input_dim) if bijector is None else bijector
-            )
-            self._params, forward_fun, inverse_fun = self._bijector(
-                random.PRNGKey(0), input_dim
+            _, self._forward, self._inverse = self._bijector(
+                random.PRNGKey(0), self._input_dim
             )
         else:
-            raise ValueError("input_dim must be a positive integer")
+            self.data_columns = tuple(data_columns)
+            self._input_dim = len(self.data_columns)
+            self.info = info
+            self._bijector = (
+                RollingSplineCoupling(self._input_dim) if bijector is None else bijector
+            )
+            self._params, self._forward, self._inverse = self._bijector(
+                random.PRNGKey(0), self._input_dim
+            )
 
-        self._forward = forward_fun
-        self._inverse = inverse_fun
-
-        self.prior = Normal(self.input_dim)
+        self.prior = Normal(self._input_dim)
 
     def save(self, file: str):
         save_dict = {
-            "input_dim": self.input_dim,
+            # "input_dim": self.input_dim,
+            "data_columns": self.data_columns,
             "info": self.info,
             "bijector": self._bijector,
             "params": self._params,
@@ -64,74 +63,47 @@ class Flow:
         with open(file, "wb") as handle:
             dill.dump(save_dict, handle, recurse=True)
 
-    def forward(self, inputs: np.ndarray) -> np.ndarray:
-        return self._forward(self._params, inputs)[0]
-
-    def inverse(self, inputs: np.ndarray) -> np.ndarray:
-        return self._inverse(self._params, inputs)[0]
-
     def sample(self, nsamples: int = 1, seed: int = None) -> np.ndarray:
         u = self.prior.sample(nsamples, seed)
-        x = self.forward(u)
+        x = self._forward(self._params, u)[0]
+        x = pd.DataFrame(x, columns=self.data_columns)
         return x
 
-    def log_prob(self, inputs: np.ndarray) -> np.ndarray:
+    def log_prob(self, inputs: pd.DataFrame) -> np.ndarray:
+        columns = list(self.data_columns)
+        inputs = np.array(inputs[columns].values)
         u, log_det = self._inverse(self._params, inputs)
         log_prob = self.prior.log_prob(u)
         return np.nan_to_num(log_prob + log_det, nan=np.NINF)
 
     def posterior(
         self,
-        inputs,
+        inputs: pd.DataFrame,
+        column: str = "redshift",
         grid: np.ndarray = np.arange(0, 2.02, 0.02),
-        column: int = 0,
-        mode: str = "auto",
     ) -> np.ndarray:
 
-        nrows, ncols = inputs.shape
+        columns = list(self.data_columns)
+        idx = columns.index(column)
+        columns.remove(column)
 
-        # validate inputs
-        if mode not in ["auto", "insert", "replace"]:
-            raise ValueError(
-                f"mode `{mode}` is invalid. Accepted values are `auto`, `insert`, and `replace`"
-            )
-        elif mode == "insert" and ncols != self.input_dim - 1:
-            raise ValueError(
-                "When using mode=`insert`, inputs.shape[1] must be equal to input_dim-1"
-            )
-        elif mode == "replace" and ncols != self.input_dim:
-            raise ValueError(
-                "When using mode=`insert`, inputs.shape[1] must be equal to input_dim"
-            )
-        elif ncols not in [self.input_dim, self.input_dim - 1]:
-            raise ValueError(
-                "inputs.shape[1] must be equal to input_dim or input_dim-1"
-            )
-        elif not isinstance(column, int):
-            raise ValueError("`column` must be an integer")
+        inputs = np.array(inputs[columns].values)
 
-        if mode == "auto":
-            if ncols == self.input_dim - 1:
-                mode = "insert"
-            elif ncols == self.input_dim:
-                mode = "replace"
+        nrows = inputs.shape[0]
 
-        if mode == "insert":
-            inputs = np.hstack(
-                (
-                    np.repeat(inputs[:, :column], len(grid), axis=0),
-                    np.tile(grid, nrows)[:, None],
-                    np.repeat(inputs[:, column:], len(grid), axis=0),
-                )
+        inputs = np.hstack(
+            (
+                np.repeat(inputs[:, :idx], len(grid), axis=0),
+                np.tile(grid, nrows)[:, None],
+                np.repeat(inputs[:, idx:], len(grid), axis=0),
             )
-        elif mode == "replace":
-            inputs = ops.index_update(
-                np.repeat(inputs, len(grid), axis=0),
-                ops.index[:, column],
-                np.tile(grid, nrows),
-            )
+        )
 
-        log_prob = self.log_prob(inputs).reshape((nrows, len(grid)))
+        u, log_det = self._inverse(self._params, inputs)
+        log_prob = self.prior.log_prob(u)
+        log_prob = np.nan_to_num(log_prob + log_det, nan=np.NINF)
+        log_prob = log_prob.reshape((nrows, len(grid)))
+
         pdfs = np.exp(log_prob)
         pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
 
@@ -139,13 +111,16 @@ class Flow:
 
     def train(
         self,
-        inputs: np.ndarray,
+        inputs: pd.DataFrame,
         epochs: int = 200,
         batch_size: int = 512,
         optimizer: Optimizer = adam(step_size=1e-3),
         seed: int = 0,
         verbose: bool = False,
     ) -> list:
+
+        columns = list(self.data_columns)
+        inputs = np.array(inputs[columns].values)
 
         opt_init, opt_update, get_params = optimizer
         opt_state = opt_init(self._params)
