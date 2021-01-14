@@ -1,13 +1,13 @@
 import itertools
-from typing import Callable, Any, Sequence
+from typing import Any, Callable, Sequence
 
 import dill
 import jax.numpy as np
-from jax import grad, jit, random, ops
-from jax.experimental.optimizers import Optimizer, adam
 import pandas as pd
+from jax import grad, jit, ops, random
+from jax.experimental.optimizers import Optimizer, adam
 
-from pzflow.bijectors import RollingSplineCoupling
+from pzflow.bijectors import Bijector, RollingSplineCoupling
 from pzflow.utils import Normal
 
 
@@ -15,7 +15,7 @@ class Flow:
     def __init__(
         self,
         data_columns: Sequence = None,
-        bijector: Callable = None,
+        bijector: Bijector = None,
         file: str = None,
         info: Any = None,
     ):

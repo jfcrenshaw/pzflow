@@ -1,12 +1,19 @@
-from typing import Callable, Sequence
+from typing import Callable, Tuple
 
 import jax.numpy as np
 from jax.experimental.stax import Dense, Relu, serial
 from jax.nn import softmax, softplus
-from pzflow.bijectors.bijectors import Chain, Roll
+from pzflow.bijectors.bijectors import (
+    Bijector,
+    Chain,
+    ForwardFunction,
+    InitFunction,
+    InverseFunction,
+    Roll,
+)
 
 
-def _FCNN(out_dim: int, hidden_dim: int):
+def _FCNN(out_dim: int, hidden_dim: int) -> Tuple[Callable, Callable]:
     return serial(
         Dense(hidden_dim),
         Relu,
@@ -17,13 +24,13 @@ def _FCNN(out_dim: int, hidden_dim: int):
 
 
 def _RationalQuadraticSpline(
-    inputs,
-    W,
-    H,
-    D,
+    inputs: np.ndarray,
+    W: np.ndarray,
+    H: np.ndarray,
+    D: np.ndarray,
     B: float = 3,
     inverse: bool = False,
-):
+) -> Tuple[np.ndarray, np.ndarray]:
     # knot x-positions
     xk = np.pad(
         -B + np.cumsum(W, axis=-1),
@@ -117,8 +124,10 @@ def _RationalQuadraticSpline(
         return outputs, log_det
 
 
-def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> Callable:
-    def init_fun(rng: np.ndarray, input_dim: int, **kwargs):
+@Bijector
+def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> InitFunction:
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
 
         upper_dim = input_dim // 2  # variables that determine NN params
         lower_dim = input_dim - upper_dim  # variables transformed by the NN
@@ -128,7 +137,8 @@ def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> Calla
         network_init_fun, network_apply_fun = _FCNN((3 * K - 1) * lower_dim, hidden_dim)
         _, network_params = network_init_fun(rng, (upper_dim,))
 
-        def forward_fun(params: Sequence, inputs: np.ndarray) -> tuple:
+        @ForwardFunction
+        def forward_fun(params, inputs):
             upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
             # widths, heights, derivatives = function(upper variables)
             outputs = network_apply_fun(params, upper)
@@ -142,7 +152,8 @@ def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> Calla
             outputs = np.hstack((upper, lower))
             return outputs, log_det
 
-        def inverse_fun(params: Sequence, inputs: np.ndarray):
+        @InverseFunction
+        def inverse_fun(params, inputs):
             upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
             # widths, heights, derivatives = function(upper variables)
             outputs = network_apply_fun(params, upper)
@@ -161,7 +172,8 @@ def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> Calla
     return init_fun
 
 
+@Bijector
 def RollingSplineCoupling(
     input_dim: int, K: int = 8, B: float = 3, hidden_dim: int = 8
-) -> Callable:
+) -> InitFunction:
     return Chain(*(NeuralSplineCoupling(K, B, hidden_dim), Roll()) * input_dim)
