@@ -12,7 +12,9 @@ class ForwardFunction:
     def __init__(self, func: Callable):
         self._func = func
 
-    def __call__(self, params: Pytree, inputs: np.ndarray, **kwargs) -> np.ndarray:
+    def __call__(
+        self, params: Pytree, inputs: np.ndarray, **kwargs
+    ) -> Tuple[np.ndarray, np.ndarray]:
         return self._func(params, inputs, **kwargs)
 
 
@@ -20,7 +22,9 @@ class InverseFunction:
     def __init__(self, func: Callable):
         self._func = func
 
-    def __call__(self, params: Pytree, inputs: np.ndarray, **kwargs) -> np.ndarray:
+    def __call__(
+        self, params: Pytree, inputs: np.ndarray, **kwargs
+    ) -> Tuple[np.ndarray, np.ndarray]:
         return self._func(params, inputs, **kwargs)
 
 
