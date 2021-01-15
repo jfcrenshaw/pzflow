@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/pzflow.svg)](https://badge.fury.io/py/pzflow)
 
 # pzflow
-Modeling galaxy redshifts and magnitudes with a normalizing flow
+Modeling galaxy redshifts and magnitudes with a normalizing flow.
 
 See [this Jupyter notebook](https://github.com/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb) for an introduction.
 
@@ -29,7 +29,7 @@ jax.config.update('jax_platform_name', 'cpu')
 
 ## Development
 
-To work on pzflow, after forking and cloning this repo:
+To work on pzflow, after forking and cloning the repo:
 1. Create a virtual environment with Python  
 E.g., with conda `conda create -n pzflow`
 2. Activate the environment.  
