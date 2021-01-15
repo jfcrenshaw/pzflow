@@ -124,8 +124,8 @@ class Flow:
     def posterior(
         self,
         inputs: pd.DataFrame,
-        column: str = "redshift",
-        grid: np.ndarray = None,
+        column: str,
+        grid: np.ndarray,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
 
@@ -138,24 +138,19 @@ class Flow:
             Data on which the posterior distributions are conditioned.
             Must have columns matching self.data_columns, *except*
             for the column specified for the posterior (see below).
-        column : str, default="redshift"
+        column : str
             Name of the column for which the posterior distribution
             is calculated. Must be one of the columns in self.data_columns.
             However, whether or not this column is one of the columns in
             `inputs` is irrelevant.
-        grid : np.ndarray, default=np.arange(0, 2.02, 0.02)
+        grid : np.ndarray
             Grid on which to calculate the posterior.
-            The default grid is a reasonable one assuming you are
-            calculating a redshift posterior.
 
         Returns
         -------
         np.ndarray
             Device array of shape (inputs.shape[0], grid.size).
         """
-
-        # use the default grid if none provided
-        grid = np.arange(0, 2.02, 0.02) if grid is None else grid
 
         # get the index of the provided column, and remove it from the list
         columns = list(self.data_columns)

@@ -6,7 +6,7 @@ Modeling galaxy redshifts and magnitudes with a normalizing flow
 
 ## Development
 
-To work on pzflow, after cloning this repo:
+To work on pzflow, after forking and cloning this repo:
 1. Create a virtual environment with Python  
 E.g., with conda `conda create -n pzflow`
 2. Activate the environment.  
@@ -20,6 +20,12 @@ You may also need to add the following to your `.bashrc`:
 # cuda setup
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 export PATH=$PATH:/usr/local/cuda/bin
+```
+If you have the GPU enabled version of jax installed, but would like to run on the CPU, add the following to the top of your scripts/notebooks:
+```
+import jax
+# Global flag to set a specific platform, must be used at startup.
+jax.config.update('jax_platform_name', 'cpu')
 ```
 
 ### Sources
