@@ -357,7 +357,7 @@ def Shuffle() -> InitFunction:
     Returns
     -------
     InitFunction
-        The InitFunction of the the Shuffle Bijector.
+        The InitFunction of the Shuffle Bijector.
     """
 
     @InitFunction

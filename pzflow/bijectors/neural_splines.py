@@ -1,7 +1,6 @@
-from typing import Callable, Tuple
+from typing import Tuple
 
 import jax.numpy as np
-from jax.experimental.stax import Dense, Relu, serial
 from jax.nn import softmax, softplus
 from pzflow.bijectors.bijectors import (
     Bijector,
@@ -11,16 +10,7 @@ from pzflow.bijectors.bijectors import (
     InverseFunction,
     Roll,
 )
-
-
-def _FCNN(out_dim: int, hidden_dim: int) -> Tuple[Callable, Callable]:
-    return serial(
-        Dense(hidden_dim),
-        Relu,
-        Dense(hidden_dim),
-        Relu,
-        Dense(out_dim),
-    )
+from pzflow.utils import DenseReluNetwork
 
 
 def _RationalQuadraticSpline(
@@ -28,9 +18,43 @@ def _RationalQuadraticSpline(
     W: np.ndarray,
     H: np.ndarray,
     D: np.ndarray,
-    B: float = 3,
+    B: float,
     inverse: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """Apply rational quadratic spline to inputs and return outputs with log_det.
+
+    Applies the piecewise rational quadratic spline developed in [1].
+
+    Parameters
+    ----------
+    inputs : np.ndarray
+        The inputs to be transformed.
+    W : np.ndarray
+        The widths of the spline bins.
+    H : np.ndarray
+        The heights of the spline bins.
+    D : np.ndarray
+        The derivatives of the inner spline knots.
+    B : float
+        Range of the splines.
+        Outside of (-B,B), the transformation is just the identity.
+    inverse : bool, default=False
+        If True, perform the inverse transformation.
+        Otherwise perform the forward transformation.
+
+    Returns
+    -------
+    outputs : np.ndarray
+        The result of applying the splines to the inputs.
+    log_det : np.ndarray
+        The log determinant of the Jacobian at the inputs.
+
+    References
+    ----------
+    [1] Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios.
+        Neural Spline Flows. arXiv:1906.04032, 2019.
+        https://arxiv.org/abs/1906.04032
+    """
     # knot x-positions
     xk = np.pad(
         -B + np.cumsum(W, axis=-1),
@@ -78,6 +102,7 @@ def _RationalQuadraticSpline(
     input_sk = np.take_along_axis(sk, idx, -1)[..., 0]
 
     if inverse:
+        # [1] Appendix A.3
         # quadratic formula coefficients
         a = (input_hk) * (input_sk - input_dk) + (masked_inputs - input_yk) * (
             input_dkp1 + input_dk - 2 * input_sk
@@ -90,6 +115,7 @@ def _RationalQuadraticSpline(
         relx = 2 * c / (-b - np.sqrt(b ** 2 - 4 * a * c))
         outputs = np.where(out_of_bounds, inputs, relx * input_wk + input_xk)
 
+        # [1] Appendix A.2
         # calculate the log determinant
         dnum = (
             input_dkp1 * relx ** 2
@@ -103,6 +129,7 @@ def _RationalQuadraticSpline(
         return outputs, -log_det
 
     else:
+        # [1] Appendix A.1
         # calculate spline
         relx = (masked_inputs - input_xk) / input_wk
         num = input_hk * (input_sk * relx ** 2 + input_dk * relx * (1 - relx))
@@ -111,6 +138,7 @@ def _RationalQuadraticSpline(
         # replace out-of-bounds values
         outputs = np.where(out_of_bounds, inputs, spline_val)
 
+        # [1] Appendix A.2
         # calculate the log determinant
         dnum = (
             input_dkp1 * relx ** 2
@@ -125,7 +153,52 @@ def _RationalQuadraticSpline(
 
 
 @Bijector
-def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> InitFunction:
+def NeuralSplineCoupling(
+    K: int = 8, B: float = 3, hidden_layers: int = 2, hidden_dim: int = 32
+) -> InitFunction:
+    """A coupling layer bijection with rational quadratic splines.
+
+    This Bijector is a Coupling Layer [1,2], and as such only transforms
+    the second half of input dimensions. In order to transform all of
+    dimensions, you need multiple Couplings interspersed with Bijectors
+    that change the order of inputs dimensions, e.g., Reverse, Shuffle,
+    Roll, etc.
+
+    NeuralSplineCoupling uses piecewise rational quadratic splines,
+    as developed in [3].
+
+    Parameters
+    ----------
+    K : int, default=8
+        Number of bins in the spline (the number of knots is K+1).
+    B : float, default=3
+        Range of the splines.
+        Outside of (-B,B), the transformation is just the identity.
+    hidden_layers : int, default=2
+        The number of hidden layers in the neural network used to calculate
+        the positions and derivatives of the spline knots.
+    hidden_dim : int, default=32
+        The width of the hidden layers in the neural network used to
+        calculate the positions and derivatives of the spline knots.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the NeuralSplineCoupling Bijector.
+
+    References
+    ----------
+    [1] Laurent Dinh, David Krueger, Yoshua Bengio. NICE: Non-linear
+        Independent Components Estimation. arXiv: 1605.08803, 2015.
+        http://arxiv.org/abs/1605.08803
+    [2] Laurent Dinh, Jascha Sohl-Dickstein, Samy Bengio.
+        Density Estimation Using Real NVP. arXiv: 1605.08803, 2017.
+        http://arxiv.org/abs/1605.08803
+    [3] Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios.
+        Neural Spline Flows. arXiv:1906.04032, 2019.
+        https://arxiv.org/abs/1906.04032
+    """
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
@@ -134,35 +207,39 @@ def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> InitF
 
         # create the neural network that will take in the upper dimensions and
         # will return the spline parameters to transform the lower dimensions
-        network_init_fun, network_apply_fun = _FCNN((3 * K - 1) * lower_dim, hidden_dim)
+        network_init_fun, network_apply_fun = DenseReluNetwork(
+            (3 * K - 1) * lower_dim, hidden_layers, hidden_dim
+        )
         _, network_params = network_init_fun(rng, (upper_dim,))
 
         @ForwardFunction
         def forward_fun(params, inputs):
+            # lower dimensions are transformed as function of upper dimensions
             upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
-            # widths, heights, derivatives = function(upper variables)
+            # widths, heights, derivatives = function(upper dimensions)
             outputs = network_apply_fun(params, upper)
             outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1])
             W, H, D = np.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)
             H = 2 * B * softmax(H)
             D = softplus(D)
-            # transform the lower variables with the Rational Quadratic Spline
+            # transform the lower dimensions with the Rational Quadratic Spline
             lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=False)
             outputs = np.hstack((upper, lower))
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs):
+            # lower dimensions are transformed as function of upper dimensions
             upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
-            # widths, heights, derivatives = function(upper variables)
+            # widths, heights, derivatives = function(upper dimensions)
             outputs = network_apply_fun(params, upper)
             outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1])
             W, H, D = np.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)
             H = 2 * B * softmax(H)
             D = softplus(D)
-            # transform the lower variables with the Rational Quadratic Spline
+            # transform the lower dimensions with the Rational Quadratic Spline
             lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=True)
             outputs = np.hstack((upper, lower))
             return outputs, log_det
@@ -174,6 +251,34 @@ def NeuralSplineCoupling(K: int = 8, B: float = 3, hidden_dim: int = 8) -> InitF
 
 @Bijector
 def RollingSplineCoupling(
-    input_dim: int, K: int = 8, B: float = 3, hidden_dim: int = 8
+    nlayers: int,
+    K: int = 8,
+    B: float = 3,
+    hidden_layers: int = 2,
+    hidden_dim: int = 32,
 ) -> InitFunction:
-    return Chain(*(NeuralSplineCoupling(K, B, hidden_dim), Roll()) * input_dim)
+    """Bijector that alternates NeuralSplineCouplings and Roll bijections.
+
+    Parameters
+    ----------
+    nlayers : int
+        The number of (NeuralSplineCoupling(), Roll()) couplets in the chain.
+    K : int, default=8
+        Number of bins in the RollingSplineCoupling.
+    B : float, default=3
+        Range of the splines in the RollingSplineCoupling.
+    hidden_layers : int, default=2
+        The number of hidden layers in the neural network used to calculate
+        the bins and derivatives in the RollingSplineCoupling.
+    hidden_dim : int, default=32
+        The width of the hidden layers in the neural network used to
+        calculate the bins and derivatives in the RollingSplineCoupling.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the RollingSplineCoupling Bijector.
+    """
+    return Chain(
+        *(NeuralSplineCoupling(K, B, hidden_layers, hidden_dim), Roll()) * nlayers
+    )

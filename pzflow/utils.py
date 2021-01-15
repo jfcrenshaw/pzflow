@@ -1,6 +1,9 @@
+from typing import Callable, Tuple
+
 import jax.numpy as np
 import numpy as onp
 from jax import random
+from jax.experimental.stax import Dense, Relu, serial
 from jax.scipy.stats import multivariate_normal
 
 
@@ -57,3 +60,33 @@ class Normal:
             cov=np.identity(self.input_dim),
             shape=(nsamples,),
         )
+
+
+def DenseReluNetwork(
+    out_dim: int, hidden_layers: int, hidden_dim: int
+) -> Tuple[Callable, Callable]:
+    """Create a dense neural network with Relu after hidden layers.
+
+    Parameters
+    ----------
+    out_dim : int
+        The output dimension.
+    hidden_layers : int
+        The number of hidden layers
+    hidden_dim : int
+        The dimension of the hidden layers
+
+    Returns
+    -------
+    init_fun : function
+        The function that initializes the network. Note that this is the
+        init_function defined in the Jax stax module, which is different
+        from the functions of my InitFunction class.
+    forward_fun : function
+        The function that passes the inputs through the neural network.
+    """
+    init_fun, forward_fun = serial(
+        *(Dense(hidden_dim), Relu) * hidden_layers,
+        Dense(out_dim),
+    )
+    return init_fun, forward_fun
