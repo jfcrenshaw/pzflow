@@ -162,7 +162,7 @@ def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
 
 @Bijector
 def ColorTransform(
-    ref_idx: int, ref_mean: float, ref_stdd: float, z_sharp: float = 10
+    ref_idx: int, ref_mean: float, ref_std: float, z_sharp: float = 10
 ) -> InitFunction:
     """Bijector that converts colors to magnitudes and constrains redshift positive.
 
@@ -228,7 +228,7 @@ def ColorTransform(
                 (
                     np.log(1 + np.exp(z_sharp * inputs[:, 0, None]))
                     / z_sharp,  # softplus to force redshift positive
-                    inputs[:, 1, None] * ref_stdd + ref_mean,  # reference mag
+                    inputs[:, 1, None] * ref_std + ref_mean,  # reference mag
                     np.cumsum(inputs[:, 2:], axis=-1),  # all colors --> mag[0] - mag[i]
                 )
             )
@@ -240,7 +240,7 @@ def ColorTransform(
             outputs = ops.index_update(
                 outputs, ops.index[:, 2:], outputs[:, 1, None] - outputs[:, 2:]
             )
-            log_det = np.log(ref_stdd * (1 - np.exp(-z_sharp * outputs[:, 0])))
+            log_det = np.log(ref_std * (1 - np.exp(-z_sharp * outputs[:, 0])))
             return outputs, log_det
 
         @InverseFunction
@@ -249,11 +249,11 @@ def ColorTransform(
                 (
                     np.log(-1 + np.exp(z_sharp * inputs[:, 0, None]))
                     / z_sharp,  # inverse of softplus
-                    (inputs[:, ref_idx, None] - ref_mean) / ref_stdd,  # ref mag
+                    (inputs[:, ref_idx, None] - ref_mean) / ref_std,  # ref mag
                     -np.diff(inputs[:, 1:]),  # colors
                 )
             )
-            log_det = -np.log(ref_stdd * (1 - np.exp(-z_sharp * inputs[:, 0])))
+            log_det = -np.log(ref_std * (1 - np.exp(-z_sharp * inputs[:, 0])))
             return outputs, log_det
 
         return (), forward_fun, inverse_fun

@@ -187,6 +187,41 @@ class Flow:
         pdfs = np.nan_to_num(pdfs, nan=0.0)
         return pdfs
 
+    def pz_estimate(
+        self, inputs: pd.DataFrame, zmin: float = 0, zmax: float = 2, dz: float = 0.02
+    ) -> np.ndarray:
+        """Calculates redshift posteriors.
+
+        This method just wraps the `posterior` method, with `column=redshift`,
+        and grid=np.arange(zmin, zmax+dz, dz).
+
+        Parameters
+        ----------
+        inputs : pd.DataFrame
+            Data on which the redshift posteriors are conditioned.
+            Must have columns matching self.data_columns, *except*
+            for the redshift column. Whether or not inputs has a
+            redshift column is irrelevant.
+        zmin : float
+            The minimum of the redshift range.
+        zmax : float
+            The maximum of the redshift range.
+        dz : float
+            The width of the redshift bins.
+
+        Returns
+        -------
+        np.ndarray
+            Device array with a number of rows equal to the rows in inputs
+            and a number of columns equal to the number of bins in the
+            redshift grid.
+            I.e., (inputs.shape[0], np.ceil((zmax-zmin)/dz + 1)).
+
+
+        """
+        grid = np.arange(zmin, zmax + dz, dz)
+        return self.posterior(inputs, column="redshift", grid=grid)
+
     def sample(self, nsamples: int = 1, seed: int = None) -> pd.DataFrame:
         """Returns samples from the normalizing flow.
 
@@ -218,7 +253,7 @@ class Flow:
         ----------
         file : str
             Path to where the flow will be saved.
-            Extension `.dill` will be appended if not already present.
+            Extension `.pkl` will be appended if not already present.
         """
         save_dict = {
             "data_columns": self.data_columns,
@@ -226,8 +261,8 @@ class Flow:
             "bijector": self._bijector,
             "params": self._params,
         }
-        if not file.endswith(".dill"):
-            file += ".dill"
+        if not file.endswith(".pkl"):
+            file += ".pkl"
         with open(file, "wb") as handle:
             dill.dump(save_dict, handle, recurse=True)
 

@@ -22,7 +22,7 @@ def test_bad_inputs(data_columns, bijector, info, file):
 
 
 def test_returns_correct_shape():
-    columns = ("x", "y")
+    columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
     xarray = np.array([[1, 2], [3, 4]])
@@ -41,9 +41,11 @@ def test_returns_correct_shape():
     assert flow.log_prob(x).shape == (x.shape[0],)
 
     grid = np.arange(0, 2.1, 0.12)
-    pdfs = flow.posterior(x, column="x", grid=grid)
+    pdfs = flow.posterior(x, column="y", grid=grid)
     assert pdfs.shape == (x.shape[0], grid.size)
-    pdfs = flow.posterior(x.iloc[:, 1:], column="x", grid=grid)
+    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid)
+    assert pdfs.shape == (x.shape[0], grid.size)
+    pdfs = flow.pz_estimate(x, zmin=0, zmax=2.1 - 0.12, dz=0.12)
     assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
@@ -72,7 +74,7 @@ def test_load_flow(tmp_path):
     file = tmp_path / "test-flow"
     flow.save(str(file))
 
-    file = tmp_path / "test-flow.dill"
+    file = tmp_path / "test-flow.pkl"
     flow = Flow(file=str(file))
 
     x = np.array([[1, 2], [3, 4]])
