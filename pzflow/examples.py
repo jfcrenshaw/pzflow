@@ -41,6 +41,6 @@ def example_flow() -> Flow:
     For more info: `print(example_flow().info)`.
     """
     this_dir, _ = os.path.split(__file__)
-    flow_path = os.path.join(this_dir, "data/example-flow.dill")
+    flow_path = os.path.join(this_dir, "data/example-flow.pkl")
     flow = Flow(file=flow_path)
     return flow
