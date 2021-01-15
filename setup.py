@@ -4,7 +4,7 @@ extras = {"dev": ["pytest", "black", "pylint"], "docs": ["sphinx", "sphinx-rtd-t
 
 setup(
     name="pzflow",
-    version="1.0.3",
+    version="1.0.0",
     author="John Franklin Crenshaw",
     author_email="jfc20@uw.edu",
     description="Modeling galaxy redshifts and magnitudes with normalizing flows",
