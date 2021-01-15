@@ -1,8 +1,18 @@
 ![build](https://github.com/jfcrenshaw/pzflow/workflows/build/badge.svg)
 [![codecov](https://codecov.io/gh/jfcrenshaw/pzflow/branch/main/graph/badge.svg?token=qR5cey0swQ)](https://codecov.io/gh/jfcrenshaw/pzflow)
+[![PyPI version](https://badge.fury.io/py/pzflow.svg)](https://badge.fury.io/py/pzflow)
 
 # pzflow
 Modeling galaxy redshifts and magnitudes with a normalizing flow
+
+See [this Jupyter notebook](https://github.com/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb) for an introduction.
+
+## Installation
+
+You can install pzflow from PyPI with pip:
+```
+pip install pzflow
+```
 
 ## Development
 
