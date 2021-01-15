@@ -16,10 +16,16 @@ def two_moons_data() -> pd.DataFrame:
 
 
 def galaxy_data() -> pd.DataFrame:
-    """Return DataFrame with examples galaxy data.
+    """Return DataFrame with example galaxy data.
 
-    100,000 galaxies from the buzzard simulation, with redshifts
+    100,000 galaxies from the Buzzard simulation [1], with redshifts
     in the range (0,2.3) and photometry in the LSST ugrizy bands.
+
+    References
+    ----------
+    [1] Joseph DeRose et al. The Buzzard Flock: Dark Energy Survey
+    Synthetic Sky Catalogs. arXiv:1901.02401, 2019.
+    https://arxiv.org/abs/1901.02401
     """
     this_dir, _ = os.path.split(__file__)
     data_path = os.path.join(this_dir, "data/galaxy-data.pkl")
