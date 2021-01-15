@@ -240,7 +240,7 @@ class Flow:
         self,
         inputs: pd.DataFrame,
         epochs: int = 25,
-        batch_size: int = 512,
+        batch_size: int = 1024,
         optimizer: Optimizer = None,
         seed: int = 0,
         verbose: bool = False,
