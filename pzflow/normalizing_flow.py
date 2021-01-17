@@ -173,7 +173,7 @@ class Flow:
         # to an array with columns ordered
         X = np.array(inputs[columns].values)
 
-        pdfs = np.zeros((nrows,))
+        pdfs = np.zeros((nrows, len(grid)))
 
         for batch_idx in range(0, nrows, batch_size):
 
@@ -195,17 +195,15 @@ class Flow:
                 )
             )
 
-            log_prob = self._log_prob(batch)
+            # calculate probability densities
+            log_prob = self._log_prob(batch).reshape((-1, len(grid)))
             pdfs = ops.index_update(
                 pdfs,
-                ops.index[batch_idx : batch_idx + batch_size],
-                log_prob,
+                ops.index[batch_idx : batch_idx + batch_size, :],
+                np.exp(log_prob),
                 indices_are_sorted=True,
                 unique_indices=True,
             )
-
-        # calculate probability densities
-        pdfs = np.exp(pdfs)
 
         # reshape so that each row is a posterior
         pdfs = pdfs.reshape((nrows, len(grid)))
