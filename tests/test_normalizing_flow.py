@@ -51,6 +51,21 @@ def test_returns_correct_shape():
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
 
 
+def test_posterior_batch():
+    columns = ("redshift", "y")
+    flow = Flow(columns, Reverse())
+
+    xarray = np.array([[1, 2], [3, 4], [5, 6]])
+    x = pd.DataFrame(xarray, columns=columns)
+
+    grid = np.arange(0, 2.1, 0.12)
+    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid)
+    pdfs_batched = flow.posterior(
+        x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2
+    )
+    assert np.allclose(pdfs, pdfs_batched)
+
+
 def test_flow_bijection():
     columns = ("x", "y")
     flow = Flow(columns, Reverse())
