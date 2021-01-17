@@ -4,10 +4,10 @@ from typing import Any, Sequence
 import dill
 import jax.numpy as np
 import pandas as pd
-from jax import grad, jit, random
+from jax import grad, jit, random, ops
 from jax.experimental.optimizers import Optimizer, adam
 
-from pzflow.bijectors import InitFunction, RollingSplineCoupling
+from pzflow.bijectors import InitFunction
 from pzflow.utils import Normal
 
 
@@ -96,6 +96,15 @@ class Flow:
         # use a standard Gaussian as the prior distribution
         self.prior = Normal(self._input_dim)
 
+    def _log_prob(self, inputs: np.ndarray) -> np.ndarray:
+        """Log prob for arrays."""
+        # calculate log_prob
+        u, log_det = self._inverse(self._params, inputs)
+        log_prob = self.prior.log_prob(u) + log_det
+        # set NaN's to negative infinity (i.e. zero probability)
+        log_prob = np.nan_to_num(log_prob, nan=np.NINF)
+        return log_prob
+
     def log_prob(self, inputs: pd.DataFrame) -> np.ndarray:
         """Calculates log probability density of inputs.
 
@@ -113,19 +122,15 @@ class Flow:
         """
         # convert data to an array with columns ordered
         columns = list(self.data_columns)
-        inputs = np.array(inputs[columns].values)
-        # calculate log_prob
-        u, log_det = self._inverse(self._params, inputs)
-        log_prob = self.prior.log_prob(u) + log_det
-        # set NaN's to negative infinity (i.e. zero probability)
-        log_prob = np.nan_to_num(log_prob, nan=np.NINF)
-        return log_prob
+        X = np.array(inputs[columns].values)
+        return self._log_prob(X)
 
     def posterior(
         self,
         inputs: pd.DataFrame,
         column: str,
         grid: np.ndarray,
+        batch_size: int = None,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
 
@@ -145,6 +150,10 @@ class Flow:
             `inputs` is irrelevant.
         grid : np.ndarray
             Grid on which to calculate the posterior.
+        batch_size : int, default=None
+            Size of batches in which to calculate posteriors. If None, all
+            posteriors are calculated simultaneously. Simultaneous calculation
+            is faster, but memory intensive for large data sets.
 
         Returns
         -------
@@ -157,27 +166,46 @@ class Flow:
         idx = columns.index(column)
         columns.remove(column)
 
+        nrows = inputs.shape[0]
+        batch_size = nrows if batch_size is None else batch_size
+
         # convert data (sans the provided column)
         # to an array with columns ordered
-        inputs = np.array(inputs[columns].values)
+        X = np.array(inputs[columns].values)
 
-        nrows = inputs.shape[0]
+        pdfs = np.zeros((nrows,))
 
-        # make a new copy of each row for each value of the column
-        # for which we are calculating the posterior
-        inputs = np.hstack(
-            (
-                np.repeat(inputs[:, :idx], len(grid), axis=0),
-                np.tile(grid, nrows)[:, None],
-                np.repeat(inputs[:, idx:], len(grid), axis=0),
+        for batch_idx in range(0, nrows, batch_size):
+
+            # make a new copy of each row for each value of the column
+            # for which we are calculating the posterior
+            batch = np.hstack(
+                (
+                    np.repeat(
+                        X[batch_idx : batch_idx + batch_size, :idx],
+                        len(grid),
+                        axis=0,
+                    ),
+                    np.tile(grid, batch_size)[:, None],
+                    np.repeat(
+                        X[batch_idx : batch_idx + batch_size, idx:],
+                        len(grid),
+                        axis=0,
+                    ),
+                )
             )
-        )
+
+            log_prob = self._log_prob(batch)
+            pdfs = ops.index_update(
+                pdfs,
+                ops.index[batch_idx : batch_idx + batch_size],
+                log_prob,
+                indices_are_sorted=True,
+                unique_indices=True,
+            )
 
         # calculate probability densities
-        u, log_det = self._inverse(self._params, inputs)
-        log_prob = self.prior.log_prob(u)
-        log_prob = np.nan_to_num(log_prob + log_det, nan=np.NINF)
-        pdfs = np.exp(log_prob)
+        pdfs = np.exp(pdfs)
 
         # reshape so that each row is a posterior
         pdfs = pdfs.reshape((nrows, len(grid)))
@@ -186,41 +214,6 @@ class Flow:
         # set NaN's equal to zero probability
         pdfs = np.nan_to_num(pdfs, nan=0.0)
         return pdfs
-
-    def pz_estimate(
-        self, inputs: pd.DataFrame, zmin: float = 0, zmax: float = 2, dz: float = 0.02
-    ) -> np.ndarray:
-        """Calculates redshift posteriors.
-
-        This method just wraps the `posterior` method, with `column=redshift`,
-        and grid=np.arange(zmin, zmax+dz, dz).
-
-        Parameters
-        ----------
-        inputs : pd.DataFrame
-            Data on which the redshift posteriors are conditioned.
-            Must have columns matching self.data_columns, *except*
-            for the redshift column. Whether or not inputs has a
-            redshift column is irrelevant.
-        zmin : float
-            The minimum of the redshift range.
-        zmax : float
-            The maximum of the redshift range.
-        dz : float
-            The width of the redshift bins.
-
-        Returns
-        -------
-        np.ndarray
-            Device array with a number of rows equal to the rows in inputs
-            and a number of columns equal to the number of bins in the
-            redshift grid.
-            I.e., (inputs.shape[0], np.ceil((zmax-zmin)/dz + 1)).
-
-
-        """
-        grid = np.arange(zmin, zmax + dz, dz)
-        return self.posterior(inputs, column="redshift", grid=grid)
 
     def sample(self, nsamples: int = 1, seed: int = None) -> pd.DataFrame:
         """Returns samples from the normalizing flow.
