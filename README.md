@@ -3,7 +3,13 @@
 [![PyPI version](https://badge.fury.io/py/pzflow.svg)](https://badge.fury.io/py/pzflow)
 
 # pzflow
-Modeling galaxy redshifts and magnitudes with a normalizing flow.
+
+Probabilistic modeling of tabular data with normalizing flows.
+
+If your data consists of continuous variables that can be put into a Pandas DataFrame, pzflow can model the joint probability distribution of your data set.
+
+The `Flow` class makes building and training a normalizing flow simple.
+It also allows you to easily sample from the normalizing flow (e.g. for forward modeling or data augmentation), and to calculate posteriors over any of your variables.
 
 See [this Jupyter notebook](https://github.com/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb) for an introduction.
 
@@ -13,14 +19,14 @@ You can install pzflow from PyPI with pip:
 ```
 pip install pzflow
 ```
-If you want to run pzflow on a GPU with CUDA, then you need to follow the GPU-enabled installation instructions for jaxlib [here](https://github.com/google/jax).
+If you want to run pzflow on a GPU with CUDA, you need to follow the GPU-enabled installation instructions for jaxlib [here](https://github.com/google/jax).
 You may also need to add the following to your `.bashrc`:
 ```
 # cuda setup
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 export PATH=$PATH:/usr/local/cuda/bin
 ```
-If you have the GPU enabled version of jax installed, but would like to run on the CPU, add the following to the top of your scripts/notebooks:
+If you have the GPU enabled version of jax installed, but would like to run on a CPU, add the following to the top of your scripts/notebooks:
 ```
 import jax
 # Global flag to set a specific platform, must be used at startup.

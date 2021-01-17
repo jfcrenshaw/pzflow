@@ -12,7 +12,7 @@ from pzflow.utils import Normal
 
 
 class Flow:
-    """A normalizing flow that models galaxy magnitudes and redshifts.
+    """A normalizing flow that models tabular data.
 
     Attributes
     ----------

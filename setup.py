@@ -7,7 +7,7 @@ setup(
     version="1.2.0",
     author="John Franklin Crenshaw",
     author_email="jfc20@uw.edu",
-    description="Modeling galaxy redshifts and magnitudes with normalizing flows",
+    description="Probabilistic modeling of tabular data with normalizing flows.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     license="MIT",
