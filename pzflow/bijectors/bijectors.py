@@ -234,11 +234,19 @@ def ColorTransform(
             )
             # calculate mag[0]
             outputs = ops.index_update(
-                outputs, ops.index[:, 1], outputs[:, 1] + outputs[:, ref_idx]
+                outputs,
+                ops.index[:, 1],
+                outputs[:, 1] + outputs[:, ref_idx],
+                indices_are_sorted=True,
+                unique_indices=True,
             )
             # mag[i] = mag[0] - (mag[0] - mag[i])
             outputs = ops.index_update(
-                outputs, ops.index[:, 2:], outputs[:, 1, None] - outputs[:, 2:]
+                outputs,
+                ops.index[:, 2:],
+                outputs[:, 1, None] - outputs[:, 2:],
+                indices_are_sorted=True,
+                unique_indices=True,
             )
             log_det = np.log(ref_std * (1 - np.exp(-z_sharp * outputs[:, 0])))
             return outputs, log_det

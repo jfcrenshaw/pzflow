@@ -25,7 +25,7 @@ def test_returns_correct_shape():
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
-    xarray = np.array([[1, 2], [3, 4]])
+    xarray = np.array([[1, 2], [3, 4], [5, 6]])
     x = pd.DataFrame(xarray, columns=columns)
 
     xfwd, xfwd_log_det = flow._forward(flow._params, xarray)
@@ -45,10 +45,25 @@ def test_returns_correct_shape():
     assert pdfs.shape == (x.shape[0], grid.size)
     pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid)
     assert pdfs.shape == (x.shape[0], grid.size)
-    pdfs = flow.pz_estimate(x, zmin=0, zmax=2.1 - 0.12, dz=0.12)
+    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2)
     assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
+
+
+def test_posterior_batch():
+    columns = ("redshift", "y")
+    flow = Flow(columns, Reverse())
+
+    xarray = np.array([[1, 2], [3, 4], [5, 6]])
+    x = pd.DataFrame(xarray, columns=columns)
+
+    grid = np.arange(0, 2.1, 0.12)
+    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid)
+    pdfs_batched = flow.posterior(
+        x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2
+    )
+    assert np.allclose(pdfs, pdfs_batched)
 
 
 def test_flow_bijection():
