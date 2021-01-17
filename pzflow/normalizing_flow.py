@@ -177,18 +177,20 @@ class Flow:
 
         for batch_idx in range(0, nrows, batch_size):
 
+            batch = X[batch_idx : batch_idx + batch_size]
+
             # make a new copy of each row for each value of the column
             # for which we are calculating the posterior
             batch = np.hstack(
                 (
                     np.repeat(
-                        X[batch_idx : batch_idx + batch_size, :idx],
+                        batch[:, :idx],
                         len(grid),
                         axis=0,
                     ),
-                    np.tile(grid, batch_size)[:, None],
+                    np.tile(grid, len(batch))[:, None],
                     np.repeat(
-                        X[batch_idx : batch_idx + batch_size, idx:],
+                        batch[:, idx:],
                         len(grid),
                         axis=0,
                     ),
