@@ -21,6 +21,8 @@ x = np.array(
         (Roll, (2,)),
         (Scale, (2,)),
         (Shuffle, ()),
+        (Softplus, (0,)),
+        (Softplus, ([3, 5], [2, 12])),
         (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
         (NeuralSplineCoupling, ()),
         (RollingSplineCoupling, (2,)),

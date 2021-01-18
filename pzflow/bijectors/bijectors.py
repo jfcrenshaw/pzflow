@@ -161,9 +161,7 @@ def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
 
 
 @Bijector
-def ColorTransform(
-    ref_idx: int, ref_mean: float, ref_std: float, z_sharp: float = 10
-) -> InitFunction:
+def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunction:
     """Bijector that converts colors to magnitudes and constrains redshift positive.
 
     Using ColorTransform restricts the order of columns in the corresponding
@@ -226,8 +224,7 @@ def ColorTransform(
             # and convert all colors to be in terms of the first magnitude, mag[0]
             outputs = np.hstack(
                 (
-                    np.log(1 + np.exp(z_sharp * inputs[:, 0, None]))
-                    / z_sharp,  # softplus to force redshift positive
+                    inputs[:, 0, None],  # redshift unchanged
                     inputs[:, 1, None] * ref_std + ref_mean,  # reference mag
                     np.cumsum(inputs[:, 2:], axis=-1),  # all colors --> mag[0] - mag[i]
                 )
@@ -248,20 +245,19 @@ def ColorTransform(
                 indices_are_sorted=True,
                 unique_indices=True,
             )
-            log_det = np.log(ref_std * (1 - np.exp(-z_sharp * outputs[:, 0])))
+            log_det = np.log(ref_std) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = np.hstack(
                 (
-                    np.log(-1 + np.exp(z_sharp * inputs[:, 0, None]))
-                    / z_sharp,  # inverse of softplus
+                    inputs[:, 0, None],  # redshift
                     (inputs[:, ref_idx, None] - ref_mean) / ref_std,  # ref mag
                     -np.diff(inputs[:, 1:]),  # colors
                 )
             )
-            log_det = -np.log(ref_std * (1 - np.exp(-z_sharp * inputs[:, 0])))
+            log_det = -np.log(ref_std) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -381,6 +377,58 @@ def Shuffle() -> InitFunction:
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             return inputs[:, inv_perm], np.zeros(inputs.shape[0])
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun
+
+
+@Bijector
+def Softplus(column_idx: int, sharpness: float = 1):
+    """Bijector that applies a softplus function to the specified column(s).
+
+    Parameters
+    ----------
+    column_idx : int
+        An index or iterable of indices corresponding to the column(s)
+        you wish to be transformed.
+    sharpness : float, default=1
+        The sharpness of the softplus transformation.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the Softplus Bijector.
+    """
+
+    idx = np.atleast_1d(column_idx)
+    k = np.atleast_1d(sharpness)
+    if len(idx) != len(k) and len(k) != 1:
+        raise ValueError(
+            "Please provide either a single sharpness or one for each column index."
+        )
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(1 + np.exp(k * inputs[:, idx])) / k,
+            )
+            log_det = -np.log(1 + np.exp(-k * inputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(-1 + np.exp(k * inputs[:, idx])) / k,
+            )
+            log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
 
         return (), forward_fun, inverse_fun
 
