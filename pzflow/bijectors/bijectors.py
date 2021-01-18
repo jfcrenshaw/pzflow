@@ -162,7 +162,7 @@ def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
 
 @Bijector
 def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunction:
-    """Bijector that converts colors to magnitudes and constrains redshift positive.
+    """Bijector that converts photometric colors to magnitudes.
 
     Using ColorTransform restricts the order of columns in the corresponding
     normalizing flow. Redshift must be the first column, and the following
@@ -177,8 +177,6 @@ def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunctio
         The mean magnitude of the reference band.
     ref_std : float
         The standard deviation of the reference band.
-    z_sharp : float, default=10
-        The sharpness of the softplus applied to the redshift column.
 
     Returns
     -------
@@ -187,20 +185,17 @@ def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunctio
 
     Notes
     -----
-    This Bijector takes a redshift parameter, a normalized reference magnitude,
-    and a series of galaxy colors, and converts them to redshift and galaxy
+    This Bijector takes redshift, a normalized reference magnitude, and a
+    series of galaxy colors, and converts them to redshift and galaxy
     magnitudes. Here is an example of the bijection:
 
-    redshift_param, R, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
+    redshift, R, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
 
-    where
-    redshift = softplus(redshift_param)
-    r = R * ref_std + ref_mean
+    where r = R * ref_std + ref_mean
 
-    This transformation is useful at the very end of your Bijector Chain,
-    as redshifts correlate with galaxy colors more directly than galaxy
-    magnitudes. In addition, the softplus applied to the redshift parameter
-    ensures that the sampled redshifts are always positive.
+    This transformation is useful at the end of your Bijector Chain, as
+    redshifts correlate with galaxy colors more directly than galaxy
+    magnitudes.
 
     In the example above, the r band was used as the reference magnitude to
     serve as a proxy for overall galaxy luminosity. In this example, this
@@ -387,13 +382,18 @@ def Shuffle() -> InitFunction:
 def Softplus(column_idx: int, sharpness: float = 1):
     """Bijector that applies a softplus function to the specified column(s).
 
+    Applying the softplus ensures that samples from that column will always
+    be non-negative.
+
     Parameters
     ----------
     column_idx : int
         An index or iterable of indices corresponding to the column(s)
         you wish to be transformed.
     sharpness : float, default=1
-        The sharpness of the softplus transformation.
+        The sharpness(es) of the softplus transformation. If more than one
+        is provided, the list of sharpnesses must be of the same length as
+        column_idx.
 
     Returns
     -------
