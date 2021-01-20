@@ -11,7 +11,8 @@ If your data consists of continuous variables that can be put into a Pandas Data
 The `Flow` class makes building and training a normalizing flow simple.
 It also allows you to easily sample from the normalizing flow (e.g. for forward modeling or data augmentation), and to calculate posteriors over any of your variables.
 
-See [this Jupyter notebook](https://github.com/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb) for an introduction.
+See [this Jupyter notebook](https://github.com/jfcrenshaw/pzflow/blob/main/examples/intro.ipynb) for an introduction.
+See [this notebook](https://github.com/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb) for a more complicated reshift example.
 
 ## Installation
 
@@ -33,7 +34,12 @@ import jax
 jax.config.update('jax_platform_name', 'cpu')
 ```
 
-## Development
+## Citation
+
+We are preparing a paper on pzflow.
+If you are using this package in your research, please check back here for a citation before publication.
+
+### Development
 
 To work on pzflow, after forking and cloning the repo:
 1. Create a virtual environment with Python  
@@ -46,9 +52,9 @@ I.e., in the root directory, `pip install -e .[dev]`
 
 ### Sources
 
-The idea to use normalizing flows for photometric redshifts orginated with [Bryce Kalmbach](https://github.com/jbkalmbach).
-
-The early stages of this package were developed as a part of the [DESC](https://lsstdesc.org/) [RAIL](https://github.com/LSSTDESC/RAIL) project, and included contributions from [Francois Lanusse](https://github.com/eiffl) and [Alex Malz](https://github.com/aimalz).
+pzflow was originally designed for forward modeling of photometric redshifts as a part of the Creation Module of the [DESC](https://lsstdesc.org/) [RAIL](https://github.com/LSSTDESC/RAIL) project.
+The idea to use normalizing flows for photometric redshifts originated with [Bryce Kalmbach](https://github.com/jbkalmbach).
+The earliest version of the normalizing flow in RAIL was based on a notebook by [Francois Lanusse](https://github.com/eiffl) and included contributions from [Alex Malz](https://github.com/aimalz).
 
 The jax structure of `pzflow` is largely based on [`jax-flows`](https://github.com/ChrisWaites/jax-flows) by [Chris Waites](https://github.com/ChrisWaites). The implementation of the Neural Spline Coupling is largely based on the [Tensorflow implementation](https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/bijectors/rational_quadratic_spline.py), with some inspiration from [`nflows`](https://github.com/bayesiains/nflows/).
 
