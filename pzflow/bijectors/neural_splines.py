@@ -154,7 +154,7 @@ def _RationalQuadraticSpline(
 
 @Bijector
 def NeuralSplineCoupling(
-    K: int = 8, B: float = 3, hidden_layers: int = 2, hidden_dim: int = 32
+    K: int = 16, B: float = 3, hidden_layers: int = 2, hidden_dim: int = 128
 ) -> InitFunction:
     """A coupling layer bijection with rational quadratic splines.
 
@@ -169,7 +169,7 @@ def NeuralSplineCoupling(
 
     Parameters
     ----------
-    K : int, default=8
+    K : int, default=16
         Number of bins in the spline (the number of knots is K+1).
     B : float, default=3
         Range of the splines.
@@ -177,7 +177,7 @@ def NeuralSplineCoupling(
     hidden_layers : int, default=2
         The number of hidden layers in the neural network used to calculate
         the positions and derivatives of the spline knots.
-    hidden_dim : int, default=32
+    hidden_dim : int, default=128
         The width of the hidden layers in the neural network used to
         calculate the positions and derivatives of the spline knots.
 
@@ -252,10 +252,10 @@ def NeuralSplineCoupling(
 @Bijector
 def RollingSplineCoupling(
     nlayers: int,
-    K: int = 8,
+    K: int = 16,
     B: float = 3,
     hidden_layers: int = 2,
-    hidden_dim: int = 32,
+    hidden_dim: int = 128,
 ) -> InitFunction:
     """Bijector that alternates NeuralSplineCouplings and Roll bijections.
 
@@ -263,14 +263,14 @@ def RollingSplineCoupling(
     ----------
     nlayers : int
         The number of (NeuralSplineCoupling(), Roll()) couplets in the chain.
-    K : int, default=8
+    K : int, default=16
         Number of bins in the RollingSplineCoupling.
     B : float, default=3
         Range of the splines in the RollingSplineCoupling.
     hidden_layers : int, default=2
         The number of hidden layers in the neural network used to calculate
         the bins and derivatives in the RollingSplineCoupling.
-    hidden_dim : int, default=32
+    hidden_dim : int, default=128
         The width of the hidden layers in the neural network used to
         calculate the bins and derivatives in the RollingSplineCoupling.
 

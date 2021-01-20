@@ -161,10 +161,8 @@ def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
 
 
 @Bijector
-def ColorTransform(
-    ref_idx: int, ref_mean: float, ref_std: float, z_sharp: float = 10
-) -> InitFunction:
-    """Bijector that converts colors to magnitudes and constrains redshift positive.
+def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunction:
+    """Bijector that converts photometric colors to magnitudes.
 
     Using ColorTransform restricts the order of columns in the corresponding
     normalizing flow. Redshift must be the first column, and the following
@@ -179,8 +177,6 @@ def ColorTransform(
         The mean magnitude of the reference band.
     ref_std : float
         The standard deviation of the reference band.
-    z_sharp : float, default=10
-        The sharpness of the softplus applied to the redshift column.
 
     Returns
     -------
@@ -189,20 +185,17 @@ def ColorTransform(
 
     Notes
     -----
-    This Bijector takes a redshift parameter, a normalized reference magnitude,
-    and a series of galaxy colors, and converts them to redshift and galaxy
+    This Bijector takes redshift, a normalized reference magnitude, and a
+    series of galaxy colors, and converts them to redshift and galaxy
     magnitudes. Here is an example of the bijection:
 
-    redshift_param, R, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
+    redshift, R, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
 
-    where
-    redshift = softplus(redshift_param)
-    r = R * ref_std + ref_mean
+    where r = R * ref_std + ref_mean
 
-    This transformation is useful at the very end of your Bijector Chain,
-    as redshifts correlate with galaxy colors more directly than galaxy
-    magnitudes. In addition, the softplus applied to the redshift parameter
-    ensures that the sampled redshifts are always positive.
+    This transformation is useful at the end of your Bijector Chain, as
+    redshifts correlate with galaxy colors more directly than galaxy
+    magnitudes.
 
     In the example above, the r band was used as the reference magnitude to
     serve as a proxy for overall galaxy luminosity. In this example, this
@@ -226,8 +219,7 @@ def ColorTransform(
             # and convert all colors to be in terms of the first magnitude, mag[0]
             outputs = np.hstack(
                 (
-                    np.log(1 + np.exp(z_sharp * inputs[:, 0, None]))
-                    / z_sharp,  # softplus to force redshift positive
+                    inputs[:, 0, None],  # redshift unchanged
                     inputs[:, 1, None] * ref_std + ref_mean,  # reference mag
                     np.cumsum(inputs[:, 2:], axis=-1),  # all colors --> mag[0] - mag[i]
                 )
@@ -248,20 +240,19 @@ def ColorTransform(
                 indices_are_sorted=True,
                 unique_indices=True,
             )
-            log_det = np.log(ref_std * (1 - np.exp(-z_sharp * outputs[:, 0])))
+            log_det = np.log(ref_std) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = np.hstack(
                 (
-                    np.log(-1 + np.exp(z_sharp * inputs[:, 0, None]))
-                    / z_sharp,  # inverse of softplus
+                    inputs[:, 0, None],  # redshift
                     (inputs[:, ref_idx, None] - ref_mean) / ref_std,  # ref mag
                     -np.diff(inputs[:, 1:]),  # colors
                 )
             )
-            log_det = -np.log(ref_std * (1 - np.exp(-z_sharp * inputs[:, 0])))
+            log_det = -np.log(ref_std) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -381,6 +372,63 @@ def Shuffle() -> InitFunction:
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             return inputs[:, inv_perm], np.zeros(inputs.shape[0])
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun
+
+
+@Bijector
+def Softplus(column_idx: int, sharpness: float = 1):
+    """Bijector that applies a softplus function to the specified column(s).
+
+    Applying the softplus ensures that samples from that column will always
+    be non-negative.
+
+    Parameters
+    ----------
+    column_idx : int
+        An index or iterable of indices corresponding to the column(s)
+        you wish to be transformed.
+    sharpness : float, default=1
+        The sharpness(es) of the softplus transformation. If more than one
+        is provided, the list of sharpnesses must be of the same length as
+        column_idx.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the Softplus Bijector.
+    """
+
+    idx = np.atleast_1d(column_idx)
+    k = np.atleast_1d(sharpness)
+    if len(idx) != len(k) and len(k) != 1:
+        raise ValueError(
+            "Please provide either a single sharpness or one for each column index."
+        )
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(1 + np.exp(k * inputs[:, idx])) / k,
+            )
+            log_det = -np.log(1 + np.exp(-k * inputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(-1 + np.exp(k * inputs[:, idx])) / k,
+            )
+            log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
 
         return (), forward_fun, inverse_fun
 
