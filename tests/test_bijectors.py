@@ -62,3 +62,8 @@ class TestBijectors:
         inv_outputs_1, inv_log_det_1 = inverse_fun(params, x)
         inverse_fun = jit(inverse_fun)
         inv_outputs_2, inv_log_det_2 = inverse_fun(params, x)
+
+
+def test_softplus_bad_input():
+    with pytest.raises(ValueError):
+        Softplus(column_idx=[0, 1, 2], sharpness=[1.0, 2.0])
