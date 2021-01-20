@@ -262,7 +262,7 @@ class Flow:
     def train(
         self,
         inputs: pd.DataFrame,
-        epochs: int = 25,
+        epochs: int = 50,
         batch_size: int = 1024,
         optimizer: Optimizer = None,
         seed: int = 0,
@@ -278,7 +278,7 @@ class Flow:
         inputs : pd.DataFrame
             Data on which to train the normalizing flow.
             Must have columns matching self.data_columns.
-        epochs : int, default=25
+        epochs : int, default=50
             Number of epochs to train.
         batch_size : int, default=1024
             Batch size for training.
