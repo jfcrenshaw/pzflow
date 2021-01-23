@@ -4,7 +4,7 @@ extras = {"dev": ["pytest", "black", "pylint"], "docs": ["sphinx", "sphinx-rtd-t
 
 setup(
     name="pzflow",
-    version="1.2.0",
+    version="1.3.0",
     author="John Franklin Crenshaw",
     author_email="jfc20@uw.edu",
     description="Probabilistic modeling of tabular data with normalizing flows.",
@@ -14,7 +14,7 @@ setup(
     url="http://github.com/jfcrenshaw/pzflow",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["jax", "jaxlib", "pandas", "dill"],
+    install_requires=["jax", "jaxlib", "pandas"],
     extras_require=extras,
     classifiers=[
         "Programming Language :: Python :: 3",

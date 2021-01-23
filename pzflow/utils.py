@@ -6,6 +6,8 @@ from jax import random
 from jax.experimental.stax import Dense, Relu, serial
 from jax.scipy.stats import multivariate_normal
 
+from pzflow import bijectors
+
 
 class Normal:
     """A multivariate Gaussian distribution with mean zero and unit variance."""
@@ -90,3 +92,14 @@ def DenseReluNetwork(
         Dense(out_dim),
     )
     return init_fun, forward_fun
+
+
+def build_bijector_from_info(info):
+    """Build a Bijector from a Bijector_Info object"""
+
+    # recurse through chains
+    if info[0] == "Chain":
+        return bijectors.Chain(*(build_bijector_from_info(i) for i in info[1]))
+    # build individual bijector from name and parameters
+    else:
+        return getattr(bijectors, info[0])(*info[1])

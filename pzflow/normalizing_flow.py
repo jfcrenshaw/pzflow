@@ -1,14 +1,15 @@
 import itertools
-from typing import Any, Sequence
+import pickle
+from typing import Any, Sequence, Tuple
 
-import dill
 import jax.numpy as np
 import pandas as pd
-from jax import grad, jit, random, ops
+from jax import grad, jit, ops, random
 from jax.experimental.optimizers import Optimizer, adam
 
-from pzflow.bijectors import InitFunction
-from pzflow.utils import Normal
+from pzflow import bijectors as bj
+from pzflow.bijectors import Bijector_Info, InitFunction
+from pzflow.utils import Normal, build_bijector_from_info
 
 
 class Flow:
@@ -29,7 +30,7 @@ class Flow:
     def __init__(
         self,
         data_columns: Sequence[str] = None,
-        bijector: InitFunction = None,
+        bijector: Tuple[InitFunction, Bijector_Info] = None,
         info: Any = None,
         file: str = None,
     ):
@@ -43,9 +44,9 @@ class Flow:
         data_columns : Sequence[str], optional
             Tuple, list, or other container of column names.
             These are the columns the flow expects/produces in DataFrames.
-        bijector : InitFunction, optional
-            A bijector InitFunction that initializes the bijector that
-            maps the Gaussian prior onto the data distribution.
+        bijector : Bijector Call, optional
+            A Bijector call that consists of the bijector InitFunction that
+            initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
         info : Any, optional
             An object to attach to the info attribute
@@ -71,25 +72,27 @@ class Flow:
         # if file is provided, load everything from the file
         if file is not None:
             with open(file, "rb") as handle:
-                save_dict = dill.load(handle)
+                save_dict = pickle.load(handle)
             # load params from the file
             self.data_columns = save_dict["data_columns"]
             self._input_dim = len(self.data_columns)
             self.info = save_dict["info"]
-            self._bijector = save_dict["bijector"]
+            self._bijector_info = save_dict["bijector_info"]
             self._params = save_dict["params"]
-            # initialize the forward and inverse functions
-            _, self._forward, self._inverse = self._bijector(
+
+            init_fun, _ = build_bijector_from_info(self._bijector_info)
+            _, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
             )
+
         # if no file is provided, use provided parameters
         else:
             self.data_columns = tuple(data_columns)
             self._input_dim = len(self.data_columns)
             self.info = info
-            self._bijector = bijector
+            init_fun, self._bijector_info = bijector
             # initialize the bijector with random params
-            self._params, self._forward, self._inverse = self._bijector(
+            self._params, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
             )
 
@@ -242,6 +245,11 @@ class Flow:
         Pickles the flow and saves it to a file that can be passed as
         the `file` argument during flow instantiation.
 
+        WARNING: Currently, this method only works for bijectors that are
+        implemented in the `bijectors` module. If you want to save a flow
+        with a custom bijector, you either need to add the it to that
+        module, or handle the saving and loading on your end.
+
         Parameters
         ----------
         file : str
@@ -251,13 +259,13 @@ class Flow:
         save_dict = {
             "data_columns": self.data_columns,
             "info": self.info,
-            "bijector": self._bijector,
+            "bijector_info": self._bijector_info,
             "params": self._params,
         }
         if not file.endswith(".pkl"):
             file += ".pkl"
         with open(file, "wb") as handle:
-            dill.dump(save_dict, handle, recurse=True)
+            pickle.dump(save_dict, handle)
 
     def train(
         self,

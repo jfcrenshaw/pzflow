@@ -30,7 +30,7 @@ x = np.array(
 )
 class TestBijectors:
     def test_returns_correct_shape(self, bijector, args):
-        init_fun = bijector(*args)
+        init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
         fwd_outputs, fwd_log_det = forward_fun(params, x)
@@ -42,7 +42,7 @@ class TestBijectors:
         assert inv_log_det.shape == x.shape[:1]
 
     def test_is_bijective(self, bijector, args):
-        init_fun = bijector(*args)
+        init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
         fwd_outputs, fwd_log_det = forward_fun(params, x)
@@ -52,7 +52,7 @@ class TestBijectors:
         assert np.allclose(fwd_log_det, -inv_log_det, atol=1e-6)
 
     def test_is_jittable(self, bijector, args):
-        init_fun = bijector(*args)
+        init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
         fwd_outputs_1, fwd_log_det_1 = forward_fun(params, x)
