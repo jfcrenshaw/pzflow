@@ -6,6 +6,7 @@ from jax import ops, random
 
 # define a type alias for Jax Pytrees
 Pytree = Union[tuple, list]
+Bijector_Info = Tuple[str, tuple]
 
 
 class ForwardFunction:
@@ -109,24 +110,32 @@ class Bijector:
         self._func = func
         update_wrapper(self, func)
 
-    def __call__(self, *args, **kwargs) -> InitFunction:
+    def __call__(self, *args, **kwargs) -> Tuple[InitFunction, Bijector_Info]:
         return self._func(*args, **kwargs)
 
 
 @Bijector
-def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
+def Chain(
+    *inputs: Sequence[Tuple[InitFunction, Bijector_Info]]
+) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that chains multiple InitFunctions into a single InitFunction.
 
     Parameters
     ----------
-    init_funs : Sequence[InitFunction]
-        A contained of Bijector InitFunctions to be chained together.
+    inputs : (Bijector1(), Bijector2(), ...)
+        A container of Bijector calls to be chained together.
 
     Returns
     -------
     InitFunction
         The InitFunction of the total chained Bijector.
+    Bijector_Info
+        Tuple('Chain', Tuple(Bijector_Info for each bijection in the chain))
+        This allows the chain to be recreated later.
     """
+
+    init_funs = tuple(i[0] for i in inputs)
+    bijector_info = ("Chain", tuple(i[1] for i in inputs))
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -157,11 +166,13 @@ def Chain(*init_funs: Sequence[InitFunction]) -> InitFunction:
 
         return all_params, forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info
 
 
 @Bijector
-def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunction:
+def ColorTransform(
+    ref_idx: int, ref_mean: float, ref_std: float
+) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that converts photometric colors to magnitudes.
 
     Using ColorTransform restricts the order of columns in the corresponding
@@ -182,6 +193,9 @@ def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunctio
     -------
     InitFunction
         The InitFunction of the the ColorTransform Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
 
     Notes
     -----
@@ -210,6 +224,8 @@ def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunctio
     the following columns must be adjacent color magnitudes,
     e.g.: redshift, R, u-g, g-r, r-i --> redshift, u, g, r, i
     """
+
+    bijector_info = ("ColorTransform", (ref_idx, ref_mean, ref_std))
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -257,36 +273,45 @@ def ColorTransform(ref_idx: int, ref_mean: float, ref_std: float) -> InitFunctio
 
         return (), forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info
 
 
 @Bijector
-def Reverse() -> InitFunction:
+def Reverse() -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that reverses the order of inputs.
 
     Returns
     -------
     InitFunction
         The InitFunction of the the Reverse Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
     """
+
+    bijector_info = ("Reverse", ())
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            return inputs[:, ::-1], np.zeros(inputs.shape[0])
+            outputs = inputs[:, ::-1]
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            return inputs[:, ::-1], np.zeros(inputs.shape[0])
+            outputs = inputs[:, ::-1]
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
 
         return (), forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info
 
 
 @Bijector
-def Roll(shift: int = 1) -> InitFunction:
+def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that rolls inputs along their last column using np.roll.
 
     Parameters
@@ -298,25 +323,34 @@ def Roll(shift: int = 1) -> InitFunction:
     -------
     InitFunction
         The InitFunction of the the Roll Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
     """
+
+    bijector_info = ("Roll", (shift,))
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            return np.roll(inputs, shift=shift, axis=-1), np.zeros(inputs.shape[0])
+            outputs = np.roll(inputs, shift=shift, axis=-1)
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            return np.roll(inputs, shift=-shift, axis=-1), np.zeros(inputs.shape[0])
+            outputs = np.roll(inputs, shift=-shift, axis=-1)
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
 
         return (), forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info
 
 
 @Bijector
-def Scale(scale: float) -> InitFunction:
+def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that multiplies inputs by a scalar.
 
     Parameters
@@ -328,7 +362,12 @@ def Scale(scale: float) -> InitFunction:
     -------
     InitFunction
         The InitFunction of the the Scale Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
     """
+
+    bijector_info = ("Scale", (scale,))
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -346,18 +385,23 @@ def Scale(scale: float) -> InitFunction:
 
         return (), forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info
 
 
 @Bijector
-def Shuffle() -> InitFunction:
+def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that randomly permutes inputs.
 
     Returns
     -------
     InitFunction
         The InitFunction of the Shuffle Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
     """
+
+    bijector_info = ("Shuffle", ())
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -367,19 +411,25 @@ def Shuffle() -> InitFunction:
 
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            return inputs[:, perm], np.zeros(inputs.shape[0])
+            outputs = inputs[:, perm]
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            return inputs[:, inv_perm], np.zeros(inputs.shape[0])
+            outputs = inputs[:, inv_perm]
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
 
         return (), forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info
 
 
 @Bijector
-def Softplus(column_idx: int, sharpness: float = 1):
+def Softplus(
+    column_idx: int, sharpness: float = 1
+) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that applies a softplus function to the specified column(s).
 
     Applying the softplus ensures that samples from that column will always
@@ -399,6 +449,9 @@ def Softplus(column_idx: int, sharpness: float = 1):
     -------
     InitFunction
         The InitFunction of the Softplus Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
     """
 
     idx = np.atleast_1d(column_idx)
@@ -407,6 +460,8 @@ def Softplus(column_idx: int, sharpness: float = 1):
         raise ValueError(
             "Please provide either a single sharpness or one for each column index."
         )
+
+    bijector_info = ("Softplus", (column_idx, sharpness))
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -432,4 +487,4 @@ def Softplus(column_idx: int, sharpness: float = 1):
 
         return (), forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info

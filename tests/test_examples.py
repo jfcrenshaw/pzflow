@@ -1,3 +1,4 @@
+import jax.numpy as np
 import pandas as pd
 from pzflow import examples
 from pzflow import Flow
@@ -19,3 +20,9 @@ def test_load_example_flow():
     flow = examples.example_flow()
     assert isinstance(flow, Flow)
     assert isinstance(flow.info, str)
+
+    samples = flow.sample(2)
+    flow.log_prob(samples)
+
+    grid = np.arange(0, 2.5, 0.5)
+    flow.posterior(samples, column="redshift", grid=grid)

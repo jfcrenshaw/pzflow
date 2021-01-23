@@ -4,6 +4,7 @@ import jax.numpy as np
 from jax.nn import softmax, softplus
 from pzflow.bijectors.bijectors import (
     Bijector,
+    Bijector_Info,
     Chain,
     ForwardFunction,
     InitFunction,
@@ -155,7 +156,7 @@ def _RationalQuadraticSpline(
 @Bijector
 def NeuralSplineCoupling(
     K: int = 16, B: float = 3, hidden_layers: int = 2, hidden_dim: int = 128
-) -> InitFunction:
+) -> Tuple[InitFunction, Bijector_Info]:
     """A coupling layer bijection with rational quadratic splines.
 
     This Bijector is a Coupling Layer [1,2], and as such only transforms
@@ -185,6 +186,9 @@ def NeuralSplineCoupling(
     -------
     InitFunction
         The InitFunction of the NeuralSplineCoupling Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
 
     References
     ----------
@@ -199,6 +203,8 @@ def NeuralSplineCoupling(
         https://arxiv.org/abs/1906.04032
     """
 
+    bijector_info = ("NeuralSplineCoupling", (K, B, hidden_layers, hidden_dim))
+
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
@@ -212,17 +218,22 @@ def NeuralSplineCoupling(
         )
         _, network_params = network_init_fun(rng, (upper_dim,))
 
-        @ForwardFunction
-        def forward_fun(params, inputs):
-            # lower dimensions are transformed as function of upper dimensions
-            upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
-            # widths, heights, derivatives = function(upper dimensions)
+        # calculate spline parameters as a function of the upper variables
+        def spline_params(params, upper):
             outputs = network_apply_fun(params, upper)
             outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1])
             W, H, D = np.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)
             H = 2 * B * softmax(H)
             D = softplus(D)
+            return W, H, D
+
+        @ForwardFunction
+        def forward_fun(params, inputs):
+            # lower dimensions are transformed as function of upper dimensions
+            upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
+            # widths, heights, derivatives = function(upper dimensions)
+            W, H, D = spline_params(params, upper)
             # transform the lower dimensions with the Rational Quadratic Spline
             lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=False)
             outputs = np.hstack((upper, lower))
@@ -233,12 +244,7 @@ def NeuralSplineCoupling(
             # lower dimensions are transformed as function of upper dimensions
             upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
             # widths, heights, derivatives = function(upper dimensions)
-            outputs = network_apply_fun(params, upper)
-            outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1])
-            W, H, D = np.split(outputs, [K, 2 * K], axis=2)
-            W = 2 * B * softmax(W)
-            H = 2 * B * softmax(H)
-            D = softplus(D)
+            W, H, D = spline_params(params, upper)
             # transform the lower dimensions with the Rational Quadratic Spline
             lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=True)
             outputs = np.hstack((upper, lower))
@@ -246,7 +252,7 @@ def NeuralSplineCoupling(
 
         return network_params, forward_fun, inverse_fun
 
-    return init_fun
+    return init_fun, bijector_info
 
 
 @Bijector
@@ -256,7 +262,7 @@ def RollingSplineCoupling(
     B: float = 3,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
-) -> InitFunction:
+) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that alternates NeuralSplineCouplings and Roll bijections.
 
     Parameters
@@ -278,6 +284,10 @@ def RollingSplineCoupling(
     -------
     InitFunction
         The InitFunction of the RollingSplineCoupling Bijector.
+    Bijector_Info
+        Nested tuple of the Bijector name and input parameters. This allows
+        it to be recreated later.
+
     """
     return Chain(
         *(NeuralSplineCoupling(K, B, hidden_layers, hidden_dim), Roll()) * nlayers
