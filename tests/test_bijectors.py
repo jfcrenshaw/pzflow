@@ -21,6 +21,8 @@ x = np.array(
         (Roll, (2,)),
         (Scale, (2,)),
         (Shuffle, ()),
+        (Softplus, (0,)),
+        (Softplus, ([3, 5], [2, 12])),
         (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
         (NeuralSplineCoupling, ()),
         (RollingSplineCoupling, (2,)),
@@ -28,7 +30,7 @@ x = np.array(
 )
 class TestBijectors:
     def test_returns_correct_shape(self, bijector, args):
-        init_fun = bijector(*args)
+        init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
         fwd_outputs, fwd_log_det = forward_fun(params, x)
@@ -40,7 +42,7 @@ class TestBijectors:
         assert inv_log_det.shape == x.shape[:1]
 
     def test_is_bijective(self, bijector, args):
-        init_fun = bijector(*args)
+        init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
         fwd_outputs, fwd_log_det = forward_fun(params, x)
@@ -50,7 +52,7 @@ class TestBijectors:
         assert np.allclose(fwd_log_det, -inv_log_det, atol=1e-6)
 
     def test_is_jittable(self, bijector, args):
-        init_fun = bijector(*args)
+        init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
         fwd_outputs_1, fwd_log_det_1 = forward_fun(params, x)
@@ -60,3 +62,8 @@ class TestBijectors:
         inv_outputs_1, inv_log_det_1 = inverse_fun(params, x)
         inverse_fun = jit(inverse_fun)
         inv_outputs_2, inv_log_det_2 = inverse_fun(params, x)
+
+
+def test_softplus_bad_input():
+    with pytest.raises(ValueError):
+        Softplus(column_idx=[0, 1, 2], sharpness=[1.0, 2.0])

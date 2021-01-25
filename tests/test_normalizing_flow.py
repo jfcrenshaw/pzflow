@@ -6,39 +6,64 @@ from pzflow.bijectors import Reverse
 
 
 @pytest.mark.parametrize(
-    "input_dim,bijector,file",
+    "data_columns,bijector,info,file",
     [
-        (None, None, None),
-        ("fake", None, "file"),
-        (None, "fake", "file"),
-        ("fake", "fake", "file"),
+        (None, None, None, None),
+        (("x", "y"), None, None, None),
+        (None, Reverse(), None, None),
+        (("x", "y"), None, None, "file"),
+        (None, Reverse(), None, "file"),
+        (None, None, "fake", "file"),
     ],
 )
-def test_bad_inputs(input_dim, bijector, file):
+def test_bad_inputs(data_columns, bijector, info, file):
     with pytest.raises(ValueError):
-        flow = Flow(input_dim, bijector, file)
+        Flow(data_columns, bijector, info, file)
 
 
 def test_returns_correct_shape():
-    columns = ("x", "y")
+    columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
-    xarray = np.array([[1, 2], [3, 4]])
+    xarray = np.array([[1, 2], [3, 4], [5, 6]])
     x = pd.DataFrame(xarray, columns=columns)
 
-    assert flow._forward(flow._params, xarray)[0].shape == x.shape
-    assert flow._inverse(flow._params, xarray)[0].shape == x.shape
-    assert flow.sample(2).shape == x.shape
+    xfwd, xfwd_log_det = flow._forward(flow._params, xarray)
+    assert xfwd.shape == x.shape
+    assert xfwd_log_det.shape == (x.shape[0],)
+
+    xinv, xinv_log_det = flow._inverse(flow._params, xarray)
+    assert xinv.shape == x.shape
+    assert xinv_log_det.shape == (x.shape[0],)
+
+    nsamples = 4
+    assert flow.sample(nsamples).shape == (nsamples, x.shape[1])
     assert flow.log_prob(x).shape == (x.shape[0],)
 
     grid = np.arange(0, 2.1, 0.12)
-    assert flow.posterior(x, column="x", grid=grid).shape == (x.shape[0], grid.size)
-    assert flow.posterior(x.iloc[:, 1:], column="x", grid=grid).shape == (
-        x.shape[0],
-        grid.size,
-    )
+    pdfs = flow.posterior(x, column="y", grid=grid)
+    assert pdfs.shape == (x.shape[0], grid.size)
+    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid)
+    assert pdfs.shape == (x.shape[0], grid.size)
+    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2)
+    assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
+
+
+def test_posterior_batch():
+    columns = ("redshift", "y")
+    flow = Flow(columns, Reverse())
+
+    xarray = np.array([[1, 2], [3, 4], [5, 6]])
+    x = pd.DataFrame(xarray, columns=columns)
+
+    grid = np.arange(0, 2.1, 0.12)
+    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid)
+    pdfs_batched = flow.posterior(
+        x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2
+    )
+    assert np.allclose(pdfs, pdfs_batched)
 
 
 def test_flow_bijection():
@@ -61,10 +86,10 @@ def test_load_flow(tmp_path):
     columns = ("x", "y")
     flow = Flow(columns, Reverse(), info=["random", 42])
 
-    file = tmp_path / "test-flow.dill"
+    file = tmp_path / "test-flow"
     flow.save(str(file))
 
-    file = tmp_path / "test-flow.dill"
+    file = tmp_path / "test-flow.pkl"
     flow = Flow(file=str(file))
 
     x = np.array([[1, 2], [3, 4]])
