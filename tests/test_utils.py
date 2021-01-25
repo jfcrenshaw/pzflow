@@ -1,13 +1,9 @@
 import pytest
 import jax.numpy as np
-<<<<<<< HEAD
-from pzflow.utils import Normal, LSSTErrorModel
 import pandas as pd
-=======
 from jax import random
 from pzflow.bijectors import *
-from pzflow.utils import Normal, build_bijector_from_info
->>>>>>> main
+from pzflow.utils import Normal, build_bijector_from_info, LSSTErrorModel
 
 
 def test_Normal_returns_correct_shapes():
@@ -83,7 +79,7 @@ def test_LSSTErrorModel_returns_correct_shape():
 
     assert err_data.shape == (data.shape[0], 2 * data.shape[1] - 1)
 
-    
+
 def test_build_bijector_from_info():
 
     x = np.array([[1, 2, 3, 4], [5, 6, 7, 8]])
