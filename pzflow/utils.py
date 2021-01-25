@@ -11,6 +11,47 @@ import pandas as pd
 from pzflow import bijectors
 
 
+def build_bijector_from_info(info: bijectors.Bijector_Info) -> bijectors.Bijector:
+    """Build a Bijector from a Bijector_Info object"""
+
+    # recurse through chains
+    if info[0] == "Chain":
+        return bijectors.Chain(*(build_bijector_from_info(i) for i in info[1]))
+    # build individual bijector from name and parameters
+    else:
+        return getattr(bijectors, info[0])(*info[1])
+
+
+def DenseReluNetwork(
+    out_dim: int, hidden_layers: int, hidden_dim: int
+) -> Tuple[Callable, Callable]:
+    """Create a dense neural network with Relu after hidden layers.
+
+    Parameters
+    ----------
+    out_dim : int
+        The output dimension.
+    hidden_layers : int
+        The number of hidden layers
+    hidden_dim : int
+        The dimension of the hidden layers
+
+    Returns
+    -------
+    init_fun : function
+        The function that initializes the network. Note that this is the
+        init_function defined in the Jax stax module, which is different
+        from the functions of my InitFunction class.
+    forward_fun : function
+        The function that passes the inputs through the neural network.
+    """
+    init_fun, forward_fun = serial(
+        *(Dense(hidden_dim), Relu) * hidden_layers,
+        Dense(out_dim),
+    )
+    return init_fun, forward_fun
+
+
 class Normal:
     """A multivariate Gaussian distribution with mean zero and unit variance."""
 
@@ -156,44 +197,3 @@ class LSSTErrorModel:
             ] = self.undetected_flag
 
         return data
-
-
-def DenseReluNetwork(
-    out_dim: int, hidden_layers: int, hidden_dim: int
-) -> Tuple[Callable, Callable]:
-    """Create a dense neural network with Relu after hidden layers.
-
-    Parameters
-    ----------
-    out_dim : int
-        The output dimension.
-    hidden_layers : int
-        The number of hidden layers
-    hidden_dim : int
-        The dimension of the hidden layers
-
-    Returns
-    -------
-    init_fun : function
-        The function that initializes the network. Note that this is the
-        init_function defined in the Jax stax module, which is different
-        from the functions of my InitFunction class.
-    forward_fun : function
-        The function that passes the inputs through the neural network.
-    """
-    init_fun, forward_fun = serial(
-        *(Dense(hidden_dim), Relu) * hidden_layers,
-        Dense(out_dim),
-    )
-    return init_fun, forward_fun
-
-
-def build_bijector_from_info(info):
-    """Build a Bijector from a Bijector_Info object"""
-
-    # recurse through chains
-    if info[0] == "Chain":
-        return bijectors.Chain(*(build_bijector_from_info(i) for i in info[1]))
-    # build individual bijector from name and parameters
-    else:
-        return getattr(bijectors, info[0])(*info[1])
