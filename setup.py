@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-extras = {"dev": ["pytest", "black", "pylint"], "docs": ["sphinx", "sphinx-rtd-theme"]}
+extras = {"dev": ["black", "pytest", "pylint", "twine"], "docs": ["sphinx", "sphinx-rtd-theme"]}
 
 setup(
     name="pzflow",
