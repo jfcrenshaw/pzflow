@@ -4,12 +4,12 @@ from typing import Any, Sequence, Tuple
 
 import jax.numpy as np
 import pandas as pd
-from jax import grad, jit, ops, random
+from jax import grad, jit, ops, random, jacfwd, vmap
 from jax.experimental.optimizers import Optimizer, adam
 
 from pzflow import bijectors as bj
 from pzflow.bijectors import Bijector_Info, InitFunction
-from pzflow.utils import Normal, build_bijector_from_info
+from pzflow.utils import build_bijector_from_info, Normal, sub_diag_indices
 
 
 class Flow:
@@ -99,6 +99,43 @@ class Flow:
         # use a standard Gaussian as the prior distribution
         self.prior = Normal(self._input_dim)
 
+    def _array_with_errs(self, inputs: pd.DataFrame, skip: str = None):
+        """Convert pandas DataFrame to Jax array with columns for errors.
+
+        Skip can be one of the columns in self.data_columns. If provided,
+        that data column isn't return (but its error column is). This is
+        a useful utility for the posterior method.
+        """
+        X = inputs.copy()
+        for col in self.data_columns:
+            # if errors are provided for the column, fill in zeros
+            if f"{col}_err" not in inputs.columns or col == skip:
+                X[f"{col}_err"] = np.zeros(X.shape[0])
+        # get list of columns in correct order
+        cols_with_errs = list(self.data_columns)
+        if skip is not None:
+            cols_with_errs.remove(skip)
+        cols_with_errs += [col + "_err" for col in self.data_columns]
+        # convert to jax array
+        X = np.array(X[cols_with_errs].values)
+        return X
+
+    def _Jinv(self, inputs: np.ndarray) -> np.ndarray:
+        """Calculates the Jacobian of the inverse bijection"""
+
+        # calculates jacobian for a single input
+        # first we define a lambda that calculates the inverse
+        # (but drops the log_det). then we take the Jacobian of that
+        # evaluated at the vector y. the [None, :] and .squeeze() are
+        # just making sure the inputs and outputs are of the correct shape
+        def J(y):
+            return jacfwd(lambda x: self._inverse(self._params, x)[0])(
+                y[None, :]
+            ).squeeze()
+
+        # now we can vectorize with Jax and apply to whole set of inputs at once
+        return vmap(J)(inputs)
+
     def _log_prob(self, inputs: np.ndarray) -> np.ndarray:
         """Log prob for arrays."""
         # calculate log_prob
@@ -108,7 +145,31 @@ class Flow:
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
 
-    def log_prob(self, inputs: pd.DataFrame) -> np.ndarray:
+    def _log_prob_convolved(self, inputs: np.ndarray) -> np.ndarray:
+        """Log prob for arrays, with error convolution"""
+
+        # separate data from data errs
+        ncols = len(self.data_columns)
+        X, Xerr = inputs[:, :ncols], inputs[:, ncols:]
+
+        # inverse and log determinant
+        u, log_det = self._inverse(self._params, X)
+
+        # Jacobian of inverse bijection
+        Jinv = self._Jinv(X)
+        # calculate modified covariances
+        sig_u = Jinv @ (Xerr[..., None] * Jinv.transpose((0, 2, 1)))
+        # add identity matrix to each covariance matrix
+        idx = sub_diag_indices(sig_u)
+        sig = ops.index_update(sig_u, idx, sig_u[idx] + 1)
+
+        # calculate log_prob w.r.t the prior, with the new covariances
+        log_prob = self.prior.log_prob(u, sig) + log_det
+        # set NaN's to negative infinity (i.e. zero probability)
+        log_prob = np.nan_to_num(log_prob, nan=np.NINF)
+        return log_prob
+
+    def log_prob(self, inputs: pd.DataFrame, convolve_err=False) -> np.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
@@ -117,22 +178,30 @@ class Flow:
             Input data for which log probability density is calculated.
             Every column in self.data_columns must be present.
             If other columns are present, they are ignored.
+        convolve_err : boolean, default=False
+            WRITE DESCRIPTION!
 
         Returns
         -------
         np.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        # convert data to an array with columns ordered
-        columns = list(self.data_columns)
-        X = np.array(inputs[columns].values)
-        return self._log_prob(X)
+        if not convolve_err:
+            # convert data to an array with columns ordered
+            columns = list(self.data_columns)
+            X = np.array(inputs[columns].values)
+            return self._log_prob(X)
+        else:
+            # convert data to an array with columns ordered
+            X = self._array_with_errs(inputs)
+            return self._log_prob_convolved(X)
 
     def posterior(
         self,
         inputs: pd.DataFrame,
         column: str,
         grid: np.ndarray,
+        convolve_err: bool = False,
         batch_size: int = None,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
@@ -172,9 +241,14 @@ class Flow:
         nrows = inputs.shape[0]
         batch_size = nrows if batch_size is None else batch_size
 
-        # convert data (sans the provided column)
-        # to an array with columns ordered
-        X = np.array(inputs[columns].values)
+        # convert data (sans the provided column) to array with columns ordered
+        # and alias the required log_prob function
+        if convolve_err:
+            X = self._array_with_errs(inputs, skip=column)
+            log_prob_fun = self._log_prob_convolved
+        else:
+            X = np.array(inputs[columns].values)
+            log_prob_fun = self._log_prob
 
         pdfs = np.zeros((nrows, len(grid)))
 
@@ -201,7 +275,8 @@ class Flow:
             )
 
             # calculate probability densities
-            log_prob = self._log_prob(batch).reshape((-1, len(grid)))
+
+            log_prob = log_prob_fun(batch).reshape((-1, len(grid)))
             pdfs = ops.index_update(
                 pdfs,
                 ops.index[batch_idx : batch_idx + batch_size, :],
