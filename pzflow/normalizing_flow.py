@@ -1,6 +1,6 @@
 import itertools
 import pickle
-from typing import Any, Sequence, Tuple
+from typing import Any, Callable, Sequence, Tuple
 
 import jax.numpy as np
 import pandas as pd
