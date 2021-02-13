@@ -102,8 +102,8 @@ class Flow:
         """Convert pandas DataFrame to Jax array with columns for errors.
 
         Skip can be one of the columns in self.data_columns. If provided,
-        that data column isn't returned (but its error column is). This
-        is a useful utility for the posterior method.
+        that data column isn't returned (but its zero-error column is).
+        This is a useful utility for the posterior method.
         """
         X = inputs.copy()
         for col in self.data_columns:
