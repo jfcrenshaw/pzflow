@@ -156,7 +156,19 @@ def test_control_sample_randomness():
     assert np.allclose(flow.sample(2, seed=0), flow.sample(2, seed=0))
 
 
-def test_unimplemented_convolve_err():
+@pytest.mark.parametrize(
+    "epochs,burn_in_epochs,loss_fn,",
+    [
+        (-1, 10, None),
+        (2.4, 10, None),
+        ("a", 10, None),
+        (10, -1, None),
+        (10, 1.4, None),
+        (10, "a", None),
+        (10, 10, lambda x: x ** 2),
+    ],
+)
+def test_train_bad_inputs(epochs, burn_in_epochs, loss_fn):
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -164,4 +176,10 @@ def test_unimplemented_convolve_err():
     x = pd.DataFrame(xarray, columns=columns)
 
     with pytest.raises(ValueError):
-        flow.train(x, convolve_err=True, loss_fn=lambda x: x ** 2)
+        flow.train(
+            x,
+            epochs=epochs,
+            burn_in_epochs=burn_in_epochs,
+            loss_fn=lambda x: x ** 2,
+            convolve_err=True,
+        )
