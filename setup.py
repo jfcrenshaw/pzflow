@@ -1,10 +1,10 @@
 from setuptools import setup, find_packages
 
-extras = {"dev": ["pytest", "black", "pylint"], "docs": ["sphinx", "sphinx-rtd-theme"]}
+extras = {"dev": ["black", "pytest", "pylint", "twine"], "docs": ["sphinx", "sphinx-rtd-theme"]}
 
 setup(
     name="pzflow",
-    version="1.3.0",
+    version="1.3.1",
     author="John Franklin Crenshaw",
     author_email="jfc20@uw.edu",
     description="Probabilistic modeling of tabular data with normalizing flows.",
