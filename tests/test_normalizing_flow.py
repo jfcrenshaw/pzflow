@@ -60,7 +60,10 @@ def test_returns_correct_shape():
     assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
-    assert len(flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4)) == 17
+    assert (
+        len(flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4, verbose=True))
+        == 17
+    )
 
 
 def test_columns_with_errs():
