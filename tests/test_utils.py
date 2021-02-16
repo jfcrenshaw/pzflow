@@ -65,3 +65,5 @@ def test_sub_diag_indices():
     y = np.array([[[1, 0], [0, 1]], [[2, 1], [1, 2]], [[3, 2], [2, 3]]])
     idx = sub_diag_indices(x)
     x = ops.index_update(x, idx, x[idx] + 1)
+
+    assert np.allclose(x, y)
