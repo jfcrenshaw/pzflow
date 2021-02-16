@@ -1,7 +1,7 @@
 import jax.numpy as np
-from jax import random
+from jax import random, ops
 from pzflow.bijectors import *
-from pzflow.utils import Normal, build_bijector_from_info
+from pzflow.utils import *
 
 
 def test_returns_correct_shapes():
@@ -58,3 +58,10 @@ def test_build_bijector_from_info():
     invx, inv_log_det = inverse_fun(params, xfwd2)
     assert np.allclose(x, invx)
     assert np.allclose(log_det2, -inv_log_det)
+
+
+def test_sub_diag_indices():
+    x = np.array([[[0, 0], [0, 0]], [[1, 1], [1, 1]], [[2, 2], [2, 2]]])
+    y = np.array([[[1, 0], [0, 1]], [[2, 1], [1, 2]], [[3, 2], [2, 3]]])
+    idx = sub_diag_indices(x)
+    x = ops.index_update(x, idx, x[idx] + 1)

@@ -177,6 +177,9 @@ class Flow:
             If other columns are present, they are ignored.
         convolve_err : boolean, default=False
             Whether to analytically convolve Gaussian errors.
+            Looks for in `inputs` for columns with names ending in `_err`.
+            I.e., the error for column `u` needs to be in the column `u_err`.
+            Zero error assumed for any missing error columns.
 
         Returns
         -------
@@ -221,6 +224,9 @@ class Flow:
             Grid on which to calculate the posterior.
         convolve_err : boolean, default=False
             Whether to analytically convolve Gaussian errors in the posterior.
+            Looks for in `inputs` for columns with names ending in `_err`.
+            I.e., the error for column `u` needs to be in the column `u_err`.
+            Zero error assumed for any missing error columns.
         batch_size : int, default=None
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
@@ -426,9 +432,14 @@ class Flow:
             If not provided, will be -mean(log_prob).
         convolve_err : boolean, default=False
             Whether to convolve Gaussian errors in the loss function.
-            Only "works" with the default loss function and a Gaussian base
-            distribution. Note this is still experimental -- training is
-            unstable and often results in NaN's.
+            Looks for in `inputs` for columns with names ending in `_err`.
+            I.e., the error for column `u` needs to be in the column `u_err`.
+            Zero error assumed for any missing error columns.
+            Note this only works with the default loss function and a
+            Gaussian base distribution.
+            WARNING this is still experimental -- training is unstable and
+            often results in NaN's.
+
         burn_in_epochs : int, default=0
             The number of epochs to train without error convolution,
             before beginning to train with error convolution.
