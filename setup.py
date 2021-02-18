@@ -17,7 +17,7 @@ setup(
     url="http://github.com/jfcrenshaw/pzflow",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["jax", "jaxlib", "pandas"],
+    install_requires=["jax", "jaxlib", "pandas>=1.1"],
     extras_require=extras,
     classifiers=[
         "Programming Language :: Python :: 3",
