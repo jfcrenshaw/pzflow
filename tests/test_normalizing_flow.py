@@ -56,6 +56,8 @@ def test_returns_correct_shape():
     assert pdfs.shape == (x.shape[0], grid.size)
     pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2)
     assert pdfs.shape == (x.shape[0], grid.size)
+    pdfs = flow.posterior(x, column="y", grid=grid, normalize=False)
+    assert pdfs.shape == (x.shape[0], grid.size)
     pdfs = flow.posterior(x, column="y", grid=grid, convolve_err=True)
     assert pdfs.shape == (x.shape[0], grid.size)
 
