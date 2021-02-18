@@ -4,11 +4,12 @@ from typing import Any, Callable, Sequence, Tuple
 
 import jax.numpy as np
 import pandas as pd
-from jax import grad, jit, ops, random, jacfwd, vmap
+from jax import grad, jacfwd, jit, ops, random, vmap
 from jax.experimental.optimizers import Optimizer, adam
 
+from pzflow import distributions
 from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
-from pzflow.utils import build_bijector_from_info, Normal, sub_diag_indices
+from pzflow.utils import build_bijector_from_info, sub_diag_indices
 
 
 class Flow:
@@ -21,8 +22,8 @@ class Flow:
     info : Any
         Object containing any kind of info included with the flow.
         Often describes the data the flow is trained on.
-    prior : pzflow.utils.Normal
-        The Gaussian distribution the flow samples from before the bijection.
+    base : pzflow.utils.Normal
+        The base distribution the flow samples from before the bijection.
         Has it's own sample and log_prob methods.
     """
 
@@ -30,6 +31,7 @@ class Flow:
         self,
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
+        base: str = None,
         info: Any = None,
         file: str = None,
     ):
@@ -47,6 +49,9 @@ class Flow:
             A Bijector call that consists of the bijector InitFunction that
             initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
+        base : str, optional
+            The base distribution for the normalizing flow. Possible values are
+            `Normal` or `Tdist`. Default is `Normal`.
         info : Any, optional
             An object to attach to the info attribute
         file : str, optional
@@ -62,7 +67,7 @@ class Flow:
         elif data_columns is None and bijector is not None:
             raise ValueError("Please also provide data_columns.")
         elif file is not None and any(
-            (data_columns != None, bijector != None, info != None)
+            (data_columns != None, bijector != None, base != None, info != None)
         ):
             raise ValueError(
                 "If providing a file, please do not provide any other parameters."
@@ -79,6 +84,10 @@ class Flow:
             self._bijector_info = save_dict["bijector_info"]
             self._params = save_dict["params"]
 
+            # set up the base distribution
+            self.base = getattr(distributions, save_dict["base"])(self._input_dim)
+
+            # set up the bijector
             init_fun, _ = build_bijector_from_info(self._bijector_info)
             _, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
@@ -89,14 +98,17 @@ class Flow:
             self.data_columns = tuple(data_columns)
             self._input_dim = len(self.data_columns)
             self.info = info
+
+            # set up the base distribution
+            base = "Normal" if base is None else base
+            self.base = getattr(distributions, base)(self._input_dim)
+
+            # set up the bijector with random params
             init_fun, self._bijector_info = bijector
-            # initialize the bijector with random params
-            self._params, self._forward, self._inverse = init_fun(
+            bijector_params, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
             )
-
-        # use a standard Gaussian as the prior distribution
-        self.prior = Normal(self._input_dim)
+            self._params = (self.base._params, bijector_params)
 
     def _array_with_errs(self, inputs: pd.DataFrame, skip: str = None):
         """Convert pandas DataFrame to Jax array with columns for errors.
@@ -136,8 +148,8 @@ class Flow:
     def _log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Log prob for arrays."""
         # calculate log_prob
-        u, log_det = self._inverse(params, inputs)
-        log_prob = self.prior.log_prob(u) + log_det
+        u, log_det = self._inverse(params[1], inputs)
+        log_prob = self.base.log_prob(params[0], u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
@@ -150,18 +162,18 @@ class Flow:
         X, Xerr = inputs[:, :ncols], inputs[:, ncols:]
 
         # inverse and log determinant
-        u, log_det = self._inverse(params, X)
+        u, log_det = self._inverse(params[1], X)
 
         # Jacobian of inverse bijection
-        Jinv = self._Jinv(params, X)
+        Jinv = self._Jinv(params[1], X)
         # calculate modified covariances
         sig_u = Jinv @ (Xerr[..., None] * Jinv.transpose((0, 2, 1)))
         # add identity matrix to each covariance matrix
         idx = sub_diag_indices(sig_u)
         sig = ops.index_update(sig_u, idx, sig_u[idx] + 1)
 
-        # calculate log_prob w.r.t the prior, with the new covariances
-        log_prob = self.prior.log_prob(u, sig) + log_det
+        # calculate log_prob w.r.t the base distribution, with the new covariances
+        log_prob = self.base.log_prob(params[0], u, sig) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
@@ -186,6 +198,10 @@ class Flow:
         np.ndarray
             Device array of shape (inputs.shape[0],).
         """
+        if convolve_err and not isinstance(self.base, distributions.Normal):
+            raise ValueError(
+                "Currently can only convolve error when using a Normal base distribution."
+            )
         if not convolve_err:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
@@ -237,6 +253,10 @@ class Flow:
         np.ndarray
             Device array of shape (inputs.shape[0], grid.size).
         """
+        if convolve_err and not isinstance(self.base, distributions.Normal):
+            raise ValueError(
+                "Currently can only convolve error when using a Normal base distribution."
+            )
 
         # get the index of the provided column, and remove it from the list
         columns = list(self.data_columns)
@@ -314,8 +334,8 @@ class Flow:
             Pandas DataFrame with columns flow.data_columns and
             number of rows equal to nsamples.
         """
-        u = self.prior.sample(nsamples, seed)
-        x = self._forward(self._params, u)[0]
+        u = self.base.sample(self._params[0], nsamples, seed)
+        x = self._forward(self._params[1], u)[0]
         x = pd.DataFrame(x, columns=self.data_columns)
         return x
 
@@ -340,6 +360,7 @@ class Flow:
             "data_columns": self.data_columns,
             "info": self.info,
             "bijector_info": self._bijector_info,
+            "base": self.base.type,
             "params": self._params,
         }
         if not file.endswith(".pkl"):
@@ -459,6 +480,11 @@ class Flow:
 
         if convolve_err:
             print("WARNING: error convolution in training is still experimental.")
+
+        if convolve_err and not isinstance(self.base, distributions.Normal):
+            raise ValueError(
+                "Currently can only convolve error when using a Normal base distribution."
+            )
 
         # validate epochs
         if not isinstance(epochs, int) or epochs <= 0:
