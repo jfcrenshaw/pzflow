@@ -201,6 +201,7 @@ class Flow:
         inputs: pd.DataFrame,
         column: str,
         grid: np.ndarray,
+        normalize: bool = True,
         convolve_err: bool = False,
         batch_size: int = None,
     ) -> np.ndarray:
@@ -222,6 +223,8 @@ class Flow:
             `inputs` is irrelevant.
         grid : np.ndarray
             Grid on which to calculate the posterior.
+        normalize : boolean, default=True
+            Whether to normalize the posterior so that it integrates to 1.
         convolve_err : boolean, default=False
             Whether to analytically convolve Gaussian errors in the posterior.
             Looks for in `inputs` for columns with names ending in `_err`.
@@ -292,8 +295,9 @@ class Flow:
 
         # reshape so that each row is a posterior
         pdfs = pdfs.reshape((nrows, len(grid)))
-        # normalize so they integrate to one
-        pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
+        if normalize:
+            # normalize so they integrate to one
+            pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
         # set NaN's equal to zero probability
         pdfs = np.nan_to_num(pdfs, nan=0.0)
         return pdfs
