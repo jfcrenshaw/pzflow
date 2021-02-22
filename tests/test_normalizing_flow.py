@@ -88,7 +88,7 @@ def test_columns_with_errs():
 
 def test_Jinv():
     columns = ("redshift", "y")
-    flow = Flow(columns, Chain(Reverse(), Scale(2)))
+    flow = Flow(columns, Chain(Reverse(), Scale(2.0)))
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     Jinv = flow._Jinv(flow._params, xarray)
     assert np.allclose(

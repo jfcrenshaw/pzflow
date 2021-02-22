@@ -16,13 +16,14 @@ x = np.array(
 @pytest.mark.parametrize(
     "bijector,args",
     [
-        (ColorTransform, (3, 20, 5)),
+        (ColorTransform, (3,)),
         (Reverse, ()),
         (Roll, (2,)),
-        (Scale, (2,)),
+        (Scale, (2.0,)),
         (Shuffle, ()),
         (Softplus, (0,)),
-        (Softplus, ([3, 5], [2, 12])),
+        (Softplus, ([3, 5], [2.0, 12.0])),
+        (StandardScaler, (np.linspace(-1, 1, 7), np.linspace(1, 8, 7))),
         (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
         (NeuralSplineCoupling, ()),
         (RollingSplineCoupling, (2,)),
