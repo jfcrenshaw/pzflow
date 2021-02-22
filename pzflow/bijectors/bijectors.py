@@ -170,9 +170,7 @@ def Chain(
 
 
 @Bijector
-def ColorTransform(
-    ref_idx: int, ref_mean: float, ref_std: float
-) -> Tuple[InitFunction, Bijector_Info]:
+def ColorTransform(ref_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that converts photometric colors to magnitudes.
 
     Using ColorTransform restricts the order of columns in the corresponding
@@ -225,7 +223,7 @@ def ColorTransform(
     e.g.: redshift, R, u-g, g-r, r-i --> redshift, u, g, r, i
     """
 
-    bijector_info = ("ColorTransform", (ref_idx, ref_mean, ref_std))
+    bijector_info = ("ColorTransform", (ref_idx,))
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -236,7 +234,7 @@ def ColorTransform(
             outputs = np.hstack(
                 (
                     inputs[:, 0, None],  # redshift unchanged
-                    inputs[:, 1, None] * ref_std + ref_mean,  # reference mag
+                    inputs[:, 1, None],  # reference mag unchanged
                     np.cumsum(inputs[:, 2:], axis=-1),  # all colors --> mag[0] - mag[i]
                 )
             )
@@ -256,7 +254,7 @@ def ColorTransform(
                 indices_are_sorted=True,
                 unique_indices=True,
             )
-            log_det = np.log(ref_std) * np.ones(inputs.shape[0])
+            log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
@@ -264,11 +262,11 @@ def ColorTransform(
             outputs = np.hstack(
                 (
                     inputs[:, 0, None],  # redshift
-                    (inputs[:, ref_idx, None] - ref_mean) / ref_std,  # ref mag
+                    inputs[:, ref_idx, None],  # ref mag
                     -np.diff(inputs[:, 1:]),  # colors
                 )
             )
-            log_det = -np.log(ref_std) * np.ones(inputs.shape[0])
+            log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -483,6 +481,47 @@ def Softplus(
                 np.log(-1 + np.exp(k * inputs[:, idx])) / k,
             )
             log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
+def StandardScaler(
+    means: np.array, stds: np.array
+) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that applies standard scaling to each input.
+
+    Each input dimension i has an associated mean u_i and standard dev s_i.
+    In the inverse bijection, each input is rescaled as (input[i] - u_i)/s_i,
+    so that each input dimension has mean zero and unit variance.
+    The forward bijection is the opposite of this.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the StandardScaler Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    bijector_info = ("StandardScaler", (means, stds))
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            outputs = inputs * stds + means
+            log_det = np.log(stds.prod()) * np.ones(inputs.shape[0])
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = (inputs - means) / stds
+            log_det = np.log(1 / stds.prod()) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
