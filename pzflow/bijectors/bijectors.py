@@ -170,42 +170,35 @@ def Chain(
 
 
 @Bijector
-def ColorTransform(
-    ref_idx: int, ref_mean: float, ref_std: float
-) -> Tuple[InitFunction, Bijector_Info]:
+def ColorTransform(ref_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that converts photometric colors to magnitudes.
 
     Using ColorTransform restricts the order of columns in the corresponding
-    normalizing flow. Redshift must be the first column, and the following
-    columns must be adjacent color magnitudes,
-    e.g.: redshift, R, u-g, g-r, r-i --> redshift, u, g, r, i
+    normalizing flow. The first two columns must be redshift and a reference
+    magnitude, followed by adjacent colors.
+    e.g.: redshift, r, u-g, g-r, r-i --> redshift, u, g, r, i
 
     Parameters
     ----------
     ref_idx : int
-        The index corresponding to the column of the reference band.
-    ref_mean : float
-        The mean magnitude of the reference band.
-    ref_std : float
-        The standard deviation of the reference band.
+        The index corresponding to the column of the reference band in the output.
+        e.g. for the example about, ref_idx == 3 for the r column.
 
     Returns
     -------
     InitFunction
-        The InitFunction of the the ColorTransform Bijector.
+        The InitFunction of the ColorTransform Bijector.
     Bijector_Info
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
 
     Notes
     -----
-    This Bijector takes redshift, a normalized reference magnitude, and a
-    series of galaxy colors, and converts them to redshift and galaxy
-    magnitudes. Here is an example of the bijection:
+    This Bijector takes redshift, a reference magnitude, and a series of
+    galaxy colors, and converts them to redshift and galaxy magnitudes.
+    Here is an example of the bijection:
 
-    redshift, R, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
-
-    where r = R * ref_std + ref_mean
+    redshift, r, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
 
     This transformation is useful at the end of your Bijector Chain, as
     redshifts correlate with galaxy colors more directly than galaxy
@@ -214,18 +207,43 @@ def ColorTransform(
     In the example above, the r band was used as the reference magnitude to
     serve as a proxy for overall galaxy luminosity. In this example, this
     would be achieved by setting ref_idx=3 as that is the index of the column
-    corresponding to the r band in my data. You also need to provide the mean
-    and standard deviation of the r band as ref_mean and ref_std, respectively.
-    You can use another band by changing these values appropriately. E.g., in
-    the example above, you can set ref_idx=4 for the i band.
+    corresponding to the r band in my data. You can use another band by
+    changing this value accordingly. E.g., in the example above, you can set
+    ref_idx=4 for the i band.
 
     Note that using ColorTransform restricts the order of columns in the
     corresponding normalizing flow. Redshift must be the first column, and
     the following columns must be adjacent color magnitudes,
-    e.g.: redshift, R, u-g, g-r, r-i --> redshift, u, g, r, i
+    e.g.: redshift, r, u-g, g-r, r-i --> redshift, u, g, r, i
     """
 
-    bijector_info = ("ColorTransform", (ref_idx, ref_mean, ref_std))
+    # validate parameters
+    if ref_idx <= 0:
+        raise ValueError("ref_idx must be a positive integer.")
+    if not isinstance(ref_idx, int):
+        raise ValueError("ref_idx must be an integer.")
+
+    bijector_info = ("ColorTransform", (ref_idx,))
+
+    # define a convenience function for the forward_fun below
+    # if the first magnitude is the reference mag, do nothing
+    if ref_idx == 1:
+
+        def mag0(outputs):
+            return outputs
+
+    # if the first magnitude is not the reference mag,
+    # then we need to calculate the first magnitude (mag[0])
+    else:
+
+        def mag0(outputs):
+            return ops.index_update(
+                outputs,
+                ops.index[:, 1],
+                outputs[:, 1] + outputs[:, ref_idx],
+                indices_are_sorted=True,
+                unique_indices=True,
+            )
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -236,18 +254,12 @@ def ColorTransform(
             outputs = np.hstack(
                 (
                     inputs[:, 0, None],  # redshift unchanged
-                    inputs[:, 1, None] * ref_std + ref_mean,  # reference mag
+                    inputs[:, 1, None],  # reference mag unchanged
                     np.cumsum(inputs[:, 2:], axis=-1),  # all colors --> mag[0] - mag[i]
                 )
             )
             # calculate mag[0]
-            outputs = ops.index_update(
-                outputs,
-                ops.index[:, 1],
-                outputs[:, 1] + outputs[:, ref_idx],
-                indices_are_sorted=True,
-                unique_indices=True,
-            )
+            outputs = mag0(outputs)
             # mag[i] = mag[0] - (mag[0] - mag[i])
             outputs = ops.index_update(
                 outputs,
@@ -256,7 +268,7 @@ def ColorTransform(
                 indices_are_sorted=True,
                 unique_indices=True,
             )
-            log_det = np.log(ref_std) * np.ones(inputs.shape[0])
+            log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
@@ -264,11 +276,11 @@ def ColorTransform(
             outputs = np.hstack(
                 (
                     inputs[:, 0, None],  # redshift
-                    (inputs[:, ref_idx, None] - ref_mean) / ref_std,  # ref mag
+                    inputs[:, ref_idx, None],  # ref mag
                     -np.diff(inputs[:, 1:]),  # colors
                 )
             )
-            log_det = -np.log(ref_std) * np.ones(inputs.shape[0])
+            log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -328,6 +340,9 @@ def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
         This allows it to be recreated later.
     """
 
+    if not isinstance(shift, int):
+        raise ValueError("shift must be an integer.")
+
     bijector_info = ("Roll", (shift,))
 
     @InitFunction
@@ -366,6 +381,9 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
+
+    if not isinstance(scale, float):
+        raise ValueError("scale must be a float.")
 
     bijector_info = ("Scale", (scale,))
 
@@ -483,6 +501,47 @@ def Softplus(
                 np.log(-1 + np.exp(k * inputs[:, idx])) / k,
             )
             log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
+def StandardScaler(
+    means: np.array, stds: np.array
+) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that applies standard scaling to each input.
+
+    Each input dimension i has an associated mean u_i and standard dev s_i.
+    In the inverse bijection, each input is rescaled as (input[i] - u_i)/s_i,
+    so that each input dimension has mean zero and unit variance.
+    The forward bijection is the opposite of this.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the StandardScaler Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    bijector_info = ("StandardScaler", (means, stds))
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            outputs = inputs * stds + means
+            log_det = np.log(stds.prod()) * np.ones(inputs.shape[0])
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = (inputs - means) / stds
+            log_det = np.log(1 / stds.prod()) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
