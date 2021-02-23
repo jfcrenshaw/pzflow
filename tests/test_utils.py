@@ -11,7 +11,7 @@ def test_build_bijector_from_info():
 
     init_fun, info1 = Chain(
         Reverse(),
-        Chain(ColorTransform(1), Roll(-1)),
+        Chain(ColorTransform(1, [1, 2, 3]), Roll(-1)),
         Scale(-0.5),
         Softplus(0, 1),
         Chain(Roll(), Scale(-4.0)),
