@@ -18,15 +18,19 @@ from pzflow.bijectors import Chain, Reverse, Scale
 )
 def test_bad_inputs(data_columns, bijector, info, file):
     with pytest.raises(ValueError):
-        Flow(data_columns, bijector, info, file)
+        Flow(data_columns, bijector=bijector, info=info, file=file)
 
 
-def test_returns_correct_shape():
-    columns = ("redshift", "y")
-    flow = Flow(columns, Reverse())
-
+@pytest.mark.parametrize(
+    "flow",
+    [
+        Flow(("redshift", "y"), Reverse(), base="Normal"),
+        Flow(("redshift", "y"), Reverse(), base="Tdist"),
+    ],
+)
+def test_returns_correct_shape(flow):
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    x = pd.DataFrame(xarray, columns=columns)
+    x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
     x_with_errs = flow._array_with_errs(x)
     assert x_with_errs.shape == (3, 4)
@@ -47,7 +51,6 @@ def test_returns_correct_shape():
     nsamples = 4
     assert flow.sample(nsamples).shape == (nsamples, x.shape[1])
     assert flow.log_prob(x).shape == (x.shape[0],)
-    assert flow.log_prob(x, convolve_err=True).shape == (x.shape[0],)
 
     grid = np.arange(0, 2.1, 0.12)
     pdfs = flow.posterior(x, column="y", grid=grid)
@@ -56,14 +59,35 @@ def test_returns_correct_shape():
     assert pdfs.shape == (x.shape[0], grid.size)
     pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2)
     assert pdfs.shape == (x.shape[0], grid.size)
+
+    assert len(flow.train(x, epochs=11, verbose=True)) == 12
+
+
+def test_error_convolution():
+
+    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    x = pd.DataFrame(xarray, columns=("redshift", "y"))
+
+    flow = Flow(("redshift", "y"), Reverse(), base="Normal")
+
+    assert flow.log_prob(x, convolve_err=True).shape == (x.shape[0],)
+
+    grid = np.arange(0, 2.1, 0.12)
     pdfs = flow.posterior(x, column="y", grid=grid, convolve_err=True)
     assert pdfs.shape == (x.shape[0], grid.size)
 
-    assert len(flow.train(x, epochs=11, verbose=True)) == 12
     assert (
         len(flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4, verbose=True))
         == 17
     )
+
+    flow = Flow(("redshift", "y"), Reverse(), base="Tdist")
+    with pytest.raises(ValueError):
+        flow.log_prob(x, convolve_err=True).shape
+    with pytest.raises(ValueError):
+        flow.posterior(x, column="y", grid=grid, convolve_err=True)
+    with pytest.raises(ValueError):
+        flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4, verbose=True)
 
 
 def test_columns_with_errs():
