@@ -65,6 +65,16 @@ class TestBijectors:
         inv_outputs_2, inv_log_det_2 = inverse_fun(params, x)
 
 
-def test_softplus_bad_input():
+@pytest.mark.parametrize(
+    "bijector,args",
+    [
+        (ColorTransform, (0,)),
+        (ColorTransform, (1.3,)),
+        (Roll, (2.4,)),
+        (Scale, (2,)),
+        (Softplus, ([0, 1, 2], [1.0, 2.0])),
+    ],
+)
+def test_softplus_bad_input(bijector, args):
     with pytest.raises(ValueError):
-        Softplus(column_idx=[0, 1, 2], sharpness=[1.0, 2.0])
+        bijector(*args)
