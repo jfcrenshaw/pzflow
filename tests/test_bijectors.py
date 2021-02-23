@@ -16,7 +16,7 @@ x = np.array(
 @pytest.mark.parametrize(
     "bijector,args",
     [
-        (ColorTransform, (3,)),
+        (ColorTransform, (3, [1, 3, 5])),
         (Reverse, ()),
         (Roll, (2,)),
         (Scale, (2.0,)),
@@ -49,6 +49,7 @@ class TestBijectors:
         fwd_outputs, fwd_log_det = forward_fun(params, x)
         inv_outputs, inv_log_det = inverse_fun(params, fwd_outputs)
 
+        print(inv_outputs)
         assert np.allclose(inv_outputs, x, atol=1e-6)
         assert np.allclose(fwd_log_det, -inv_log_det, atol=1e-6)
 
@@ -68,8 +69,9 @@ class TestBijectors:
 @pytest.mark.parametrize(
     "bijector,args",
     [
-        (ColorTransform, (0,)),
-        (ColorTransform, (1.3,)),
+        (ColorTransform, (0, [1, 2, 3, 4])),
+        (ColorTransform, (1.3, [1, 2, 3, 4])),
+        (ColorTransform, (1, [2, 3, 4])),
         (Roll, (2.4,)),
         (Scale, (2,)),
         (Softplus, ([0, 1, 2], [1.0, 2.0])),
