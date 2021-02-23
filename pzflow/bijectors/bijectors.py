@@ -170,7 +170,7 @@ def Chain(
 
 
 @Bijector
-def ColorTransform(ref_idx: int) -> Tuple[InitFunction, Bijector_Info]:
+def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that converts photometric colors to magnitudes.
 
     Using ColorTransform restricts the order of columns in the corresponding
@@ -183,6 +183,9 @@ def ColorTransform(ref_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     ref_idx : int
         The index corresponding to the column of the reference band in the output.
         e.g. for the example about, ref_idx == 3 for the r column.
+    mag_idx : arraylike of int
+        The indices of the magnitudes from which colors will be calculated.
+        See notes below for a longer explanation.
 
     Returns
     -------
@@ -222,52 +225,67 @@ def ColorTransform(ref_idx: int) -> Tuple[InitFunction, Bijector_Info]:
         raise ValueError("ref_idx must be a positive integer.")
     if not isinstance(ref_idx, int):
         raise ValueError("ref_idx must be an integer.")
+    if ref_idx not in mag_idx:
+        raise ValueError("ref_idx must be in mag_idx.")
 
-    bijector_info = ("ColorTransform", (ref_idx,))
+    bijector_info = ("ColorTransform", (ref_idx, mag_idx))
 
-    # define a convenience function for the forward_fun below
-    # if the first magnitude is the reference mag, do nothing
-    if ref_idx == 1:
-
-        def mag0(outputs):
-            return outputs
-
-    # if the first magnitude is not the reference mag,
-    # then we need to calculate the first magnitude (mag[0])
-    else:
-
-        def mag0(outputs):
-            return ops.index_update(
-                outputs,
-                ops.index[:, 1],
-                outputs[:, 1] + outputs[:, ref_idx],
-                indices_are_sorted=True,
-                unique_indices=True,
-            )
+    mag_idx = np.array(mag_idx)
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
+
+        all_idx = np.arange(input_dim)
+        front_idx = np.setdiff1d(all_idx, mag_idx)
+        mag0_idx = len(front_idx)
+
+        new_idx = np.concatenate((front_idx, mag_idx))
+        new_ref = np.where(new_idx == ref_idx)[0][0]
+
+        # define a convenience function for the forward_fun below
+        # if the first magnitude is the reference mag, do nothing
+        if ref_idx == mag_idx[0]:
+
+            def mag0(outputs):
+                return outputs
+
+        # if the first magnitude is not the reference mag,
+        # then we need to calculate the first magnitude (mag[0])
+        else:
+
+            def mag0(outputs):
+                return ops.index_update(
+                    outputs,
+                    ops.index[:, mag0_idx],
+                    outputs[:, mag0_idx] + outputs[:, new_ref],
+                    indices_are_sorted=True,
+                    unique_indices=True,
+                )
+
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            # calculate reference magnitude,
-            # and convert all colors to be in terms of the first magnitude, mag[0]
+            # convert all colors to be in terms of the first magnitude, mag[0]
             outputs = np.hstack(
                 (
-                    inputs[:, 0, None],  # redshift unchanged
-                    inputs[:, 1, None],  # reference mag unchanged
-                    np.cumsum(inputs[:, 2:], axis=-1),  # all colors --> mag[0] - mag[i]
+                    inputs[:, 0:mag0_idx],  # other values unchanged
+                    inputs[:, mag0_idx, None],  # reference mag unchanged
+                    np.cumsum(
+                        inputs[:, mag0_idx + 1 :], axis=-1
+                    ),  # all colors mag[i-1] - mag[i] --> mag[0] - mag[i]
                 )
             )
             # calculate mag[0]
             outputs = mag0(outputs)
-            # mag[i] = mag[0] - (mag[0] - mag[i])
+            # mag[i] = mag[0] - (mag[0] - mag[i])redshift
             outputs = ops.index_update(
                 outputs,
-                ops.index[:, 2:],
-                outputs[:, 1, None] - outputs[:, 2:],
+                ops.index[:, mag0_idx + 1 :],
+                outputs[:, mag0_idx, None] - outputs[:, mag0_idx + 1 :],
                 indices_are_sorted=True,
                 unique_indices=True,
             )
+            # return to original ordering
+            outputs = outputs[:, np.argsort(new_idx)]
             log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
@@ -275,9 +293,9 @@ def ColorTransform(ref_idx: int) -> Tuple[InitFunction, Bijector_Info]:
         def inverse_fun(params, inputs, **kwargs):
             outputs = np.hstack(
                 (
-                    inputs[:, 0, None],  # redshift
+                    inputs[:, front_idx],  # other values
                     inputs[:, ref_idx, None],  # ref mag
-                    -np.diff(inputs[:, 1:]),  # colors
+                    -np.diff(inputs[:, mag_idx]),  # colors
                 )
             )
             log_det = np.zeros(inputs.shape[0])
