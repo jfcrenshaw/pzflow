@@ -310,6 +310,71 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
 
 
 @Bijector
+def InvSoftplus(
+    column_idx: int, sharpness: float = 1
+) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that applies inverse softplus to the specified column(s).
+
+    Applying the inverse softplus ensures that samples from that column will
+    always be non-negative. This is because samples are the output of the
+    inverse bijection -- so samples will have a softplus applied to them.
+
+    Parameters
+    ----------
+    column_idx : int
+        An index or iterable of indices corresponding to the column(s)
+        you wish to be transformed.
+    sharpness : float, default=1
+        The sharpness(es) of the softplus transformation. If more than one
+        is provided, the list of sharpnesses must be of the same length as
+        column_idx.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the Softplus Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    idx = np.atleast_1d(column_idx)
+    k = np.atleast_1d(sharpness)
+    if len(idx) != len(k) and len(k) != 1:
+        raise ValueError(
+            "Please provide either a single sharpness or one for each column index."
+        )
+
+    bijector_info = ("InvSoftplus", (column_idx, sharpness))
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(-1 + np.exp(k * inputs[:, idx])) / k,
+            )
+            log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(1 + np.exp(k * inputs[:, idx])) / k,
+            )
+            log_det = -np.log(1 + np.exp(-k * inputs[ops.index[:, idx]])).sum(axis=1)
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
 def Reverse() -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that reverses the order of inputs.
 
@@ -458,71 +523,6 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs[:, inv_perm]
             log_det = np.zeros(inputs.shape[0])
-            return outputs, log_det
-
-        return (), forward_fun, inverse_fun
-
-    return init_fun, bijector_info
-
-
-@Bijector
-def InvSoftplus(
-    column_idx: int, sharpness: float = 1
-) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that applies inverse softplus to the specified column(s).
-
-    Applying the inverse softplus ensures that samples from that column will
-    always be non-negative. This is because samples are the output of the
-    inverse bijection -- so samples will have a softplus applied to them.
-
-    Parameters
-    ----------
-    column_idx : int
-        An index or iterable of indices corresponding to the column(s)
-        you wish to be transformed.
-    sharpness : float, default=1
-        The sharpness(es) of the softplus transformation. If more than one
-        is provided, the list of sharpnesses must be of the same length as
-        column_idx.
-
-    Returns
-    -------
-    InitFunction
-        The InitFunction of the Softplus Bijector.
-    Bijector_Info
-        Tuple of the Bijector name and the input parameters.
-        This allows it to be recreated later.
-    """
-
-    idx = np.atleast_1d(column_idx)
-    k = np.atleast_1d(sharpness)
-    if len(idx) != len(k) and len(k) != 1:
-        raise ValueError(
-            "Please provide either a single sharpness or one for each column index."
-        )
-
-    bijector_info = ("InvSoftplus", (column_idx, sharpness))
-
-    @InitFunction
-    def init_fun(rng, input_dim, **kwargs):
-        @ForwardFunction
-        def forward_fun(params, inputs, **kwargs):
-            outputs = ops.index_update(
-                inputs,
-                ops.index[:, idx],
-                np.log(-1 + np.exp(k * inputs[:, idx])) / k,
-            )
-            log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
-            return outputs, log_det
-
-        @InverseFunction
-        def inverse_fun(params, inputs, **kwargs):
-            outputs = ops.index_update(
-                inputs,
-                ops.index[:, idx],
-                np.log(1 + np.exp(k * inputs[:, idx])) / k,
-            )
-            log_det = -np.log(1 + np.exp(-k * inputs[ops.index[:, idx]])).sum(axis=1)
             return outputs, log_det
 
         return (), forward_fun, inverse_fun

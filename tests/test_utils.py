@@ -7,13 +7,13 @@ import pytest
 
 def test_build_bijector_from_info():
 
-    x = np.array([[1, 2, 3, 4], [5, 6, 7, 8]])
+    x = np.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
 
     init_fun, info1 = Chain(
         Reverse(),
         Chain(ColorTransform(1, [1, 2, 3]), Roll(-1)),
+        InvSoftplus(0, 1),
         Scale(-0.5),
-        Softplus(0, 1),
         Chain(Roll(), Scale(-4.0)),
     )
 
