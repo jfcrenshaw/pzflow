@@ -22,8 +22,8 @@ class Flow:
     info : Any
         Object containing any kind of info included with the flow.
         Often describes the data the flow is trained on.
-    base : pzflow.utils.Normal
-        The base distribution the flow samples from before the bijection.
+    latent
+        The latent distribution of the normalizing flow.
         Has it's own sample and log_prob methods.
     """
 
@@ -31,11 +31,12 @@ class Flow:
         self,
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
-        base: str = None,
+        latent: str = None,
         info: Any = None,
         file: str = None,
     ):
-        """
+        """Instantiate a normalizing flow.
+
         Note that while all of the init parameters are technically optional,
         you must provide either data_columns and bijector OR file.
         In addition, if a file is provided, all other parameters must be None.
@@ -49,11 +50,11 @@ class Flow:
             A Bijector call that consists of the bijector InitFunction that
             initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
-        base : str, optional
-            The base distribution for the normalizing flow. Possible values are
-            `Normal` or `Tdist`. Default is `Normal`.
+        latent : str, optional
+            The latent distribution for the normalizing flow. Possible values
+            are `Normal` or `Tdist`. Default is `Normal`.
         info : Any, optional
-            An object to attach to the info attribute
+            An object to attach to the info attribute.
         file : str, optional
             Path to file from which to load a pretrained flow.
             If a file is provided, all other parameters must be None.
@@ -67,7 +68,7 @@ class Flow:
         elif data_columns is None and bijector is not None:
             raise ValueError("Please also provide data_columns.")
         elif file is not None and any(
-            (data_columns != None, bijector != None, base != None, info != None)
+            (data_columns != None, bijector != None, latent != None, info != None)
         ):
             raise ValueError(
                 "If providing a file, please do not provide any other parameters."
@@ -84,8 +85,8 @@ class Flow:
             self._bijector_info = save_dict["bijector_info"]
             self._params = save_dict["params"]
 
-            # set up the base distribution
-            self.base = getattr(distributions, save_dict["base"])(self._input_dim)
+            # set up the latent distribution
+            self.latent = getattr(distributions, save_dict["latent"])(self._input_dim)
 
             # set up the bijector
             init_fun, _ = build_bijector_from_info(self._bijector_info)
@@ -99,16 +100,16 @@ class Flow:
             self._input_dim = len(self.data_columns)
             self.info = info
 
-            # set up the base distribution
-            base = "Normal" if base is None else base
-            self.base = getattr(distributions, base)(self._input_dim)
+            # set up the latent distribution
+            latent = "Normal" if latent is None else latent
+            self.latent = getattr(distributions, latent)(self._input_dim)
 
             # set up the bijector with random params
             init_fun, self._bijector_info = bijector
             bijector_params, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
             )
-            self._params = (self.base._params, bijector_params)
+            self._params = (self.latent._params, bijector_params)
 
     def _array_with_errs(self, inputs: pd.DataFrame, skip: str = None):
         """Convert pandas DataFrame to Jax array with columns for errors.
@@ -131,11 +132,11 @@ class Flow:
         X = np.array(X[cols_with_errs].values)
         return X
 
-    def _Jinv(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
-        """Calculates the Jacobian of the inverse bijection"""
+    def _jacobian(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+        """Calculates the Jacobian of the forward bijection"""
 
         # calculates jacobian for a single input
-        # first we define a lambda that calculates the inverse
+        # first we define a lambda that calculates the forward
         # (but drops the log_det). then we take the Jacobian of that
         # evaluated at the vector y. the [None, :] and .squeeze() are
         # just making sure the inputs and outputs are of the correct shape
@@ -148,8 +149,8 @@ class Flow:
     def _log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Log prob for arrays."""
         # calculate log_prob
-        u, log_det = self._inverse(params[1], inputs)
-        log_prob = self.base.log_prob(params[0], u) + log_det
+        u, log_det = self._forward(params[1], inputs)
+        log_prob = self.latent.log_prob(params[0], u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
@@ -162,18 +163,18 @@ class Flow:
         X, Xerr = inputs[:, :ncols], inputs[:, ncols:]
 
         # inverse and log determinant
-        u, log_det = self._inverse(params[1], X)
+        u, log_det = self._forward(params[1], X)
 
         # Jacobian of inverse bijection
-        Jinv = self._Jinv(params[1], X)
+        J = self._jacobian(params[1], X)
         # calculate modified covariances
-        sig_u = Jinv @ (Xerr[..., None] * Jinv.transpose((0, 2, 1)))
+        sig_u = J @ (Xerr[..., None] * J.transpose((0, 2, 1)))
         # add identity matrix to each covariance matrix
         idx = sub_diag_indices(sig_u)
         sig = ops.index_update(sig_u, idx, sig_u[idx] + 1)
 
-        # calculate log_prob w.r.t the base distribution, with the new covariances
-        log_prob = self.base.log_prob(params[0], u, sig) + log_det
+        # calculate log_prob w.r.t the latent distribution, with the new covariances
+        log_prob = self.latent.log_prob(params[0], u, sig) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
@@ -198,9 +199,9 @@ class Flow:
         np.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        if convolve_err and not isinstance(self.base, distributions.Normal):
+        if convolve_err and not isinstance(self.latent, distributions.Normal):
             raise ValueError(
-                "Currently can only convolve error when using a Normal base distribution."
+                "Currently can only convolve error when using a Normal latent distribution."
             )
         if not convolve_err:
             # convert data to an array with columns ordered
@@ -256,9 +257,9 @@ class Flow:
         np.ndarray
             Device array of shape (inputs.shape[0], grid.size).
         """
-        if convolve_err and not isinstance(self.base, distributions.Normal):
+        if convolve_err and not isinstance(self.latent, distributions.Normal):
             raise ValueError(
-                "Currently can only convolve error when using a Normal base distribution."
+                "Currently can only convolve error when using a Normal latent distribution."
             )
 
         # get the index of the provided column, and remove it from the list
@@ -338,8 +339,8 @@ class Flow:
             Pandas DataFrame with columns flow.data_columns and
             number of rows equal to nsamples.
         """
-        u = self.base.sample(self._params[0], nsamples, seed)
-        x = self._forward(self._params[1], u)[0]
+        u = self.latent.sample(self._params[0], nsamples, seed)
+        x = self._inverse(self._params[1], u)[0]
         x = pd.DataFrame(x, columns=self.data_columns)
         return x
 
@@ -364,7 +365,7 @@ class Flow:
             "data_columns": self.data_columns,
             "info": self.info,
             "bijector_info": self._bijector_info,
-            "base": self.base.type,
+            "latent": self.latent.type,
             "params": self._params,
         }
         if not file.endswith(".pkl"):
@@ -461,7 +462,7 @@ class Flow:
             I.e., the error for column `u` needs to be in the column `u_err`.
             Zero error assumed for any missing error columns.
             Note this only works with the default loss function and a
-            Gaussian base distribution.
+            Gaussian latent distribution.
             WARNING this is still experimental -- training is unstable and
             often results in NaN's.
 
@@ -485,9 +486,9 @@ class Flow:
         if convolve_err:
             print("WARNING: error convolution in training is still experimental.")
 
-        if convolve_err and not isinstance(self.base, distributions.Normal):
+        if convolve_err and not isinstance(self.latent, distributions.Normal):
             raise ValueError(
-                "Currently can only convolve error when using a Normal base distribution."
+                "Currently can only convolve error when using a Normal latent distribution."
             )
 
         # validate epochs

@@ -21,8 +21,8 @@ x = np.array(
         (Roll, (2,)),
         (Scale, (2.0,)),
         (Shuffle, ()),
-        (Softplus, (0,)),
-        (Softplus, ([3, 5], [2.0, 12.0])),
+        (InvSoftplus, (0,)),
+        (InvSoftplus, ([1, 3], [2.0, 12.0])),
         (StandardScaler, (np.linspace(-1, 1, 7), np.linspace(1, 8, 7))),
         (Chain, (Reverse(), Scale(1 / 6), Roll(-1))),
         (NeuralSplineCoupling, ()),
@@ -74,9 +74,9 @@ class TestBijectors:
         (ColorTransform, (1, [2, 3, 4])),
         (Roll, (2.4,)),
         (Scale, (2,)),
-        (Softplus, ([0, 1, 2], [1.0, 2.0])),
+        (InvSoftplus, ([0, 1, 2], [1.0, 2.0])),
     ],
 )
-def test_softplus_bad_input(bijector, args):
+def test_invsoftplus_bad_input(bijector, args):
     with pytest.raises(ValueError):
         bijector(*args)

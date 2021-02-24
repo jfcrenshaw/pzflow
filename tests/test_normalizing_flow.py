@@ -24,8 +24,8 @@ def test_bad_inputs(data_columns, bijector, info, file):
 @pytest.mark.parametrize(
     "flow",
     [
-        Flow(("redshift", "y"), Reverse(), base="Normal"),
-        Flow(("redshift", "y"), Reverse(), base="Tdist"),
+        Flow(("redshift", "y"), Reverse(), latent="Normal"),
+        Flow(("redshift", "y"), Reverse(), latent="Tdist"),
     ],
 )
 def test_returns_correct_shape(flow):
@@ -45,8 +45,8 @@ def test_returns_correct_shape(flow):
     assert xinv.shape == x.shape
     assert xinv_log_det.shape == (x.shape[0],)
 
-    Jinv = flow._Jinv(flow._params, xarray)
-    assert Jinv.shape == (3, 2, 2)
+    J = flow._jacobian(flow._params, xarray)
+    assert J.shape == (3, 2, 2)
 
     nsamples = 4
     assert flow.sample(nsamples).shape == (nsamples, x.shape[1])
@@ -68,7 +68,7 @@ def test_error_convolution():
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
-    flow = Flow(("redshift", "y"), Reverse(), base="Normal")
+    flow = Flow(("redshift", "y"), Reverse(), latent="Normal")
 
     assert flow.log_prob(x, convolve_err=True).shape == (x.shape[0],)
 
@@ -81,7 +81,7 @@ def test_error_convolution():
         == 17
     )
 
-    flow = Flow(("redshift", "y"), Reverse(), base="Tdist")
+    flow = Flow(("redshift", "y"), Reverse(), latent="Tdist")
     with pytest.raises(ValueError):
         flow.log_prob(x, convolve_err=True).shape
     with pytest.raises(ValueError):
@@ -110,13 +110,13 @@ def test_columns_with_errs():
     assert np.allclose(x_with_errs, np.array([[2, 0, 0.4], [4, 0, 0.1]]))
 
 
-def test_Jinv():
+def test_jacobian():
     columns = ("redshift", "y")
     flow = Flow(columns, Chain(Reverse(), Scale(2.0)))
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    Jinv = flow._Jinv(flow._params, xarray)
+    J = flow._jacobian(flow._params, xarray)
     assert np.allclose(
-        Jinv,
+        J,
         np.array([[[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]]]),
     )
 
