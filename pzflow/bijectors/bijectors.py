@@ -171,21 +171,18 @@ def Chain(
 
 @Bijector
 def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that converts photometric colors to magnitudes.
+    """Bijector that calculates photometric colors from magnitudes.
 
-    Using ColorTransform restricts the order of columns in the corresponding
-    normalizing flow. The first two columns must be redshift and a reference
-    magnitude, followed by adjacent colors.
-    e.g.: redshift, r, u-g, g-r, r-i --> redshift, u, g, r, i
+    Using ColorTransform restricts and impacts the order of columns in the
+    corresponding normalizing flow. See the notes below for an example.
 
     Parameters
     ----------
     ref_idx : int
-        The index corresponding to the column of the reference band in the output.
-        e.g. for the example about, ref_idx == 3 for the r column.
+        The index corresponding to the column of the reference band, which
+        serves as a proxy for overall luminosity.
     mag_idx : arraylike of int
-        The indices of the magnitudes from which colors will be calculated.
-        See notes below for a longer explanation.
+        The indices of the magnitude columns from which colors will be calculated.
 
     Returns
     -------
@@ -197,27 +194,24 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
 
     Notes
     -----
-    This Bijector takes redshift, a reference magnitude, and a series of
-    galaxy colors, and converts them to redshift and galaxy magnitudes.
-    Here is an example of the bijection:
+    ColorTransform requires careful management of column order in the bijector.
+    This is best explained with an example:
 
-    redshift, r, u-g, g-r, r-i, i-z, z-y --> redshift, u, g, r, i, z, y
+    Assume we have data
+    [redshift, u, g, ellipticity, r, i, z, y, mass]
+    Then
+    ColorTransform(ref_idx=4, mag_idx=[1, 2, 4, 5, 6, 7])
+    will output
+    [redshift, ellipticity, mass, r, u-g, g-r, r-i, i-z, z-y]
 
-    This transformation is useful at the end of your Bijector Chain, as
-    redshifts correlate with galaxy colors more directly than galaxy
-    magnitudes.
+    Notice how the non-magnitude columns are aggregated at the front of the
+    array, maintaining their relative order from the original array.
+    These values are then followed by the reference magnitude, and the new colors.
 
-    In the example above, the r band was used as the reference magnitude to
-    serve as a proxy for overall galaxy luminosity. In this example, this
-    would be achieved by setting ref_idx=3 as that is the index of the column
-    corresponding to the r band in my data. You can use another band by
-    changing this value accordingly. E.g., in the example above, you can set
-    ref_idx=4 for the i band.
-
-    Note that using ColorTransform restricts the order of columns in the
-    corresponding normalizing flow. Redshift must be the first column, and
-    the following columns must be adjacent color magnitudes,
-    e.g.: redshift, r, u-g, g-r, r-i --> redshift, u, g, r, i
+    Also notice that the magnitudes indices in mag_idx are assumed to be
+    adjacent colors. E.g. mag_idx=[1, 2, 5, 4, 6, 7] would have produced
+    the colors [u-g, g-i, i-r, r-z, z-y]. You can chain multiple ColorTransforms
+    back-to-back to create colors in a non-adjacent manner.
     """
 
     # validate parameters
@@ -230,16 +224,22 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
 
     bijector_info = ("ColorTransform", (ref_idx, mag_idx))
 
+    # convert mag_idx to an array
     mag_idx = np.array(mag_idx)
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
+        # array of all the indices
         all_idx = np.arange(input_dim)
+        # indices for columns to stick at the front
         front_idx = np.setdiff1d(all_idx, mag_idx)
+        # the index corresponding to the first magnitude
         mag0_idx = len(front_idx)
 
+        # the new column order
         new_idx = np.concatenate((front_idx, mag_idx))
+        # the new column for the reference magnitude
         new_ref = np.where(new_idx == ref_idx)[0][0]
 
         # define a convenience function for the forward_fun below
@@ -264,6 +264,20 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
 
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
+            # re-order columns and calculate colors
+            outputs = np.hstack(
+                (
+                    inputs[:, front_idx],  # other values
+                    inputs[:, ref_idx, None],  # ref mag
+                    -np.diff(inputs[:, mag_idx]),  # colors
+                )
+            )
+            # determinant of Jacobian is zero
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
             # convert all colors to be in terms of the first magnitude, mag[0]
             outputs = np.hstack(
                 (
@@ -276,7 +290,7 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
             )
             # calculate mag[0]
             outputs = mag0(outputs)
-            # mag[i] = mag[0] - (mag[0] - mag[i])redshift
+            # mag[i] = mag[0] - (mag[0] - mag[i])
             outputs = ops.index_update(
                 outputs,
                 ops.index[:, mag0_idx + 1 :],
@@ -286,19 +300,73 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
             )
             # return to original ordering
             outputs = outputs[:, np.argsort(new_idx)]
+            # determinant of Jacobian is zero
             log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
+def InvSoftplus(
+    column_idx: int, sharpness: float = 1
+) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that applies inverse softplus to the specified column(s).
+
+    Applying the inverse softplus ensures that samples from that column will
+    always be non-negative. This is because samples are the output of the
+    inverse bijection -- so samples will have a softplus applied to them.
+
+    Parameters
+    ----------
+    column_idx : int
+        An index or iterable of indices corresponding to the column(s)
+        you wish to be transformed.
+    sharpness : float, default=1
+        The sharpness(es) of the softplus transformation. If more than one
+        is provided, the list of sharpnesses must be of the same length as
+        column_idx.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the Softplus Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    idx = np.atleast_1d(column_idx)
+    k = np.atleast_1d(sharpness)
+    if len(idx) != len(k) and len(k) != 1:
+        raise ValueError(
+            "Please provide either a single sharpness or one for each column index."
+        )
+
+    bijector_info = ("InvSoftplus", (column_idx, sharpness))
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(-1 + np.exp(k * inputs[:, idx])) / k,
+            )
+            log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = np.hstack(
-                (
-                    inputs[:, front_idx],  # other values
-                    inputs[:, ref_idx, None],  # ref mag
-                    -np.diff(inputs[:, mag_idx]),  # colors
-                )
+            outputs = ops.index_update(
+                inputs,
+                ops.index[:, idx],
+                np.log(1 + np.exp(k * inputs[:, idx])) / k,
             )
-            log_det = np.zeros(inputs.shape[0])
+            log_det = -np.log(1 + np.exp(-k * inputs[ops.index[:, idx]])).sum(axis=1)
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -463,79 +531,21 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
 
 
 @Bijector
-def Softplus(
-    column_idx: int, sharpness: float = 1
-) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that applies a softplus function to the specified column(s).
-
-    Applying the softplus ensures that samples from that column will always
-    be non-negative.
-
-    Parameters
-    ----------
-    column_idx : int
-        An index or iterable of indices corresponding to the column(s)
-        you wish to be transformed.
-    sharpness : float, default=1
-        The sharpness(es) of the softplus transformation. If more than one
-        is provided, the list of sharpnesses must be of the same length as
-        column_idx.
-
-    Returns
-    -------
-    InitFunction
-        The InitFunction of the Softplus Bijector.
-    Bijector_Info
-        Tuple of the Bijector name and the input parameters.
-        This allows it to be recreated later.
-    """
-
-    idx = np.atleast_1d(column_idx)
-    k = np.atleast_1d(sharpness)
-    if len(idx) != len(k) and len(k) != 1:
-        raise ValueError(
-            "Please provide either a single sharpness or one for each column index."
-        )
-
-    bijector_info = ("Softplus", (column_idx, sharpness))
-
-    @InitFunction
-    def init_fun(rng, input_dim, **kwargs):
-        @ForwardFunction
-        def forward_fun(params, inputs, **kwargs):
-            outputs = ops.index_update(
-                inputs,
-                ops.index[:, idx],
-                np.log(1 + np.exp(k * inputs[:, idx])) / k,
-            )
-            log_det = -np.log(1 + np.exp(-k * inputs[ops.index[:, idx]])).sum(axis=1)
-            return outputs, log_det
-
-        @InverseFunction
-        def inverse_fun(params, inputs, **kwargs):
-            outputs = ops.index_update(
-                inputs,
-                ops.index[:, idx],
-                np.log(-1 + np.exp(k * inputs[:, idx])) / k,
-            )
-            log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
-            return outputs, log_det
-
-        return (), forward_fun, inverse_fun
-
-    return init_fun, bijector_info
-
-
-@Bijector
 def StandardScaler(
     means: np.array, stds: np.array
 ) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that applies standard scaling to each input.
 
     Each input dimension i has an associated mean u_i and standard dev s_i.
-    In the inverse bijection, each input is rescaled as (input[i] - u_i)/s_i,
-    so that each input dimension has mean zero and unit variance.
-    The forward bijection is the opposite of this.
+    Each input is rescaled as (input[i] - u_i)/s_i, so that each input dimension
+    has mean zero and unit variance.
+
+    Parameters
+    ----------
+    means : np.ndarray
+        The mean of each column.
+    stds : np.ndarray
+        The standard deviation of each column.
 
     Returns
     -------
@@ -552,14 +562,14 @@ def StandardScaler(
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            outputs = inputs * stds + means
-            log_det = np.log(stds.prod()) * np.ones(inputs.shape[0])
+            outputs = (inputs - means) / stds
+            log_det = np.log(1 / stds.prod()) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = (inputs - means) / stds
-            log_det = np.log(1 / stds.prod()) * np.ones(inputs.shape[0])
+            outputs = inputs * stds + means
+            log_det = np.log(stds.prod()) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
