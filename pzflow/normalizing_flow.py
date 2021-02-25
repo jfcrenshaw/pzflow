@@ -148,10 +148,12 @@ class Flow:
         X = np.array(X[cols_with_errs].values)
         return X
 
-    def _get_conditions(self, inputs: pd.DataFrame) -> np.ndarray:
+    def _get_conditions(
+        self, inputs: pd.DataFrame = None, nrows: int = None
+    ) -> np.ndarray:
         """Return an array of the conditions."""
         if self.condition_columns is None:
-            conditions = np.zeros((inputs.shape[0], 1))
+            conditions = np.zeros((nrows, 1))
             return conditions
         else:
             conditions = np.array(inputs[self.condition_columns].values)
@@ -241,14 +243,14 @@ class Flow:
             columns = list(self.data_columns)
             X = np.array(inputs[columns].values)
             # get conditions
-            conditions = self._get_conditions(inputs)
+            conditions = self._get_conditions(inputs, len(inputs))
             # calculate log_prob
             return self._log_prob(self._params, X, conditions)
         else:
             # convert data to an array with columns ordered
             X = self._array_with_errs(inputs)
             # get conditions
-            conditions = self._get_conditions(inputs)
+            conditions = self._get_conditions(inputs, len(inputs))
             # calculate log_prob
             return self._log_prob_convolved(self._params, X, conditions)
 
@@ -313,11 +315,11 @@ class Flow:
         # and alias the required log_prob function
         if convolve_err:
             X = self._array_with_errs(inputs, skip=column)
-            conditions = self._get_conditions(inputs)
+            conditions = self._get_conditions(inputs, len(inputs))
             log_prob_fun = self._log_prob_convolved
         else:
             X = np.array(inputs[columns].values)
-            conditions = self._get_conditions(inputs)
+            conditions = self._get_conditions(inputs, len(inputs))
             log_prob_fun = self._log_prob
 
         pdfs = np.zeros((nrows, len(grid)))
@@ -369,7 +371,13 @@ class Flow:
         pdfs = np.nan_to_num(pdfs, nan=0.0)
         return pdfs
 
-    def sample(self, nsamples: int = 1, seed: int = None) -> pd.DataFrame:
+    def sample(
+        self,
+        nsamples: int = 1,
+        conditions: pd.DataFrame = None,
+        save_conditions: bool = True,
+        seed: int = None,
+    ) -> pd.DataFrame:
         """Returns samples from the normalizing flow.
 
         Parameters
@@ -385,9 +393,27 @@ class Flow:
             Pandas DataFrame with columns flow.data_columns and
             number of rows equal to nsamples.
         """
+        if self.condition_columns is not None and conditions is None:
+            raise ValueError(
+                f"Must provide the following conditions\n{self.condition_columns}"
+            )
+
+        conditions = self._get_conditions(conditions, nsamples)
+        if self.condition_columns is not None:
+            conditions = np.repeat(conditions, nsamples, axis=0)
+            nsamples = conditions.shape[0]
+
         u = self.latent.sample(self._params[0], nsamples, seed)
-        x = self._inverse(self._params[1], u)[0]
-        x = pd.DataFrame(x, columns=self.data_columns)
+        x = self._inverse(self._params[1], u, conditions=conditions)[0]
+
+        if self.condition_columns is None or save_conditions is False:
+            x = pd.DataFrame(x, columns=self.data_columns)
+        else:
+            x = pd.DataFrame(
+                np.hstack((x, conditions)),
+                columns=self.data_columns + self.conditional_columns,
+            )
+
         return x
 
     def save(self, file: str):
