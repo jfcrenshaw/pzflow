@@ -230,8 +230,6 @@ def NeuralSplineCoupling(
         # calculate spline parameters as a function of the upper variables
         def spline_params(params, upper, conditions):
             key = np.hstack((upper, conditions))[:, : upper_dim + n_conditions]
-            print(upper_dim, n_conditions, upper_dim + n_conditions)
-            print(upper.shape, conditions.shape, key.shape)
             outputs = network_apply_fun(params, key)
             outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1])
             W, H, D = np.split(outputs, [K, 2 * K], axis=2)
