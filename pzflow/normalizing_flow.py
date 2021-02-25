@@ -31,6 +31,7 @@ class Flow:
         self,
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
+        condition_columns: Sequence[str] = None,
         latent: str = None,
         info: Any = None,
         file: str = None,
@@ -50,6 +51,9 @@ class Flow:
             A Bijector call that consists of the bijector InitFunction that
             initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
+        condition_columns : Sequence[str], optional
+            Names of columns on which to condition the bijector in a conditional
+            normalizing flow.
         latent : str, optional
             The latent distribution for the normalizing flow. Possible values
             are `Normal` or `Tdist`. Default is `Normal`.
@@ -68,7 +72,13 @@ class Flow:
         elif data_columns is None and bijector is not None:
             raise ValueError("Please also provide data_columns.")
         elif file is not None and any(
-            (data_columns != None, bijector != None, latent != None, info != None)
+            (
+                data_columns != None,
+                bijector != None,
+                condition_columns != None,
+                latent != None,
+                info != None,
+            )
         ):
             raise ValueError(
                 "If providing a file, please do not provide any other parameters."
@@ -80,6 +90,7 @@ class Flow:
                 save_dict = pickle.load(handle)
             # load params from the file
             self.data_columns = save_dict["data_columns"]
+            self.condition_columns = save_dict["condition_columns"]
             self._input_dim = len(self.data_columns)
             self.info = save_dict["info"]
             self._bijector_info = save_dict["bijector_info"]
@@ -100,6 +111,11 @@ class Flow:
             self._input_dim = len(self.data_columns)
             self.info = info
 
+            if condition_columns is None:
+                self.condition_columns = None
+            else:
+                self.condition_columns = tuple(condition_columns)
+
             # set up the latent distribution
             latent = "Normal" if latent is None else latent
             self.latent = getattr(distributions, latent)(self._input_dim)
@@ -111,7 +127,7 @@ class Flow:
             )
             self._params = (self.latent._params, bijector_params)
 
-    def _array_with_errs(self, inputs: pd.DataFrame, skip: str = None):
+    def _array_with_errs(self, inputs: pd.DataFrame, skip: str = None) -> np.ndarray:
         """Convert pandas DataFrame to Jax array with columns for errors.
 
         Skip can be one of the columns in self.data_columns. If provided,
@@ -132,7 +148,18 @@ class Flow:
         X = np.array(X[cols_with_errs].values)
         return X
 
-    def _jacobian(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def _get_conditions(self, inputs: pd.DataFrame) -> np.ndarray:
+        """Return an array of the conditions."""
+        if self.condition_columns is None:
+            conditions = np.zeros((inputs.shape[0], 1))
+            return conditions
+        else:
+            conditions = np.array(inputs[self.condition_columns].values)
+            return conditions
+
+    def _jacobian(
+        self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
+    ) -> np.ndarray:
         """Calculates the Jacobian of the forward bijection"""
 
         # calculates jacobian for a single input
@@ -140,33 +167,39 @@ class Flow:
         # (but drops the log_det). then we take the Jacobian of that
         # evaluated at the vector y. the [None, :] and .squeeze() are
         # just making sure the inputs and outputs are of the correct shape
-        def J(y):
-            return jacfwd(lambda x: self._inverse(params, x)[0])(y[None, :]).squeeze()
+        def J(y, c):
+            return jacfwd(lambda x: self._inverse(params, x, conditions=c[None, :])[0])(
+                y[None, :]
+            ).squeeze()
 
         # now we can vectorize with Jax and apply to whole set of inputs at once
-        return vmap(J)(inputs)
+        return vmap(J)(inputs, conditions)
 
-    def _log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def _log_prob(
+        self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
+    ) -> np.ndarray:
         """Log prob for arrays."""
         # calculate log_prob
-        u, log_det = self._forward(params[1], inputs)
+        u, log_det = self._forward(params[1], inputs, conditions=conditions)
         log_prob = self.latent.log_prob(params[0], u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
 
-    def _log_prob_convolved(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def _log_prob_convolved(
+        self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
+    ) -> np.ndarray:
         """Log prob for arrays, with error convolution"""
 
         # separate data from data errs
         ncols = len(self.data_columns)
         X, Xerr = inputs[:, :ncols], inputs[:, ncols:]
 
-        # inverse and log determinant
-        u, log_det = self._forward(params[1], X)
+        # forward and log determinant
+        u, log_det = self._forward(params[1], X, conditions=conditions)
 
         # Jacobian of inverse bijection
-        J = self._jacobian(params[1], X)
+        J = self._jacobian(params[1], X, conditions)
         # calculate modified covariances
         sig_u = J @ (Xerr[..., None] * J.transpose((0, 2, 1)))
         # add identity matrix to each covariance matrix
@@ -207,11 +240,17 @@ class Flow:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
             X = np.array(inputs[columns].values)
-            return self._log_prob(self._params, X)
+            # get conditions
+            conditions = self._get_conditions(inputs)
+            # calculate log_prob
+            return self._log_prob(self._params, X, conditions)
         else:
             # convert data to an array with columns ordered
             X = self._array_with_errs(inputs)
-            return self._log_prob_convolved(self._params, X)
+            # get conditions
+            conditions = self._get_conditions(inputs)
+            # calculate log_prob
+            return self._log_prob_convolved(self._params, X, conditions)
 
     def posterior(
         self,
@@ -363,6 +402,7 @@ class Flow:
         """
         save_dict = {
             "data_columns": self.data_columns,
+            "condition_columns": self.condition_columns,
             "info": self.info,
             "bijector_info": self._bijector_info,
             "latent": self.latent.type,

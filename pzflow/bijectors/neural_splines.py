@@ -155,7 +155,11 @@ def _RationalQuadraticSpline(
 
 @Bijector
 def NeuralSplineCoupling(
-    K: int = 16, B: float = 3, hidden_layers: int = 2, hidden_dim: int = 128
+    K: int = 16,
+    B: float = 3,
+    hidden_layers: int = 2,
+    hidden_dim: int = 128,
+    n_conditions: int = 0,
 ) -> Tuple[InitFunction, Bijector_Info]:
     """A coupling layer bijection with rational quadratic splines.
 
@@ -181,6 +185,8 @@ def NeuralSplineCoupling(
     hidden_dim : int, default=128
         The width of the hidden layers in the neural network used to
         calculate the positions and derivatives of the spline knots.
+    n_conditions : int, default=0
+        The number of variables to condition the bijection on.
 
     Returns
     -------
@@ -203,7 +209,10 @@ def NeuralSplineCoupling(
         https://arxiv.org/abs/1906.04032
     """
 
-    bijector_info = ("NeuralSplineCoupling", (K, B, hidden_layers, hidden_dim))
+    bijector_info = (
+        "NeuralSplineCoupling",
+        (K, B, hidden_layers, hidden_dim, n_conditions),
+    )
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -216,11 +225,14 @@ def NeuralSplineCoupling(
         network_init_fun, network_apply_fun = DenseReluNetwork(
             (3 * K - 1) * lower_dim, hidden_layers, hidden_dim
         )
-        _, network_params = network_init_fun(rng, (upper_dim,))
+        _, network_params = network_init_fun(rng, (upper_dim + n_conditions,))
 
         # calculate spline parameters as a function of the upper variables
-        def spline_params(params, upper):
-            outputs = network_apply_fun(params, upper)
+        def spline_params(params, upper, conditions):
+            key = np.hstack((upper, conditions))[:, : upper_dim + n_conditions]
+            print(upper_dim, n_conditions, upper_dim + n_conditions)
+            print(upper.shape, conditions.shape, key.shape)
+            outputs = network_apply_fun(params, key)
             outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1])
             W, H, D = np.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)
@@ -229,22 +241,22 @@ def NeuralSplineCoupling(
             return W, H, D
 
         @ForwardFunction
-        def forward_fun(params, inputs):
+        def forward_fun(params, inputs, conditions, **kwargs):
             # lower dimensions are transformed as function of upper dimensions
             upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
             # widths, heights, derivatives = function(upper dimensions)
-            W, H, D = spline_params(params, upper)
+            W, H, D = spline_params(params, upper, conditions)
             # transform the lower dimensions with the Rational Quadratic Spline
             lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=False)
             outputs = np.hstack((upper, lower))
             return outputs, log_det
 
         @InverseFunction
-        def inverse_fun(params, inputs):
+        def inverse_fun(params, inputs, conditions, **kwargs):
             # lower dimensions are transformed as function of upper dimensions
             upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
             # widths, heights, derivatives = function(upper dimensions)
-            W, H, D = spline_params(params, upper)
+            W, H, D = spline_params(params, upper, conditions)
             # transform the lower dimensions with the Rational Quadratic Spline
             lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=True)
             outputs = np.hstack((upper, lower))
@@ -262,6 +274,7 @@ def RollingSplineCoupling(
     B: float = 3,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
+    n_conditions: int = 0,
 ) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that alternates NeuralSplineCouplings and Roll bijections.
 
@@ -290,5 +303,6 @@ def RollingSplineCoupling(
 
     """
     return Chain(
-        *(NeuralSplineCoupling(K, B, hidden_layers, hidden_dim), Roll()) * nlayers
+        *(NeuralSplineCoupling(K, B, hidden_layers, hidden_dim, n_conditions), Roll())
+        * nlayers
     )

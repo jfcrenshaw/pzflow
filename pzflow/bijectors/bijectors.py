@@ -149,7 +149,7 @@ def Chain(
             forward_funs.append(forward_f)
             inverse_funs.append(inverse_f)
 
-        def bijector_chain(params, bijectors, inputs):
+        def bijector_chain(params, bijectors, inputs, **kwargs):
             log_dets = np.zeros(inputs.shape[0])
             for bijector, param in zip(bijectors, params):
                 inputs, log_det = bijector(param, inputs, **kwargs)
@@ -158,11 +158,11 @@ def Chain(
 
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            return bijector_chain(params, forward_funs, inputs)
+            return bijector_chain(params, forward_funs, inputs, **kwargs)
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            return bijector_chain(params[::-1], inverse_funs[::-1], inputs)
+            return bijector_chain(params[::-1], inverse_funs[::-1], inputs, **kwargs)
 
         return all_params, forward_fun, inverse_fun
 
