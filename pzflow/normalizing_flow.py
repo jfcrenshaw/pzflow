@@ -313,9 +313,11 @@ class Flow:
         # and alias the required log_prob function
         if convolve_err:
             X = self._array_with_errs(inputs, skip=column)
+            conditions = self._get_conditions(inputs)
             log_prob_fun = self._log_prob_convolved
         else:
             X = np.array(inputs[columns].values)
+            conditions = self._get_conditions(inputs)
             log_prob_fun = self._log_prob
 
         pdfs = np.zeros((nrows, len(grid)))
@@ -323,6 +325,7 @@ class Flow:
         for batch_idx in range(0, nrows, batch_size):
 
             batch = X[batch_idx : batch_idx + batch_size]
+            batch_conditions = conditions[batch_idx : batch_idx + batch_size]
 
             # make a new copy of each row for each value of the column
             # for which we are calculating the posterior
@@ -342,9 +345,13 @@ class Flow:
                 )
             )
 
-            # calculate probability densities
+            batch_conditions = np.repeat(batch_conditions, len(grid), axis=0)
 
-            log_prob = log_prob_fun(self._params, batch).reshape((-1, len(grid)))
+            # calculate probability densities
+            log_prob = log_prob_fun(self._params, batch, batch_conditions).reshape(
+                (-1, len(grid))
+            )
+            print(log_prob)
             pdfs = ops.index_update(
                 pdfs,
                 ops.index[batch_idx : batch_idx + batch_size, :],
