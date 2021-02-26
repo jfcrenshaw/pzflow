@@ -81,9 +81,10 @@ class TestBijectors:
         (ColorTransform, (1, [2, 3, 4])),
         (Roll, (2.4,)),
         (Scale, (2,)),
+        (Scale, (np.arange(7),)),
         (InvSoftplus, ([0, 1, 2], [1.0, 2.0])),
     ],
 )
-def test_invsoftplus_bad_input(bijector, args):
+def test_bad_inputs(bijector, args):
     with pytest.raises(ValueError):
         bijector(*args)

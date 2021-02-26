@@ -468,8 +468,11 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         This allows it to be recreated later.
     """
 
-    if not isinstance(scale, float):
-        raise ValueError("scale must be a float.")
+    if isinstance(scale, np.ndarray):
+        if scale.dtype != np.float32:
+            raise ValueError("scale must be a float or array of floats.")
+    elif not isinstance(scale, float):
+        raise ValueError("scale must be a float or array of floats.")
 
     bijector_info = ("Scale", (scale,))
 
