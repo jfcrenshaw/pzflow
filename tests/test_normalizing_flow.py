@@ -213,3 +213,22 @@ def test_train_bad_inputs(epochs, burn_in_epochs, loss_fn):
             loss_fn=lambda x: x ** 2,
             convolve_err=True,
         )
+
+
+def test_conditional_sample():
+
+    flow = Flow(("x", "y"), Reverse(), conditional_columns=("a", "b"))
+    x = np.arange(12).reshape(-1, 4)
+    x = pd.DataFrame(x, columns=("x", "y", "a", "b"))
+
+    conditions = flow._get_conditions(x, x.shape[0])
+    assert conditions.shape == (x.shape[0], 2)
+
+    with pytest.raises(ValueError):
+        flow.sample(4)
+
+    samples = flow.sample(4, conditions=x)
+    assert samples.shape == (4 * x.shape[0], 4)
+
+    samples = flow.sample(4, conditions=x, save_conditions=False)
+    assert samples.shape == (4 * x.shape[0], 2)
