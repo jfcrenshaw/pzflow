@@ -1,10 +1,14 @@
+from typing import Sequence, Tuple
 import numpy as onp
+import sys
 
 import jax.numpy as np
 from jax import random
 from jax.scipy.special import gammaln
 
 from pzflow.bijectors import Pytree
+
+epsilon = sys.float_info.epsilon
 
 
 def mahalanobis_and_logdet(x, mean, cov):
@@ -32,8 +36,10 @@ class Normal:
             The dimension of the distribution.
         """
         self.input_dim = input_dim
-        self.type = "Normal"
+
+        # save dist info
         self._params = ()
+        self.info = ("Normal", (input_dim,))
 
     def log_prob(
         self, params: Pytree, inputs: np.ndarray, cov: np.ndarray = None
@@ -111,8 +117,10 @@ class Tdist:
             The dimension of the distribution.
         """
         self.input_dim = input_dim
-        self.type = "Tdist"
+
+        # save dist info
         self._params = np.log(30.0)
+        self.info = ("Tdist", (input_dim,))
 
     def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Calculates log probability density of inputs.
@@ -150,9 +158,8 @@ class Tdist:
 
         Parameters
         ----------
-        params : a Jax pytree
-            Empty pytree -- this distribution doesn't have learnable parameters.
-            This parameter is present to ensure a consistent interface.
+        params : float
+            The degrees of freedom (nu) of the t-distribution.
         nsamples : int
             The number of samples to be returned.
         seed : int, optional
@@ -175,4 +182,195 @@ class Tdist:
             shape=(nsamples,),
         )
         samples = mean + z / np.sqrt(x)[:, None]
+        return samples
+
+
+class Uniform:
+    """A multivariate uniform distribution."""
+
+    def __init__(self, ranges: list = None, input_dim: int = None):
+        """
+        Parameters
+        ----------
+        ranges : list
+            List of maximum and minimum for each dimension.
+            Should be [(min1, max1), (min2, max2), ...].
+            The overall dimension is inferred from the number of tuples
+            in the list.
+        input_dim : int
+            Can be used instead of ranges. Will create distributions U(-3, 3).
+        """
+
+        # validate inputs
+        if ranges is None and input_dim is None:
+            raise ValueError("Must provide either ranges or input_dim.")
+        elif ranges is not None:
+            for t in ranges:
+                if len(t) != 2:
+                    raise ValueError("ranges must be a list of (min, max)")
+
+        # if input_dim is given, use default (-3, 3) for each dimension
+        if ranges is None and input_dim is not None:
+            ranges = [(-3, 3) for i in range(input_dim)]
+
+        # save min and max of each dimension
+        mins = np.array([r[0] for r in ranges])
+        maxes = np.array([r[1] for r in ranges])
+        # make sure all the minima are less than the maxima
+        if not all(mins < maxes):
+            raise ValueError("Range minima must be less than maxima.")
+
+        # save the ranges
+        self.mins = mins
+        self.maxes = maxes
+
+        # save distribution info
+        self.input_dim = len(ranges)
+        self._params = ()
+        self.info = ("Uniform", (ranges,))
+
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+        """Calculates log probability density of inputs.
+
+        Parameters
+        ----------
+        params : Jax Pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        inputs : np.ndarray
+            Input data for which log probability density is calculated.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (inputs.shape[0],).
+        """
+
+        # which inputs are inside the support of the distribution
+        mask = (
+            ((inputs >= self.mins) & (inputs <= self.maxes)).astype(float).prod(axis=-1)
+        )
+
+        # calculate log_prob
+        prob = mask / (self.maxes - self.mins).prod()
+        prob = np.where(prob == 0, epsilon, prob)
+        log_prob = np.log(prob)
+
+        return log_prob
+
+    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+        """Returns samples from the distribution.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        nsamples : int
+            The number of samples to be returned.
+        seed : int, optional
+            Sets the random seed for the samples.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (nsamples, self.input_dim).
+        """
+        seed = onp.random.randint(1e18) if seed is None else seed
+        samples = random.uniform(
+            random.PRNGKey(seed),
+            shape=(nsamples, len(self.maxes)),
+            minval=self.mins,
+            maxval=self.maxes,
+        )
+        return np.array(samples)
+
+
+class Joint:
+    """A joint distribution built from other distributions."""
+
+    def __init__(self, *inputs):
+        """
+        Parameters
+        ----------
+        inputs
+            A list of distributions, or a Joint info object.
+        """
+
+        # if Joint info provided, use that for setup
+        if inputs[0] == "Joint info":
+            self.dists = [globals()[dist[0]](*dist[1]) for dist in inputs[1]]
+        # otherwise, assume it's a list of distributions
+        else:
+            self.dists = inputs
+
+        # save info
+        self._params = [dist._params for dist in self.dists]
+        self.input_dim = sum([dist.input_dim for dist in self.dists])
+        self.info = ("Joint", ("Joint info", [dist.info for dist in self.dists]))
+
+        # save the indices at which inputs will be split for log_prob
+        # they must be concretely saved ahead-of-time so that jax trace
+        # works properly when jitting
+        self._splits = np.cumsum(np.array([dist.input_dim for dist in self.dists]))[:-1]
+
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+        """Calculates log probability density of inputs.
+
+        Parameters
+        ----------
+        params : Jax Pytree
+            Parameters for the distributions.
+        inputs : np.ndarray
+            Input data for which log probability density is calculated.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (inputs.shape[0],).
+        """
+
+        # split inputs for corresponding distribution
+        inputs = np.split(inputs, self._splits, axis=1)
+
+        # calculate log_prob with respect to each sub-distribution,
+        # then sum all the log_probs for each input
+        log_prob = np.hstack(
+            [
+                self.dists[i].log_prob(params[i], inputs[i]).reshape(-1, 1)
+                for i in range(len(self.dists))
+            ]
+        ).sum(axis=1)
+
+        return log_prob
+
+    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+        """Returns samples from the distribution.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Parameters for the distributions.
+        nsamples : int
+            The number of samples to be returned.
+        seed : int, optional
+            Sets the random seed for the samples.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (nsamples, self.input_dim).
+        """
+
+        seed = onp.random.randint(1e18) if seed is None else seed
+        seeds = random.randint(random.PRNGKey(seed), (len(self.dists),), 0, 1e9)
+        samples = np.hstack(
+            [
+                self.dists[i]
+                .sample(params[i], nsamples, seeds[i])
+                .reshape(nsamples, -1)
+                for i in range(len(self.dists))
+            ]
+        )
+
         return samples
