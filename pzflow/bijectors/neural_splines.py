@@ -43,6 +43,8 @@ def _RationalQuadraticSpline(
     inverse : bool, default=False
         If True, perform the inverse transformation.
         Otherwise perform the forward transformation.
+    periodic : bool, default=False
+        Whether to make this a periodic, Circular Spline [2].
 
     Returns
     -------
@@ -56,6 +58,9 @@ def _RationalQuadraticSpline(
     [1] Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios.
         Neural Spline Flows. arXiv:1906.04032, 2019.
         https://arxiv.org/abs/1906.04032
+    [2] Rezende, Danilo Jimenez et al.
+        Normalizing Flows on Tori and Spheres. arxiv:2002.02428, 2020
+        http://arxiv.org/abs/2002.02428
     """
     # knot x-positions
     xk = np.pad(
@@ -211,7 +216,7 @@ def NeuralSplineCoupling(
     n_conditions : int, default=0
         The number of variables to condition the bijection on.
     periodic : bool, default=False
-        Whether to make this a periodic, Circular Spline [4]
+        Whether to make this a periodic, Circular Spline [4].
 
     Returns
     -------
@@ -313,6 +318,7 @@ def RollingSplineCoupling(
     hidden_dim: int = 128,
     transformed_dim: int = None,
     n_conditions: int = 0,
+    periodic: bool = False,
 ) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that alternates NeuralSplineCouplings and Roll bijections.
 
@@ -335,6 +341,8 @@ def RollingSplineCoupling(
         Default is ceiling(input_dim /2).
     n_conditions : int, default=0
         The number of variables to condition the bijection on.
+    periodic : bool, default=False
+        Whether to make this a periodic, Circular Spline
 
     Returns
     -------
@@ -354,6 +362,7 @@ def RollingSplineCoupling(
                 hidden_dim=hidden_dim,
                 transformed_dim=transformed_dim,
                 n_conditions=n_conditions,
+                periodic=periodic,
             ),
             Roll(),
         )
