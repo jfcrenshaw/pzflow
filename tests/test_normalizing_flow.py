@@ -32,20 +32,22 @@ def test_returns_correct_shape(flow):
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
+    conditions = flow._get_conditions(x, xarray.shape[0])
+
     x_with_errs = flow._array_with_errs(x)
     assert x_with_errs.shape == (3, 4)
     x_with_errs = flow._array_with_errs(x, skip="redshift")
     assert x_with_errs.shape == (3, 3)
 
-    xfwd, xfwd_log_det = flow._forward(flow._params, xarray)
+    xfwd, xfwd_log_det = flow._forward(flow._params, xarray, conditions=conditions)
     assert xfwd.shape == x.shape
     assert xfwd_log_det.shape == (x.shape[0],)
 
-    xinv, xinv_log_det = flow._inverse(flow._params, xarray)
+    xinv, xinv_log_det = flow._inverse(flow._params, xarray, conditions=conditions)
     assert xinv.shape == x.shape
     assert xinv_log_det.shape == (x.shape[0],)
 
-    J = flow._jacobian(flow._params, xarray)
+    J = flow._jacobian(flow._params, xarray, conditions=conditions)
     assert J.shape == (3, 2, 2)
 
     nsamples = 4
@@ -114,7 +116,8 @@ def test_jacobian():
     columns = ("redshift", "y")
     flow = Flow(columns, Chain(Reverse(), Scale(2.0)))
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    J = flow._jacobian(flow._params, xarray)
+    conditions = flow._get_conditions(None, xarray.shape[0])
+    J = flow._jacobian(flow._params, xarray, conditions=conditions)
     assert np.allclose(
         J,
         np.array([[[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]]]),
@@ -210,3 +213,22 @@ def test_train_bad_inputs(epochs, burn_in_epochs, loss_fn):
             loss_fn=lambda x: x ** 2,
             convolve_err=True,
         )
+
+
+def test_conditional_sample():
+
+    flow = Flow(("x", "y"), Reverse(), conditional_columns=("a", "b"))
+    x = np.arange(12).reshape(-1, 4)
+    x = pd.DataFrame(x, columns=("x", "y", "a", "b"))
+
+    conditions = flow._get_conditions(x, x.shape[0])
+    assert conditions.shape == (x.shape[0], 2)
+
+    with pytest.raises(ValueError):
+        flow.sample(4)
+
+    samples = flow.sample(4, conditions=x)
+    assert samples.shape == (4 * x.shape[0], 4)
+
+    samples = flow.sample(4, conditions=x, save_conditions=False)
+    assert samples.shape == (4 * x.shape[0], 2)
