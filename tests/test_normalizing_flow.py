@@ -32,20 +32,22 @@ def test_returns_correct_shape(flow):
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
+    conditions = flow._get_conditions(x, xarray.shape[0])
+
     x_with_errs = flow._array_with_errs(x)
     assert x_with_errs.shape == (3, 4)
     x_with_errs = flow._array_with_errs(x, skip="redshift")
     assert x_with_errs.shape == (3, 3)
 
-    xfwd, xfwd_log_det = flow._forward(flow._params, xarray)
+    xfwd, xfwd_log_det = flow._forward(flow._params, xarray, conditions=conditions)
     assert xfwd.shape == x.shape
     assert xfwd_log_det.shape == (x.shape[0],)
 
-    xinv, xinv_log_det = flow._inverse(flow._params, xarray)
+    xinv, xinv_log_det = flow._inverse(flow._params, xarray, conditions=conditions)
     assert xinv.shape == x.shape
     assert xinv_log_det.shape == (x.shape[0],)
 
-    J = flow._jacobian(flow._params, xarray)
+    J = flow._jacobian(flow._params, xarray, conditions=conditions)
     assert J.shape == (3, 2, 2)
 
     nsamples = 4
@@ -114,7 +116,8 @@ def test_jacobian():
     columns = ("redshift", "y")
     flow = Flow(columns, Chain(Reverse(), Scale(2.0)))
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    J = flow._jacobian(flow._params, xarray)
+    conditions = flow._get_conditions(None, xarray.shape[0])
+    J = flow._jacobian(flow._params, xarray, conditions=conditions)
     assert np.allclose(
         J,
         np.array([[[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]]]),
