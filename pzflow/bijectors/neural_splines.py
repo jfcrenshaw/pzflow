@@ -159,6 +159,7 @@ def NeuralSplineCoupling(
     B: float = 3,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
+    transformed_dim: int = None,
     n_conditions: int = 0,
 ) -> Tuple[InitFunction, Bijector_Info]:
     """A coupling layer bijection with rational quadratic splines.
@@ -185,6 +186,9 @@ def NeuralSplineCoupling(
     hidden_dim : int, default=128
         The width of the hidden layers in the neural network used to
         calculate the positions and derivatives of the spline knots.
+    transformed_dim : int, optional
+        The number of dimensions transformed by the splines.
+        Default is ceiling(input_dim /2).
     n_conditions : int, default=0
         The number of variables to condition the bijection on.
 
@@ -211,14 +215,18 @@ def NeuralSplineCoupling(
 
     bijector_info = (
         "NeuralSplineCoupling",
-        (K, B, hidden_layers, hidden_dim, n_conditions),
+        (K, B, hidden_layers, hidden_dim, transformed_dim, n_conditions),
     )
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
-        upper_dim = input_dim // 2  # variables that determine NN params
-        lower_dim = input_dim - upper_dim  # variables transformed by the NN
+        if transformed_dim is None:
+            upper_dim = input_dim // 2  # variables that determine NN params
+            lower_dim = input_dim - upper_dim  # variables transformed by the NN
+        else:
+            upper_dim = input_dim - transformed_dim
+            lower_dim = transformed_dim
 
         # create the neural network that will take in the upper dimensions and
         # will return the spline parameters to transform the lower dimensions
@@ -272,6 +280,7 @@ def RollingSplineCoupling(
     B: float = 3,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
+    transformed_dim: int = None,
     n_conditions: int = 0,
 ) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that alternates NeuralSplineCouplings and Roll bijections.
@@ -290,6 +299,11 @@ def RollingSplineCoupling(
     hidden_dim : int, default=128
         The width of the hidden layers in the neural network used to
         calculate the bins and derivatives in the RollingSplineCoupling.
+    transformed_dim : int, optional
+        The number of dimensions transformed by the splines.
+        Default is ceiling(input_dim /2).
+    n_conditions : int, default=0
+        The number of variables to condition the bijection on.
 
     Returns
     -------
@@ -301,6 +315,16 @@ def RollingSplineCoupling(
 
     """
     return Chain(
-        *(NeuralSplineCoupling(K, B, hidden_layers, hidden_dim, n_conditions), Roll())
+        *(
+            NeuralSplineCoupling(
+                K=K,
+                B=B,
+                hidden_layers=hidden_layers,
+                hidden_dim=hidden_dim,
+                transformed_dim=transformed_dim,
+                n_conditions=n_conditions,
+            ),
+            Roll(),
+        )
         * nlayers
     )
