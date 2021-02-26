@@ -263,7 +263,7 @@ def NeuralSplineCoupling(
         # create the neural network that will take in the upper dimensions and
         # will return the spline parameters to transform the lower dimensions
         network_init_fun, network_apply_fun = DenseReluNetwork(
-            (3 * K - 1) * lower_dim, hidden_layers, hidden_dim
+            (3 * K - 1 + int(periodic)) * lower_dim, hidden_layers, hidden_dim
         )
         _, network_params = network_init_fun(rng, (upper_dim + n_conditions,))
 
@@ -312,6 +312,7 @@ def NeuralSplineCoupling(
 @Bijector
 def RollingSplineCoupling(
     nlayers: int,
+    shift: int = 1,
     K: int = 16,
     B: float = 3,
     hidden_layers: int = 2,
@@ -326,6 +327,8 @@ def RollingSplineCoupling(
     ----------
     nlayers : int
         The number of (NeuralSplineCoupling(), Roll()) couplets in the chain.
+    shift : int
+        How far the inputs are shifted on each Roll().
     K : int, default=16
         Number of bins in the RollingSplineCoupling.
     B : float, default=3
@@ -364,7 +367,7 @@ def RollingSplineCoupling(
                 n_conditions=n_conditions,
                 periodic=periodic,
             ),
-            Roll(),
+            Roll(shift),
         )
         * nlayers
     )
