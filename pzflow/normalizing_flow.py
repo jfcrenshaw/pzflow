@@ -216,7 +216,7 @@ class Flow:
         # Jacobian of inverse bijection
         J = self._jacobian(params[1], X, conditions)
         # calculate modified covariances
-        sig_u = J @ (Xerr[..., None] * J.transpose((0, 2, 1)))
+        sig_u = J @ (Xerr[..., None] ** 2 * J.transpose((0, 2, 1)))
         # add identity matrix to each covariance matrix
         idx = sub_diag_indices(sig_u)
         sig = ops.index_update(sig_u, idx, sig_u[idx] + 1)
