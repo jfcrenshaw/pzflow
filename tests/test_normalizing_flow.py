@@ -3,6 +3,7 @@ import jax.numpy as np
 import pandas as pd
 from pzflow import Flow
 from pzflow.bijectors import Chain, Reverse, Scale
+from pzflow.distributions import *
 
 
 @pytest.mark.parametrize(
@@ -24,8 +25,9 @@ def test_bad_inputs(data_columns, bijector, info, file):
 @pytest.mark.parametrize(
     "flow",
     [
-        Flow(("redshift", "y"), Reverse(), latent="Normal"),
-        Flow(("redshift", "y"), Reverse(), latent="Tdist"),
+        Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
+        Flow(("redshift", "y"), Reverse(), latent=Tdist(2)),
+        Flow(("redshift", "y"), Reverse(), latent=Uniform([(-3, 3), (-3, 3)])),
     ],
 )
 def test_returns_correct_shape(flow):
@@ -70,7 +72,7 @@ def test_error_convolution():
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
-    flow = Flow(("redshift", "y"), Reverse(), latent="Normal")
+    flow = Flow(("redshift", "y"), Reverse(), latent=Normal(2))
 
     assert flow.log_prob(x, convolve_err=True).shape == (x.shape[0],)
 
@@ -83,7 +85,7 @@ def test_error_convolution():
         == 17
     )
 
-    flow = Flow(("redshift", "y"), Reverse(), latent="Tdist")
+    flow = Flow(("redshift", "y"), Reverse(), latent=Tdist(2))
     with pytest.raises(ValueError):
         flow.log_prob(x, convolve_err=True).shape
     with pytest.raises(ValueError):
