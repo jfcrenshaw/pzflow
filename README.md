@@ -15,7 +15,7 @@ There are several example notebooks demonstrating how to use pzflow
 1. [Introduction of a basic flow with the two moons data set](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/intro.ipynb)
 2. [A more complex example with galaxy redshifts](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb)
 3. [An example of building a conditional flow on redshift data](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/conditional_redshift_example.ipynb)
-4. [An example of using a more complicated joint latent distribution to model data with periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/conditional_redshift_example.ipynb)
+4. [An example of using a more complicated joint latent distribution to model data with periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
 
 If you notice any bugs or have any questions, feel free to reach out!
 
