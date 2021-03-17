@@ -201,9 +201,8 @@ class Uniform:
 
         # validate inputs
         ranges = np.atleast_2d(ranges)
-        for r in ranges:
-            if r.size != 2:
-                raise ValueError("ranges must be tuple or list of (min, max)")
+        if ranges.shape[1] != 2:
+            raise ValueError("ranges must be tuple or list of (min, max)")
 
         # save min and max of each dimension
         mins, maxes = ranges[:, 0], ranges[:, 1]

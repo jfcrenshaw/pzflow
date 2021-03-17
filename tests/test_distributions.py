@@ -61,4 +61,4 @@ def test_normal_cov():
 )
 def test_uniform_bad_inputs(inputs):
     with pytest.raises(ValueError):
-        Uniform(inputs)
+        Uniform(*inputs)
