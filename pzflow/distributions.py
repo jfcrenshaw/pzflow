@@ -172,8 +172,10 @@ class Tdist:
         """
         mean = np.zeros(self.input_dim)
         nu = np.exp(params)
+        print("SEED!!! 1", seed, type(seed))
         seed = onp.random.randint(1e18) if seed is None else seed
-        rng = onp.random.default_rng(seed)
+        print("SEED!!! 2", seed, type(seed))
+        rng = onp.random.default_rng(int(seed))
         x = np.array(rng.chisquare(nu, nsamples) / nu)
         z = random.multivariate_normal(
             key=random.PRNGKey(seed),
@@ -188,34 +190,24 @@ class Tdist:
 class Uniform:
     """A multivariate uniform distribution."""
 
-    def __init__(self, ranges: list = None, input_dim: int = None):
+    def __init__(self, *ranges):
         """
         Parameters
         ----------
-        ranges : list
+        ranges : list or tuple
             List of maximum and minimum for each dimension.
-            Should be [(min1, max1), (min2, max2), ...].
-            The overall dimension is inferred from the number of tuples
-            in the list.
-        input_dim : int
-            Can be used instead of ranges. Will create distributions U(-3, 3).
+            The overall dimension is inferred from the number of ranges provided.
         """
 
         # validate inputs
-        if ranges is None and input_dim is None:
-            raise ValueError("Must provide either ranges or input_dim.")
-        elif ranges is not None:
-            for t in ranges:
-                if len(t) != 2:
-                    raise ValueError("ranges must be a list of (min, max)")
-
-        # if input_dim is given, use default (-3, 3) for each dimension
-        if ranges is None and input_dim is not None:
-            ranges = [(-3, 3) for i in range(input_dim)]
+        ranges = np.atleast_2d(ranges)
+        for r in ranges:
+            if r.size != 2:
+                raise ValueError("ranges must be tuple or list of (min, max)")
 
         # save min and max of each dimension
-        mins = np.array([r[0] for r in ranges])
-        maxes = np.array([r[1] for r in ranges])
+        mins, maxes = ranges[:, 0], ranges[:, 1]
+
         # make sure all the minima are less than the maxima
         if not all(mins < maxes):
             raise ValueError("Range minima must be less than maxima.")
@@ -225,7 +217,7 @@ class Uniform:
         self.maxes = maxes
 
         # save distribution info
-        self.input_dim = len(ranges)
+        self.input_dim = ranges.shape[0]
         self._params = ()
         self.info = ("Uniform", (ranges,))
 
@@ -363,7 +355,7 @@ class Joint:
         """
 
         seed = onp.random.randint(1e18) if seed is None else seed
-        seeds = random.randint(random.PRNGKey(seed), (len(self.dists),), 0, 1e9)
+        seeds = random.randint(random.PRNGKey(seed), (len(self.dists),), 0, int(1e9))
         samples = np.hstack(
             [
                 self.dists[i]

@@ -3,34 +3,40 @@ import jax.numpy as np
 from pzflow.distributions import *
 
 
-@pytest.mark.parametrize("distribution", [Normal, Tdist])
-def test_returns_correct_shapes(distribution):
+@pytest.mark.parametrize(
+    "distribution,inputs,params",
+    [
+        (Normal, (2,), ()),
+        (Tdist, (2,), np.log(30.0)),
+        (Uniform, ((0, 1), (0, 1)), ()),
+        (Joint, (Normal(1), Uniform((0, 1))), ((), ())),
+        (Joint, (Normal(1), Tdist(1)), ((), np.log(30.0))),
+    ],
+)
+class TestDistributions:
+    def test_returns_correct_shapes(self, distribution, inputs, params):
 
-    input_dim = 2
-    dist = distribution(input_dim)
+        dist = distribution(*inputs)
 
-    nsamples = 8
-    samples = dist.sample(4, nsamples)
-    assert samples.shape == (nsamples, input_dim)
+        nsamples = 8
+        samples = dist.sample(params, nsamples)
+        assert samples.shape == (nsamples, 2)
 
-    log_prob = dist.log_prob(4, samples)
-    assert log_prob.shape == (nsamples,)
+        log_prob = dist.log_prob(params, samples)
+        assert log_prob.shape == (nsamples,)
 
+    def test_control_sample_randomness(self, distribution, inputs, params):
 
-@pytest.mark.parametrize("distribution", [Normal, Tdist])
-def test_control_sample_randomness(distribution):
+        dist = distribution(*inputs)
 
-    input_dim = 2
-    dist = distribution(input_dim)
+        nsamples = 8
+        s1 = dist.sample(params, nsamples)
+        s2 = dist.sample(params, nsamples)
+        assert ~np.all(np.isclose(s1, s2))
 
-    nsamples = 8
-    s1 = dist.sample(4, nsamples)
-    s2 = dist.sample(4, nsamples)
-    assert ~np.all(np.isclose(s1, s2))
-
-    s1 = dist.sample(4, nsamples, seed=0)
-    s2 = dist.sample(4, nsamples, seed=0)
-    assert np.allclose(s1, s2)
+        s1 = dist.sample(params, nsamples, seed=0)
+        s2 = dist.sample(params, nsamples, seed=0)
+        assert np.allclose(s1, s2)
 
 
 def test_normal_cov():

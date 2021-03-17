@@ -27,7 +27,7 @@ def test_bad_inputs(data_columns, bijector, info, file):
     [
         Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
         Flow(("redshift", "y"), Reverse(), latent=Tdist(2)),
-        Flow(("redshift", "y"), Reverse(), latent=Uniform([(-3, 3), (-3, 3)])),
+        Flow(("redshift", "y"), Reverse(), latent=Uniform((-3, 3), (-3, 3))),
     ],
 )
 def test_returns_correct_shape(flow):
