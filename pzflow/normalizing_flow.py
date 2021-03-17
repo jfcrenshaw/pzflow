@@ -34,7 +34,7 @@ class Flow:
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
         conditional_columns: Sequence[str] = None,
-        latent: str = None,
+        latent=None,
         info: Any = None,
         file: str = None,
     ):
@@ -55,9 +55,11 @@ class Flow:
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
         conditional_columns : Sequence[str], optional
             Names of columns on which to condition the normalizing flow.
-        latent : str, optional
-            The latent distribution for the normalizing flow. Possible values
-            are `Normal` or `Tdist`. Default is `Normal`.
+        latent : distribution, optional
+            The latent distribution for the normalizing flow. Can be any of
+            the distributions from pzflow.distributions. If not provided,
+            a normal distribution is used with the number of dimensions
+            inferred.
         info : Any, optional
             An object to attach to the info attribute.
         file : str, optional
@@ -89,22 +91,25 @@ class Flow:
         if file is not None:
             with open(file, "rb") as handle:
                 save_dict = pickle.load(handle)
-            # load params from the file
+            # load columns and dimensions
             self.data_columns = save_dict["data_columns"]
             self.conditional_columns = save_dict["conditional_columns"]
             self._input_dim = len(self.data_columns)
             self.info = save_dict["info"]
+
+            # load the latent distribution
+            self._latent_info = save_dict["latent_info"]
+            self.latent = getattr(distributions, self._latent_info[0])(
+                *self._latent_info[1]
+            )
+
+            # load the bijector
             self._bijector_info = save_dict["bijector_info"]
-            self._params = save_dict["params"]
-
-            # set up the latent distribution
-            self.latent = getattr(distributions, save_dict["latent"])(self._input_dim)
-
-            # set up the bijector
             init_fun, _ = build_bijector_from_info(self._bijector_info)
             _, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
             )
+            self._params = save_dict["params"]
 
         # if no file is provided, use provided parameters
         else:
@@ -118,8 +123,11 @@ class Flow:
                 self.conditional_columns = tuple(conditional_columns)
 
             # set up the latent distribution
-            latent = "Normal" if latent is None else latent
-            self.latent = getattr(distributions, latent)(self._input_dim)
+            if latent is None:
+                self.latent = getattr(distributions, "Normal")(self._input_dim)
+            else:
+                self.latent = latent
+            self._latent_info = self.latent.info
 
             # set up the bijector with random params
             init_fun, self._bijector_info = bijector
@@ -208,7 +216,7 @@ class Flow:
         # Jacobian of inverse bijection
         J = self._jacobian(params[1], X, conditions)
         # calculate modified covariances
-        sig_u = J @ (Xerr[..., None] * J.transpose((0, 2, 1)))
+        sig_u = J @ (Xerr[..., None] ** 2 * J.transpose((0, 2, 1)))
         # add identity matrix to each covariance matrix
         idx = sub_diag_indices(sig_u)
         sig = ops.index_update(sig_u, idx, sig_u[idx] + 1)
@@ -468,8 +476,8 @@ class Flow:
             "data_columns": self.data_columns,
             "conditional_columns": self.conditional_columns,
             "info": self.info,
+            "latent_info": self._latent_info,
             "bijector_info": self._bijector_info,
-            "latent": self.latent.type,
             "params": self._params,
         }
         if not file.endswith(".pkl"):

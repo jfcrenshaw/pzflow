@@ -20,6 +20,7 @@ def _RationalQuadraticSpline(
     H: np.ndarray,
     D: np.ndarray,
     B: float,
+    periodic: bool = False,
     inverse: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Apply rational quadratic spline to inputs and return outputs with log_det.
@@ -42,6 +43,8 @@ def _RationalQuadraticSpline(
     inverse : bool, default=False
         If True, perform the inverse transformation.
         Otherwise perform the forward transformation.
+    periodic : bool, default=False
+        Whether to make this a periodic, Circular Spline [2].
 
     Returns
     -------
@@ -55,6 +58,9 @@ def _RationalQuadraticSpline(
     [1] Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios.
         Neural Spline Flows. arXiv:1906.04032, 2019.
         https://arxiv.org/abs/1906.04032
+    [2] Rezende, Danilo Jimenez et al.
+        Normalizing Flows on Tori and Spheres. arxiv:2002.02428, 2020
+        http://arxiv.org/abs/2002.02428
     """
     # knot x-positions
     xk = np.pad(
@@ -71,21 +77,26 @@ def _RationalQuadraticSpline(
         constant_values=-B,
     )
     # knot derivatives
-    dk = np.pad(
-        D,
-        [(0, 0)] * (len(D.shape) - 1) + [(1, 1)],
-        mode="constant",
-        constant_values=1,
-    )
+    if periodic:
+        dk = np.pad(D, [(0, 0)] * (len(D.shape) - 1) + [(1, 0)], mode="wrap")
+    else:
+        dk = np.pad(
+            D,
+            [(0, 0)] * (len(D.shape) - 1) + [(1, 1)],
+            mode="constant",
+            constant_values=1,
+        )
     # knot slopes
     sk = H / W
 
-    # any out-of-bounds inputs will have identity applied
-    # for now we will replace these inputs with dummy inputs
-    # so that the spline doesn't cause any problems.
-    # at the end, we will replace them with their original values
+    # if not periodic, out-of-bounds inputs will have identity applied
+    # if periodic, we map the input into the appropriate region inside
+    # the period. For now, we will pretend all inputs are periodic.
+    # This makes sure that out-of-bounds inputs don't cause problems
+    # with the spline, but for the non-periodic case, we will replace
+    # these with their original values at the end
     out_of_bounds = (inputs <= -B) | (inputs >= B)
-    masked_inputs = np.where(out_of_bounds, -B, inputs)
+    masked_inputs = np.where(out_of_bounds, np.abs(inputs) - B, inputs)
 
     # find bin for each input
     if inverse:
@@ -114,7 +125,10 @@ def _RationalQuadraticSpline(
         c = -input_sk * (masked_inputs - input_yk)
 
         relx = 2 * c / (-b - np.sqrt(b ** 2 - 4 * a * c))
-        outputs = np.where(out_of_bounds, inputs, relx * input_wk + input_xk)
+        outputs = relx * input_wk + input_xk
+        # if not periodic, replace out-of-bounds values with original values
+        if not periodic:
+            outputs = np.where(out_of_bounds, inputs, outputs)
 
         # [1] Appendix A.2
         # calculate the log determinant
@@ -125,6 +139,9 @@ def _RationalQuadraticSpline(
         )
         dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
+        # if not periodic, replace log_det for out-of-bounds values = 0
+        if not periodic:
+            log_det = np.where(out_of_bounds, 0, log_det)
         log_det = log_det.sum(axis=1)
 
         return outputs, -log_det
@@ -135,9 +152,10 @@ def _RationalQuadraticSpline(
         relx = (masked_inputs - input_xk) / input_wk
         num = input_hk * (input_sk * relx ** 2 + input_dk * relx * (1 - relx))
         den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
-        spline_val = input_yk + num / den
-        # replace out-of-bounds values
-        outputs = np.where(out_of_bounds, inputs, spline_val)
+        outputs = input_yk + num / den
+        # if not periodic, replace out-of-bounds values with original values
+        if not periodic:
+            outputs = np.where(out_of_bounds, inputs, outputs)
 
         # [1] Appendix A.2
         # calculate the log determinant
@@ -148,6 +166,9 @@ def _RationalQuadraticSpline(
         )
         dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
+        # if not periodic, replace log_det for out-of-bounds values = 0
+        if not periodic:
+            log_det = np.where(out_of_bounds, 0, log_det)
         log_det = log_det.sum(axis=1)
 
         return outputs, log_det
@@ -159,18 +180,22 @@ def NeuralSplineCoupling(
     B: float = 3,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
+    transformed_dim: int = None,
     n_conditions: int = 0,
+    periodic: bool = False,
 ) -> Tuple[InitFunction, Bijector_Info]:
     """A coupling layer bijection with rational quadratic splines.
 
     This Bijector is a Coupling Layer [1,2], and as such only transforms
-    the second half of input dimensions. In order to transform all of
-    dimensions, you need multiple Couplings interspersed with Bijectors
-    that change the order of inputs dimensions, e.g., Reverse, Shuffle,
-    Roll, etc.
+    the second half of input dimensions (or the last N dimensions, where
+    N = transformed_dim). In order to transform all of the dimensions,
+    you need multiple Couplings interspersed with Bijectors that change
+    the order of inputs dimensions, e.g., Reverse, Shuffle, Roll, etc.
 
     NeuralSplineCoupling uses piecewise rational quadratic splines,
     as developed in [3].
+
+    If periodic=True, then this is a Circular Spline as described in [4].
 
     Parameters
     ----------
@@ -185,8 +210,13 @@ def NeuralSplineCoupling(
     hidden_dim : int, default=128
         The width of the hidden layers in the neural network used to
         calculate the positions and derivatives of the spline knots.
+    transformed_dim : int, optional
+        The number of dimensions transformed by the splines.
+        Default is ceiling(input_dim /2).
     n_conditions : int, default=0
         The number of variables to condition the bijection on.
+    periodic : bool, default=False
+        Whether to make this a periodic, Circular Spline [4].
 
     Returns
     -------
@@ -207,23 +237,33 @@ def NeuralSplineCoupling(
     [3] Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios.
         Neural Spline Flows. arXiv:1906.04032, 2019.
         https://arxiv.org/abs/1906.04032
+    [4] Rezende, Danilo Jimenez et al.
+        Normalizing Flows on Tori and Spheres. arxiv:2002.02428, 2020
+        http://arxiv.org/abs/2002.02428
     """
+
+    if not isinstance(periodic, bool):
+        raise ValueError("`periodic` must be True or False.")
 
     bijector_info = (
         "NeuralSplineCoupling",
-        (K, B, hidden_layers, hidden_dim, n_conditions),
+        (K, B, hidden_layers, hidden_dim, transformed_dim, n_conditions, periodic),
     )
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
-        upper_dim = input_dim // 2  # variables that determine NN params
-        lower_dim = input_dim - upper_dim  # variables transformed by the NN
+        if transformed_dim is None:
+            upper_dim = input_dim // 2  # variables that determine NN params
+            lower_dim = input_dim - upper_dim  # variables transformed by the NN
+        else:
+            upper_dim = input_dim - transformed_dim
+            lower_dim = transformed_dim
 
         # create the neural network that will take in the upper dimensions and
         # will return the spline parameters to transform the lower dimensions
         network_init_fun, network_apply_fun = DenseReluNetwork(
-            (3 * K - 1) * lower_dim, hidden_layers, hidden_dim
+            (3 * K - 1 + int(periodic)) * lower_dim, hidden_layers, hidden_dim
         )
         _, network_params = network_init_fun(rng, (upper_dim + n_conditions,))
 
@@ -231,7 +271,7 @@ def NeuralSplineCoupling(
         def spline_params(params, upper, conditions):
             key = np.hstack((upper, conditions))[:, : upper_dim + n_conditions]
             outputs = network_apply_fun(params, key)
-            outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1])
+            outputs = np.reshape(outputs, [-1, lower_dim, 3 * K - 1 + int(periodic)])
             W, H, D = np.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)
             H = 2 * B * softmax(H)
@@ -245,7 +285,9 @@ def NeuralSplineCoupling(
             # widths, heights, derivatives = function(upper dimensions)
             W, H, D = spline_params(params, upper, conditions)
             # transform the lower dimensions with the Rational Quadratic Spline
-            lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=False)
+            lower, log_det = _RationalQuadraticSpline(
+                lower, W, H, D, B, periodic, inverse=False
+            )
             outputs = np.hstack((upper, lower))
             return outputs, log_det
 
@@ -256,7 +298,9 @@ def NeuralSplineCoupling(
             # widths, heights, derivatives = function(upper dimensions)
             W, H, D = spline_params(params, upper, conditions)
             # transform the lower dimensions with the Rational Quadratic Spline
-            lower, log_det = _RationalQuadraticSpline(lower, W, H, D, B, inverse=True)
+            lower, log_det = _RationalQuadraticSpline(
+                lower, W, H, D, B, periodic, inverse=True
+            )
             outputs = np.hstack((upper, lower))
             return outputs, log_det
 
@@ -268,11 +312,14 @@ def NeuralSplineCoupling(
 @Bijector
 def RollingSplineCoupling(
     nlayers: int,
+    shift: int = 1,
     K: int = 16,
     B: float = 3,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
+    transformed_dim: int = None,
     n_conditions: int = 0,
+    periodic: bool = False,
 ) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that alternates NeuralSplineCouplings and Roll bijections.
 
@@ -280,6 +327,8 @@ def RollingSplineCoupling(
     ----------
     nlayers : int
         The number of (NeuralSplineCoupling(), Roll()) couplets in the chain.
+    shift : int
+        How far the inputs are shifted on each Roll().
     K : int, default=16
         Number of bins in the RollingSplineCoupling.
     B : float, default=3
@@ -290,6 +339,13 @@ def RollingSplineCoupling(
     hidden_dim : int, default=128
         The width of the hidden layers in the neural network used to
         calculate the bins and derivatives in the RollingSplineCoupling.
+    transformed_dim : int, optional
+        The number of dimensions transformed by the splines.
+        Default is ceiling(input_dim /2).
+    n_conditions : int, default=0
+        The number of variables to condition the bijection on.
+    periodic : bool, default=False
+        Whether to make this a periodic, Circular Spline
 
     Returns
     -------
@@ -301,6 +357,17 @@ def RollingSplineCoupling(
 
     """
     return Chain(
-        *(NeuralSplineCoupling(K, B, hidden_layers, hidden_dim, n_conditions), Roll())
+        *(
+            NeuralSplineCoupling(
+                K=K,
+                B=B,
+                hidden_layers=hidden_layers,
+                hidden_dim=hidden_dim,
+                transformed_dim=transformed_dim,
+                n_conditions=n_conditions,
+                periodic=periodic,
+            ),
+            Roll(shift),
+        )
         * nlayers
     )

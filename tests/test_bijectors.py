@@ -32,6 +32,7 @@ x = np.array(
         (NeuralSplineCoupling, (), np.zeros((3, 1))),
         (NeuralSplineCoupling, (16, 3, 2, 128, 3), np.arange(9).reshape(3, 3)),
         (RollingSplineCoupling, (2,), np.zeros((3, 1))),
+        (RollingSplineCoupling, (2, 1, 16, 3, 2, 128, None, 0, True), np.zeros((3, 1))),
     ],
 )
 class TestBijectors:
@@ -81,9 +82,14 @@ class TestBijectors:
         (ColorTransform, (1, [2, 3, 4])),
         (Roll, (2.4,)),
         (Scale, (2,)),
+        (Scale, (np.arange(7),)),
         (InvSoftplus, ([0, 1, 2], [1.0, 2.0])),
+        (
+            RollingSplineCoupling,
+            (2, 1, 16, 3, 2, 128, None, 0, "fake"),
+        ),
     ],
 )
-def test_invsoftplus_bad_input(bijector, args):
+def test_bad_inputs(bijector, args):
     with pytest.raises(ValueError):
         bijector(*args)
