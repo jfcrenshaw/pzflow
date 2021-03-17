@@ -566,13 +566,13 @@ def StandardScaler(
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = (inputs - means) / stds
-            log_det = np.log(1 / stds.prod()) * np.ones(inputs.shape[0])
+            log_det = np.log(1 / np.prod(stds)) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * stds + means
-            log_det = np.log(stds.prod()) * np.ones(inputs.shape[0])
+            log_det = np.log(np.prod(stds)) * np.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
