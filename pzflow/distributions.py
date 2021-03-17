@@ -219,7 +219,7 @@ class Uniform:
         # save distribution info
         self.input_dim = ranges.shape[0]
         self._params = ()
-        self.info = ("Uniform", (ranges,))
+        self.info = ("Uniform", (*ranges,))
 
     def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Calculates log probability density of inputs.

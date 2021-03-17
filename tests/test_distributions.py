@@ -11,6 +11,7 @@ from pzflow.distributions import *
         (Uniform, ((0, 1), (0, 1)), ()),
         (Joint, (Normal(1), Uniform((0, 1))), ((), ())),
         (Joint, (Normal(1), Tdist(1)), ((), np.log(30.0))),
+        (Joint, (Joint(Normal(1), Uniform((0, 1))).info[1]), ((), ())),
     ],
 )
 class TestDistributions:
@@ -49,3 +50,15 @@ def test_normal_cov():
     cov = np.array([[[1, 0], [0, 1]], [[1, 1], [1, 1]]])
     log_prob = dist.log_prob(4, samples, cov=cov)
     assert log_prob.shape == (nsamples,)
+
+
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        ((-1, 1, 2),),
+        ((2, 1),),
+    ],
+)
+def test_uniform_bad_inputs(inputs):
+    with pytest.raises(ValueError):
+        Uniform(inputs)
