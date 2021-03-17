@@ -16,6 +16,12 @@ def test_load_galaxy_data():
     assert data.shape == (100000, 7)
 
 
+def test_load_city_data():
+    data = examples.city_data()
+    assert isinstance(data, pd.DataFrame)
+    assert data.shape == (47966, 5)
+
+
 def test_load_example_flow():
     flow = examples.example_flow()
     assert isinstance(flow, Flow)
