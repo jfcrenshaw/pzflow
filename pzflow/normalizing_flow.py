@@ -145,7 +145,7 @@ class Flow:
         """
         X = inputs.copy()
         for col in self.data_columns:
-            # if errors are provided for the column, fill in zeros
+            # if errors not provided for the column, fill in zeros
             if f"{col}_err" not in inputs.columns or col == skip:
                 X[f"{col}_err"] = np.zeros(X.shape[0])
         # get list of columns in correct order
@@ -165,12 +165,11 @@ class Flow:
         # if this isn't a conditional flow, just return empty conditions
         if self.conditional_columns is None:
             conditions = np.zeros((nrows, 1))
-            return conditions
         # if this a conditional flow, return an array of the conditions
         else:
             columns = list(self.conditional_columns)
             conditions = np.array(inputs[columns].values)
-            return conditions
+        return conditions
 
     def _jacobian(
         self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
@@ -183,7 +182,7 @@ class Flow:
         # evaluated at the vector y. the [None, :] and .squeeze() are
         # just making sure the inputs and outputs are of the correct shape
         def J(y, c):
-            return jacfwd(lambda x: self._inverse(params, x, conditions=c[None, :])[0])(
+            return jacfwd(lambda x: self._forward(params, x, conditions=c[None, :])[0])(
                 y[None, :]
             ).squeeze()
 
@@ -213,7 +212,7 @@ class Flow:
         # forward and log determinant
         u, log_det = self._forward(params[1], X, conditions=conditions)
 
-        # Jacobian of inverse bijection
+        # Jacobian of forward bijection
         J = self._jacobian(params[1], X, conditions)
         # calculate modified covariances
         sig_u = J @ (Xerr[..., None] ** 2 * J.transpose((0, 2, 1)))

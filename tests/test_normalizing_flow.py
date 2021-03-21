@@ -122,7 +122,7 @@ def test_jacobian():
     J = flow._jacobian(flow._params, xarray, conditions=conditions)
     assert np.allclose(
         J,
-        np.array([[[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]], [[0, 0.5], [0.5, 0]]]),
+        np.array([[[0, 2.0], [2.0, 0]], [[0, 2.0], [2.0, 0]], [[0, 2.0], [2.0, 0]]]),
     )
 
 
