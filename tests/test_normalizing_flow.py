@@ -75,6 +75,10 @@ def test_error_convolution():
     flow = Flow(("redshift", "y"), Reverse(), latent=Normal(2))
 
     assert flow.log_prob(x, convolve_err=True).shape == (x.shape[0],)
+    assert np.allclose(
+        flow.log_prob(x, convolve_err=True),
+        flow.log_prob(x, convolve_err=False),
+    )
 
     grid = np.arange(0, 2.1, 0.12)
     pdfs = flow.posterior(x, column="y", grid=grid, convolve_err=True)

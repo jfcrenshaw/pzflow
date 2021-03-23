@@ -241,7 +241,6 @@ class Flow:
             Looks for in `inputs` for columns with names ending in `_err`.
             I.e., the error for column `u` needs to be in the column `u_err`.
             Zero error assumed for any missing error columns.
-            WARNING: This is still experimental.
 
         Returns
         -------
@@ -252,8 +251,6 @@ class Flow:
             raise ValueError(
                 "Currently can only convolve error when using a Normal latent distribution."
             )
-        if convolve_err:
-            print("WARNING: Error convolution is still experimental.")
 
         if not convolve_err:
             # convert data to an array with columns ordered
@@ -305,7 +302,6 @@ class Flow:
             Looks for in `inputs` for columns with names ending in `_err`.
             I.e., the error for column `u` needs to be in the column `u_err`.
             Zero error assumed for any missing error columns.
-            WARNING: This is still experimental.
         batch_size : int, default=None
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
@@ -320,8 +316,6 @@ class Flow:
             raise ValueError(
                 "Currently can only convolve error when using a Normal latent distribution."
             )
-        if convolve_err:
-            print("WARNING: Error convolution is still experimental.")
 
         # get the index of the provided column, and remove it from the list
         columns = list(self.data_columns)
