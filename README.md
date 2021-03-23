@@ -24,7 +24,7 @@ If you notice any bugs or have any questions, feel free to reach out!
 
 We are preparing a paper on pzflow.
 If you use this package in your research, please check back here for a citation before publication.
-In the meantime, please cite the [Zenodo release](https://zenodo.org/record/4619228).
+In the meantime, please cite the [Zenodo release](https://zenodo.org/badge/latestdoi/327498448).
 
 ## Installation
 
