@@ -7,7 +7,7 @@ extras = {
 
 setup(
     name="pzflow",
-    version="1.5.1",
+    version="1.5.2",
     author="John Franklin Crenshaw",
     author_email="jfc20@uw.edu",
     description="Probabilistic modeling of tabular data with normalizing flows.",
@@ -17,7 +17,7 @@ setup(
     url="http://github.com/jfcrenshaw/pzflow",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["jax", "jaxlib", "pandas>=1.1"],
+    install_requires=["dill", "jax", "jaxlib", "pandas>=1.1"],
     extras_require=extras,
     classifiers=[
         "Programming Language :: Python :: 3",

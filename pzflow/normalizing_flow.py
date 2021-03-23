@@ -1,5 +1,5 @@
 import itertools
-import pickle
+import dill as pickle
 from typing import Any, Callable, Sequence, Tuple
 
 import jax.numpy as np
@@ -476,7 +476,7 @@ class Flow:
         if not file.endswith(".pkl"):
             file += ".pkl"
         with open(file, "wb") as handle:
-            pickle.dump(save_dict, handle)
+            pickle.dump(save_dict, handle, recurse=True)
 
     def _train(
         self,
