@@ -1,6 +1,7 @@
 ![build](https://github.com/jfcrenshaw/pzflow/workflows/build/badge.svg)
 [![codecov](https://codecov.io/gh/jfcrenshaw/pzflow/branch/main/graph/badge.svg?token=qR5cey0swQ)](https://codecov.io/gh/jfcrenshaw/pzflow)
 [![PyPI version](https://badge.fury.io/py/pzflow.svg)](https://badge.fury.io/py/pzflow)
+[![DOI](https://zenodo.org/badge/327498448.svg)](https://zenodo.org/badge/latestdoi/327498448)
 
 # pzflow
 
@@ -18,6 +19,12 @@ There are several example notebooks demonstrating how to use pzflow
 4. [An example of using a more complicated joint latent distribution to model data with periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
 
 If you notice any bugs or have any questions, feel free to reach out!
+
+## Citation
+
+We are preparing a paper on pzflow.
+If you use this package in your research, please check back here for a citation before publication.
+In the meantime, please cite the [Zenodo release](https://zenodo.org/record/4619228).
 
 ## Installation
 
@@ -39,11 +46,6 @@ import jax
 jax.config.update('jax_platform_name', 'cpu')
 ```
 Note that if you run jax on GPU in multiple Jupyter notebooks simultaneously, you may get `RuntimeError: cuSolver internal error`. Read more [here](https://github.com/google/jax/issues/4497) and [here](https://jax.readthedocs.io/en/latest/gpu_memory_allocation.html).
-
-## Citation
-
-We are preparing a paper on pzflow.
-If you are using this package in your research, please check back here for a citation before publication.
 
 ### Development
 
