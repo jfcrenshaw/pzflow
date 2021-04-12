@@ -35,6 +35,7 @@ class Flow:
         bijector: Tuple[InitFunction, Bijector_Info] = None,
         conditional_columns: Sequence[str] = None,
         latent=None,
+        seed: int = 0,
         info: Any = None,
         file: str = None,
     ):
@@ -60,6 +61,8 @@ class Flow:
             the distributions from pzflow.distributions. If not provided,
             a normal distribution is used with the number of dimensions
             inferred.
+        seed : int, default=0
+            The random seed for initial parameters
         info : Any, optional
             An object to attach to the info attribute.
         file : str, optional
@@ -132,7 +135,7 @@ class Flow:
             # set up the bijector with random params
             init_fun, self._bijector_info = bijector
             bijector_params, self._forward, self._inverse = init_fun(
-                random.PRNGKey(0), self._input_dim
+                random.PRNGKey(seed), self._input_dim
             )
             self._params = (self.latent._params, bijector_params)
 
