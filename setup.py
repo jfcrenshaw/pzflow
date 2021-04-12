@@ -7,7 +7,7 @@ extras = {
 
 setup(
     name="pzflow",
-    version="1.5.2",
+    version="1.6.0",
     author="John Franklin Crenshaw",
     author_email="jfc20@uw.edu",
     description="Probabilistic modeling of tabular data with normalizing flows.",
