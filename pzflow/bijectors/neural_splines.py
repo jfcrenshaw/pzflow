@@ -145,33 +145,31 @@ def _RationalQuadraticSpline(
         log_det = log_det.sum(axis=1)
 
         return outputs, -log_det
+    # [1] Appendix A.1
+    # calculate spline
+    relx = (masked_inputs - input_xk) / input_wk
+    num = input_hk * (input_sk * relx ** 2 + input_dk * relx * (1 - relx))
+    den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
+    outputs = input_yk + num / den
+    # if not periodic, replace out-of-bounds values with original values
+    if not periodic:
+        outputs = np.where(out_of_bounds, inputs, outputs)
 
-    else:
-        # [1] Appendix A.1
-        # calculate spline
-        relx = (masked_inputs - input_xk) / input_wk
-        num = input_hk * (input_sk * relx ** 2 + input_dk * relx * (1 - relx))
-        den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
-        outputs = input_yk + num / den
-        # if not periodic, replace out-of-bounds values with original values
-        if not periodic:
-            outputs = np.where(out_of_bounds, inputs, outputs)
+    # [1] Appendix A.2
+    # calculate the log determinant
+    dnum = (
+        input_dkp1 * relx ** 2
+        + 2 * input_sk * relx * (1 - relx)
+        + input_dk * (1 - relx) ** 2
+    )
+    dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
+    log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
+    # if not periodic, replace log_det for out-of-bounds values = 0
+    if not periodic:
+        log_det = np.where(out_of_bounds, 0, log_det)
+    log_det = log_det.sum(axis=1)
 
-        # [1] Appendix A.2
-        # calculate the log determinant
-        dnum = (
-            input_dkp1 * relx ** 2
-            + 2 * input_sk * relx * (1 - relx)
-            + input_dk * (1 - relx) ** 2
-        )
-        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
-        log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
-        # if not periodic, replace log_det for out-of-bounds values = 0
-        if not periodic:
-            log_det = np.where(out_of_bounds, 0, log_det)
-        log_det = log_det.sum(axis=1)
-
-        return outputs, log_det
+    return outputs, log_det
 
 
 @Bijector

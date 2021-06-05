@@ -15,8 +15,7 @@ def build_bijector_from_info(info):
     if info[0] == "Chain":
         return bijectors.Chain(*(build_bijector_from_info(i) for i in info[1]))
     # build individual bijector from name and parameters
-    else:
-        return getattr(bijectors, info[0])(*info[1])
+    return getattr(bijectors, info[0])(*info[1])
 
 
 def DenseReluNetwork(

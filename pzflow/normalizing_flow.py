@@ -70,17 +70,17 @@ class Flow:
         # validate parameters
         if data_columns is None and bijector is None and file is None:
             raise ValueError("You must provide data_columns and bijector OR file.")
-        elif data_columns is not None and bijector is None:
+        if data_columns is not None and bijector is None:
             raise ValueError("Please also provide a bijector.")
-        elif data_columns is None and bijector is not None:
+        if data_columns is None and bijector is not None:
             raise ValueError("Please also provide data_columns.")
-        elif file is not None and any(
+        if file is not None and any(
             (
-                data_columns != None,
-                bijector != None,
-                conditional_columns != None,
-                latent != None,
-                info != None,
+                data_columns is not None,
+                bijector is not None,
+                conditional_columns is not None,
+                latent is not None,
+                info is not None,
             )
         ):
             raise ValueError(
@@ -124,7 +124,7 @@ class Flow:
 
             # set up the latent distribution
             if latent is None:
-                self.latent = getattr(distributions, "Normal")(self._input_dim)
+                self.latent = distributions.Normal(self._input_dim)
             else:
                 self.latent = latent
             self._latent_info = self.latent.info
@@ -264,13 +264,12 @@ class Flow:
             conditions = self._get_conditions(inputs, len(inputs))
             # calculate log_prob
             return self._log_prob(self._params, X, conditions)
-        else:
-            # convert data to an array with columns ordered
-            X = self._array_with_errs(inputs)
-            # get conditions
-            conditions = self._get_conditions(inputs, len(inputs))
-            # calculate log_prob
-            return self._log_prob_convolved(self._params, X, conditions)
+        # convert data to an array with columns ordered
+        X = self._array_with_errs(inputs)
+        # get conditions
+        conditions = self._get_conditions(inputs, len(inputs))
+        # calculate log_prob
+        return self._log_prob_convolved(self._params, X, conditions)
 
     def posterior(
         self,
