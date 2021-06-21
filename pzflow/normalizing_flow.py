@@ -175,24 +175,6 @@ class Flow:
             conditions = np.array(inputs[columns].values)
         return conditions
 
-    def _jacobian(
-        self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
-    ) -> np.ndarray:
-        """Calculates the Jacobian of the forward bijection"""
-
-        # calculates jacobian for a single input
-        # first we define a lambda that calculates the forward
-        # (but drops the log_det). then we take the Jacobian of that
-        # evaluated at the vector y. the [None, :] and .squeeze() are
-        # just making sure the inputs and outputs are of the correct shape
-        def J(y, c):
-            return jacfwd(lambda x: self._forward(params, x, conditions=c[None, :])[0])(
-                y[None, :]
-            ).squeeze()
-
-        # now we can vectorize with Jax and apply to whole set of inputs at once
-        return vmap(J)(inputs, conditions)
-
     def _log_prob(
         self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
     ) -> np.ndarray:
@@ -205,33 +187,35 @@ class Flow:
         return log_prob
 
     def _log_prob_convolved(
-        self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
+        self,
+        params: Pytree,
+        inputs: np.ndarray,
+        conditions: np.ndarray,
+        nsamples: int,
+        seed,
     ) -> np.ndarray:
-        """Log prob for arrays, with error convolution"""
+        """Log prob for arrays, with error convolution via Gaussian sampling."""
 
         # separate data from data errs
         ncols = len(self.data_columns)
         X, Xerr = inputs[:, :ncols], inputs[:, ncols:]
-
-        # forward and log determinant
-        u, log_det = self._forward(params[1], X, conditions=conditions)
-
-        # Jacobian of forward bijection
-        J = self._jacobian(params[1], X, conditions)
-        # calculate modified covariances
-        sig_u = J @ (Xerr[..., None] ** 2 * J.transpose((0, 2, 1)))
-        # add identity matrix to each covariance matrix
-        idx = sub_diag_indices(sig_u)
-        sig = ops.index_update(sig_u, idx, sig_u[idx] + 1)
-
-        # calculate log_prob w.r.t the latent distribution, with the new covariances
-        log_prob = self.latent.log_prob(params[0], u, sig) + log_det
-        # set NaN's to negative infinity (i.e. zero probability)
-        log_prob = np.nan_to_num(log_prob, nan=np.NINF)
-        return log_prob
+        # lower bound on Xerr to avoid singular matrix
+        Xerr = np.clip(Xerr, 1e-16, None)
+        # generate samples
+        rng = random.PRNGKey(seed)
+        Xsamples = random.multivariate_normal(
+            rng, X, vmap(np.diag)(Xerr), shape=(nsamples, X.shape[0])
+        )
+        Xsamples = Xsamples.reshape(-1, ncols, order="F")
+        # get conditions
+        C = np.repeat(conditions, nsamples, axis=0)
+        # calculate log_probs
+        log_probs = self._log_prob(params, Xsamples, C)
+        log_probs = log_probs.reshape(-1, nsamples)
+        return log_probs.mean(axis=1)
 
     def log_prob(
-        self, inputs: pd.DataFrame, nsamples: int = 1, seed: int = None
+        self, inputs: pd.DataFrame, nsamples: int = None, seed: int = None
     ) -> np.ndarray:
         """Calculates log probability density of inputs.
 
@@ -242,12 +226,12 @@ class Flow:
             Every column in self.data_columns must be present.
             If self.conditional_columns is not None, those must be present
             as well. If other columns are present, they are ignored.
-        nsamples : int, default=1
+        nsamples : int, default=None
             Number of samples to average over for the log_prob calculation.
-            If nsamples > 1, then Gaussian errors are assumed, and method
-            will look for error columns in `inputs`. Error columns must end
-            in `_err`. E.g. the error column for the variable `u` must be
-            `u_err`. Zero error assumed for any missing error columns.
+            If provided, then Gaussian errors are assumed, and method will
+            look for error columns in `inputs`. Error columns must end in
+            `_err`. E.g. the error column for the variable `u` must be `u_err`.
+            Zero error assumed for any missing error columns.
         seed : int, default=None
             Random seed for drawing the samples with Gaussian errors.
 
@@ -257,11 +241,7 @@ class Flow:
             Device array of shape (inputs.shape[0],).
         """
 
-        # validate nsamples
-        assert isinstance(nsamples, int), "nsamples must be a positive integer."
-        assert nsamples > 0, "nsamples must be a positive integer."
-
-        if nsamples == 1:
+        if nsamples is None:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
             X = np.array(inputs[columns].values)
@@ -271,27 +251,16 @@ class Flow:
             return self._log_prob(self._params, X, conditions)
 
         else:
+            # validate nsamples
+            assert isinstance(nsamples, int), "nsamples must be a positive integer."
+            assert nsamples > 0, "nsamples must be a positive integer."
             # convert data to an array with columns ordered
             X = self._array_with_errs(inputs)
-            # separate data from data errs
-            ncols = len(self.data_columns)
-            X, Xerr = X[:, :ncols], X[:, ncols:]
-            # lower bound on Xerr to avoid singular matrix
-            Xerr = np.clip(Xerr, 1e-16, None)
-            # generate samples
-            seed = onp.random.randint(1e18) if seed is None else seed
-            rng = random.PRNGKey(seed)
-            Xsamples = random.multivariate_normal(
-                rng, X, vmap(np.diag)(Xerr), shape=(nsamples, X.shape[0])
-            )
-            Xsamples = Xsamples.reshape(-1, ncols, order="F")
             # get conditions
             conditions = self._get_conditions(inputs, len(inputs))
-            conditions = np.repeat(conditions, nsamples, axis=0)
-            # calculate log_probs
-            log_probs = self._log_prob(self._params, Xsamples, conditions)
-            log_probs = log_probs.reshape(-1, nsamples)
-            return log_probs.mean(axis=1)
+            # set the seed
+            seed = onp.random.randint(1e18) if seed is None else seed
+            return self._log_prob_convolved(self._params, X, conditions, nsamples, seed)
 
     def posterior(
         self,
@@ -299,7 +268,8 @@ class Flow:
         column: str,
         grid: np.ndarray,
         normalize: bool = True,
-        convolve_err: bool = False,
+        nsamples: int = None,
+        seed: int = None,
         batch_size: int = None,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
@@ -322,11 +292,14 @@ class Flow:
             Grid on which to calculate the posterior.
         normalize : boolean, default=True
             Whether to normalize the posterior so that it integrates to 1.
-        convolve_err : boolean, default=False
-            Whether to analytically convolve Gaussian errors in the posterior.
-            Looks for in `inputs` for columns with names ending in `_err`.
-            I.e., the error for column `u` needs to be in the column `u_err`.
+        nsamples : int, default=None
+            Number of samples to average over for the posterior calculation.
+            If provided, then Gaussian errors are assumed, and method will
+            look for error columns in `inputs`. Error columns must end in
+            `_err`. E.g. the error column for the variable `u` must be `u_err`.
             Zero error assumed for any missing error columns.
+        seed : int, default=None
+            Random seed for drawing the samples with Gaussian errors.
         batch_size : int, default=None
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
@@ -337,10 +310,6 @@ class Flow:
         np.ndarray
             Device array of shape (inputs.shape[0], grid.size).
         """
-        if convolve_err and not isinstance(self.latent, distributions.Normal):
-            raise ValueError(
-                "Currently can only convolve error when using a Normal latent distribution."
-            )
 
         # get the index of the provided column, and remove it from the list
         columns = list(self.data_columns)
@@ -350,17 +319,28 @@ class Flow:
         nrows = inputs.shape[0]
         batch_size = nrows if batch_size is None else batch_size
 
-        # 1. convert data (sans the provided column) to array with columns ordered
-        # 2. if this is a conditional flow, get array of conditions
-        # 3. alias the required log_prob function
-        if convolve_err:
-            X = self._array_with_errs(inputs, skip=column)
-            conditions = self._get_conditions(inputs, len(inputs))
-            log_prob_fun = self._log_prob_convolved
-        else:
+        # convert data (sans the provided column) to array with columns ordered
+        # and alias the appropriate log_prob function
+        if nsamples is None:
+            # get array of data
             X = np.array(inputs[columns].values)
-            conditions = self._get_conditions(inputs, len(inputs))
+            # alias _log_prob_convolved
             log_prob_fun = self._log_prob
+        else:
+            # validate nsamples
+            assert isinstance(nsamples, int), "nsamples must be a positive integer."
+            assert nsamples > 0, "nsamples must be a positive integer."
+            # get array of [data, data_err]
+            X = self._array_with_errs(inputs, skip=column)
+            # set the seed
+            seed = onp.random.randint(1e18) if seed is None else seed
+            # alias _log_prob_convolved with nsamples and seed plugged in
+            log_prob_fun = lambda params, X, C: self._log_prob_convolved(
+                params, X, C, nsamples, seed
+            )
+
+        # if this is a conditional flow, get the conditions
+        conditions = self._get_conditions(inputs, len(inputs))
 
         # empty array to hold pdfs
         pdfs = np.zeros((nrows, len(grid)))
