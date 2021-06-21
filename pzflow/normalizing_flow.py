@@ -1,6 +1,7 @@
 import itertools
 import dill as pickle
 from typing import Any, Callable, Sequence, Tuple
+import numpy as onp
 
 import jax.numpy as np
 import pandas as pd
@@ -229,7 +230,9 @@ class Flow:
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
 
-    def log_prob(self, inputs: pd.DataFrame, convolve_err=False) -> np.ndarray:
+    def log_prob(
+        self, inputs: pd.DataFrame, nsamples: int = 1, seed: int = None
+    ) -> np.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
@@ -239,23 +242,26 @@ class Flow:
             Every column in self.data_columns must be present.
             If self.conditional_columns is not None, those must be present
             as well. If other columns are present, they are ignored.
-        convolve_err : boolean, default=False
-            Whether to analytically convolve Gaussian errors.
-            Looks for in `inputs` for columns with names ending in `_err`.
-            I.e., the error for column `u` needs to be in the column `u_err`.
-            Zero error assumed for any missing error columns.
+        nsamples : int, default=1
+            Number of samples to average over for the log_prob calculation.
+            If nsamples > 1, then Gaussian errors are assumed, and method
+            will look for error columns in `inputs`. Error columns must end
+            in `_err`. E.g. the error column for the variable `u` must be
+            `u_err`. Zero error assumed for any missing error columns.
+        seed : int, default=None
+            Random seed for drawing the samples with Gaussian errors.
 
         Returns
         -------
         np.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        if convolve_err and not isinstance(self.latent, distributions.Normal):
-            raise ValueError(
-                "Currently can only convolve error when using a Normal latent distribution."
-            )
 
-        if not convolve_err:
+        # validate nsamples
+        assert isinstance(nsamples, int), "nsamples must be a positive integer."
+        assert nsamples > 0, "nsamples must be a positive integer."
+
+        if nsamples == 1:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
             X = np.array(inputs[columns].values)
@@ -263,13 +269,29 @@ class Flow:
             conditions = self._get_conditions(inputs, len(inputs))
             # calculate log_prob
             return self._log_prob(self._params, X, conditions)
+
         else:
             # convert data to an array with columns ordered
             X = self._array_with_errs(inputs)
+            # separate data from data errs
+            ncols = len(self.data_columns)
+            X, Xerr = X[:, :ncols], X[:, ncols:]
+            # lower bound on Xerr to avoid singular matrix
+            Xerr = np.clip(Xerr, 1e-16, None)
+            # generate samples
+            seed = onp.random.randint(1e18) if seed is None else seed
+            rng = random.PRNGKey(seed)
+            Xsamples = random.multivariate_normal(
+                rng, X, vmap(np.diag)(Xerr), shape=(nsamples, X.shape[0])
+            )
+            Xsamples = Xsamples.reshape(-1, ncols, order="F")
             # get conditions
             conditions = self._get_conditions(inputs, len(inputs))
-            # calculate log_prob
-            return self._log_prob_convolved(self._params, X, conditions)
+            conditions = np.repeat(conditions, nsamples, axis=0)
+            # calculate log_probs
+            log_probs = self._log_prob(self._params, Xsamples, conditions)
+            log_probs = log_probs.reshape(-1, nsamples)
+            return log_probs.mean(axis=1)
 
     def posterior(
         self,
@@ -420,6 +442,11 @@ class Flow:
         pd.DataFrame
             Pandas DataFrame of samples.
         """
+
+        # validate nsamples
+        assert isinstance(nsamples, int), "nsamples must be a positive integer."
+        assert nsamples > 0, "nsamples must be a positive integer."
+
         if self.conditional_columns is not None and conditions is None:
             raise ValueError(
                 f"Must provide the following conditions\n{self.conditional_columns}"
