@@ -481,64 +481,6 @@ class Flow:
         with open(file, "wb") as handle:
             pickle.dump(save_dict, handle, recurse=True)
 
-    def _train(
-        self,
-        inputs: np.ndarray,
-        conditions: np.ndarray,
-        epochs: int,
-        batch_size: int,
-        optimizer: Optimizer,
-        loss_fn: Callable,
-        rng: np.ndarray,
-        verbose: bool,
-    ) -> list:
-        """Private training loop that is called by the public train method."""
-
-        # initialize the optimizer
-        optimizer = adam(step_size=1e-3) if optimizer is None else optimizer
-        opt_init, opt_update, get_params = optimizer
-        opt_state = opt_init(self._params)
-
-        # define the training step function
-        @jit
-        def step(i, opt_state, x, c):
-            params = get_params(opt_state)
-            gradients = grad(loss_fn)(params, x, c)
-            return opt_update(i, gradients, opt_state)
-
-        # save the initial loss
-        losses = [loss_fn(self._params, inputs, conditions)]
-        if verbose:
-            print(f"{losses[-1]:.4f}")
-
-        # loop through training
-        itercount = itertools.count()
-        for epoch in range(epochs):
-            # new permutation of batches
-            permute_rng, rng = random.split(rng)
-            idx = random.permutation(permute_rng, inputs.shape[0])
-            X = inputs[idx]
-            C = conditions[idx]
-            # loop through batches and step optimizer
-            for batch_idx in range(0, len(X), batch_size):
-                opt_state = step(
-                    next(itercount),
-                    opt_state,
-                    X[batch_idx : batch_idx + batch_size],
-                    C[batch_idx : batch_idx + batch_size],
-                )
-
-            # save end-of-epoch training loss
-            params = get_params(opt_state)
-            losses.append(loss_fn(params, inputs, conditions))
-
-            if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
-                print(f"{losses[-1]:.4f}")
-
-        # update the flow parameters with the final training state
-        self._params = get_params(opt_state)
-        return losses
-
     def train(
         self,
         inputs: pd.DataFrame,
@@ -546,8 +488,6 @@ class Flow:
         batch_size: int = 1024,
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
-        convolve_err: bool = False,
-        burn_in_epochs: int = 0,
         seed: int = 0,
         verbose: bool = False,
     ) -> list:
@@ -570,22 +510,6 @@ class Flow:
         loss_fn : Callable, optional
             A function to calculate the loss: loss = loss_fn(params, x).
             If not provided, will be -mean(log_prob).
-        convolve_err : boolean, default=False
-            Whether to convolve Gaussian errors in the loss function.
-            Looks for in `inputs` for columns with names ending in `_err`.
-            I.e., the error for column `u` needs to be in the column `u_err`.
-            Zero error assumed for any missing error columns.
-            Note this only works with the default loss function and a
-            Gaussian latent distribution.
-            WARNING this is still experimental -- training is unstable and
-            often results in NaN's.
-
-        burn_in_epochs : int, default=0
-            The number of epochs to train without error convolution,
-            before beginning to train with error convolution.
-            E.g., if epochs=50 and convolve_burn_in=20, then the flow
-            is trained for 20 epochs without error convolution, followed
-            by 50 epochs with error convolution.
         seed : int, default=0
             A random seed to control the batching.
         verbose : bool, default=False
@@ -597,102 +521,70 @@ class Flow:
             List of training losses from every epoch.
         """
 
-        if convolve_err:
-            print("WARNING: error convolution in training is still experimental.")
-
-        if convolve_err and not isinstance(self.latent, distributions.Normal):
-            raise ValueError(
-                "Currently can only convolve error when using a Normal latent distribution."
-            )
-
         # validate epochs
         if not isinstance(epochs, int) or epochs <= 0:
             raise ValueError("epochs must be a positive integer.")
-        if not isinstance(burn_in_epochs, int) or burn_in_epochs < 0:
-            raise ValueError("burn_in_epochs must be a non-negative integer.")
 
-        # get random seeds for training loops
-        rng = random.PRNGKey(seed)
-        burn_in_rng, main_train_rng = random.split(rng)
+        # if no loss_fn is provided, use the default loss function
+        if loss_fn is None:
 
-        # if we are convolving errors, we will first perform burn-in
-        # then will set up for the real training loop
-        burn_in_losses = []
-        if convolve_err:
-            # make sure we are using the default loss function
-            if loss_fn is not None:
-                raise ValueError(
-                    "Error convolution is currently only implemented for the default loss function."
-                )
-            # perform burn-in
-            if burn_in_epochs > 0:
-                if verbose:
-                    print(f"Burning-in {burn_in_epochs} epochs \nLoss:")
-                # use the loss function without error convolution
-                @jit
-                def loss_fn(params, x, c):
-                    return -np.mean(self._log_prob(params, x, c))
-
-                # convert data to an array with required columns
-                columns = list(self.data_columns)
-                X = np.array(inputs[columns].values)
-                conditions = self._get_conditions(inputs, inputs.shape[0])
-
-                # run the training
-                burn_in_losses = self._train(
-                    X,
-                    conditions,
-                    burn_in_epochs,
-                    batch_size,
-                    optimizer,
-                    loss_fn,
-                    burn_in_rng,
-                    verbose,
-                )
-                if verbose:
-                    print("Burn-in complete \n")
-
-            # AFTER BURN-IN
-            # switch to the convolved loss function
             @jit
             def loss_fn(params, x, c):
-                return -np.mean(self._log_prob_convolved(params, x, c))
+                return -np.mean(self._log_prob(params, x, c))
 
-            # and get a data array with error columns
-            X = self._array_with_errs(inputs)
-            conditions = self._get_conditions(inputs, inputs.shape[0])
+        # initialize the optimizer
+        optimizer = adam(step_size=1e-3) if optimizer is None else optimizer
+        opt_init, opt_update, get_params = optimizer
+        opt_state = opt_init(self._params)
 
-        # if not performing error convolution,
-        # simply get ready for the real training loop
-        else:
-            # if no loss_fn is provided, use the default loss function
-            if loss_fn is None:
+        # define the training step function
+        @jit
+        def step(i, opt_state, x, c):
+            params = get_params(opt_state)
+            gradients = grad(loss_fn)(params, x, c)
+            return opt_update(i, gradients, opt_state)
 
-                @jit
-                def loss_fn(params, x, c):
-                    return -np.mean(self._log_prob(params, x, c))
+        # convert data to an array with required columns
+        columns = list(self.data_columns)
+        X = np.array(inputs[columns].values)
+        C = self._get_conditions(inputs, inputs.shape[0])
 
-            # convert data to an array with required columns
-            columns = list(self.data_columns)
-            X = np.array(inputs[columns].values)
-            conditions = self._get_conditions(inputs, inputs.shape[0])
+        # get random seed for training loop
+        rng = random.PRNGKey(seed)
 
         if verbose:
             print(f"Training {epochs} epochs \nLoss:")
 
-        # normal training run
-        main_train_losses = self._train(
-            X,
-            conditions,
-            epochs,
-            batch_size,
-            optimizer,
-            loss_fn,
-            main_train_rng,
-            verbose,
-        )
+        # save the initial loss
+        losses = [loss_fn(self._params, X, C)]
+        if verbose:
+            print(f"(0) {losses[-1]:.4f}")
 
-        # combine the burn-in and main training losses
-        losses = burn_in_losses + main_train_losses
+        # loop through training
+        itercount = itertools.count()
+        for epoch in range(epochs):
+            # new permutation of batches
+            permute_rng, rng = random.split(rng)
+            idx = random.permutation(permute_rng, inputs.shape[0])
+            X_permuted = X[idx]
+            C_permuted = C[idx]
+            # loop through batches and step optimizer
+            for batch_idx in range(0, len(X), batch_size):
+                opt_state = step(
+                    next(itercount),
+                    opt_state,
+                    X_permuted[batch_idx : batch_idx + batch_size],
+                    C_permuted[batch_idx : batch_idx + batch_size],
+                )
+
+            # save end-of-epoch training loss
+            params = get_params(opt_state)
+            losses.append(loss_fn(params, X, C))
+
+            if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
+                print(f"({epoch+1}) {losses[-1]:.4f}")
+
+        # update the flow parameters with the final training state
+        self._params = get_params(opt_state)
 
         return losses
