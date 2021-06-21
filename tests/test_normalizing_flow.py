@@ -49,9 +49,6 @@ def test_returns_correct_shape(flow):
     assert xinv.shape == x.shape
     assert xinv_log_det.shape == (x.shape[0],)
 
-    J = flow._jacobian(flow._params, xarray, conditions=conditions)
-    assert J.shape == (3, 2, 2)
-
     nsamples = 4
     assert flow.sample(nsamples).shape == (nsamples, x.shape[1])
     assert flow.log_prob(x).shape == (x.shape[0],)
@@ -69,33 +66,55 @@ def test_returns_correct_shape(flow):
 
 def test_error_convolution():
 
+    flow = Flow(("redshift", "y"), Reverse(), latent=Normal(2))
+
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
-    flow = Flow(("redshift", "y"), Reverse(), latent=Normal(2))
+    xarray_with_err = np.array(
+        [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.2, 0.3], [5.0, 6.0, 0.1, 0.2]]
+    )
+    x_with_err = pd.DataFrame(
+        xarray_with_err, columns=("redshift", "y", "redshift_err", "y_err")
+    )
 
-    assert flow.log_prob(x, convolve_err=True).shape == (x.shape[0],)
+    assert flow.log_prob(x, nsamples=10).shape == (x.shape[0],)
     assert np.allclose(
-        flow.log_prob(x, convolve_err=True),
-        flow.log_prob(x, convolve_err=False),
+        flow.log_prob(x, nsamples=10, seed=0),
+        flow.log_prob(x),
+    )
+    assert ~np.allclose(
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err),
+    )
+    assert np.allclose(
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+    )
+    assert ~np.allclose(
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err, nsamples=10, seed=1),
     )
 
     grid = np.arange(0, 2.1, 0.12)
-    pdfs = flow.posterior(x, column="y", grid=grid, convolve_err=True)
+    pdfs = flow.posterior(x, column="y", grid=grid, nsamples=10)
     assert pdfs.shape == (x.shape[0], grid.size)
-
-    assert (
-        len(flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4, verbose=True))
-        == 17
+    assert np.allclose(
+        flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x, column="y", grid=grid),
     )
-
-    flow = Flow(("redshift", "y"), Reverse(), latent=Tdist(2))
-    with pytest.raises(ValueError):
-        flow.log_prob(x, convolve_err=True).shape
-    with pytest.raises(ValueError):
-        flow.posterior(x, column="y", grid=grid, convolve_err=True)
-    with pytest.raises(ValueError):
-        flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4, verbose=True)
+    assert ~np.allclose(
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x_with_err, column="y", grid=grid),
+    )
+    assert np.allclose(
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+    )
+    assert ~np.allclose(
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=1),
+    )
 
 
 def test_columns_with_errs():
@@ -116,18 +135,6 @@ def test_columns_with_errs():
     x = pd.DataFrame(xarray, columns=("redshift", "y", "y_err", "redshift_err"))
     x_with_errs = flow._array_with_errs(x, skip="redshift")
     assert np.allclose(x_with_errs, np.array([[2, 0, 0.4], [4, 0, 0.1]]))
-
-
-def test_jacobian():
-    columns = ("redshift", "y")
-    flow = Flow(columns, Chain(Reverse(), Scale(2.0)))
-    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    conditions = flow._get_conditions(None, xarray.shape[0])
-    J = flow._jacobian(flow._params, xarray, conditions=conditions)
-    assert np.allclose(
-        J,
-        np.array([[[0, 2.0], [2.0, 0]], [[0, 2.0], [2.0, 0]], [[0, 2.0], [2.0, 0]]]),
-    )
 
 
 def test_posterior_batch():
@@ -193,18 +200,14 @@ def test_control_sample_randomness():
 
 
 @pytest.mark.parametrize(
-    "epochs,burn_in_epochs,loss_fn,",
+    "epochs,loss_fn,",
     [
-        (-1, 10, None),
-        (2.4, 10, None),
-        ("a", 10, None),
-        (10, -1, None),
-        (10, 1.4, None),
-        (10, "a", None),
-        (10, 10, lambda x: x ** 2),
+        (-1, None),
+        (2.4, None),
+        ("a", None),
     ],
 )
-def test_train_bad_inputs(epochs, burn_in_epochs, loss_fn):
+def test_train_bad_inputs(epochs, loss_fn):
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -215,9 +218,7 @@ def test_train_bad_inputs(epochs, burn_in_epochs, loss_fn):
         flow.train(
             x,
             epochs=epochs,
-            burn_in_epochs=burn_in_epochs,
-            loss_fn=lambda x: x ** 2,
-            convolve_err=True,
+            loss_fn=loss_fn,
         )
 
 
