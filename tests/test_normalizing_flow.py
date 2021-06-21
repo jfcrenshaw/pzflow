@@ -1,5 +1,6 @@
 import pytest
 import jax.numpy as np
+from jax import random, vmap
 import pandas as pd
 from pzflow import Flow
 from pzflow.bijectors import Chain, Reverse, Scale
@@ -95,6 +96,10 @@ def test_error_convolution():
         flow.log_prob(x_with_err, nsamples=10, seed=0),
         flow.log_prob(x_with_err, nsamples=10, seed=1),
     )
+    assert ~np.allclose(
+        flow.log_prob(x_with_err, nsamples=10),
+        flow.log_prob(x_with_err, nsamples=10),
+    )
 
     grid = np.arange(0, 2.1, 0.12)
     pdfs = flow.posterior(x, column="y", grid=grid, nsamples=10)
@@ -115,6 +120,32 @@ def test_error_convolution():
         flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
         flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=1),
     )
+
+    # now I will compare values against manual calculations
+
+    rng = random.PRNGKey(0)
+    xsample = random.multivariate_normal(
+        rng,
+        xarray_with_err[:, :2],
+        vmap(np.diag)(xarray_with_err[:, 2:]),
+        shape=(10, 3),
+    ).reshape(-1, 2, order="F")
+    xsample = pd.DataFrame(xsample, columns=("redshift", "y"))
+    # check log_prob
+    manual_conv = flow.log_prob(xsample).reshape(3, -1).mean(axis=1)
+    auto_conv = flow.log_prob(x_with_err, nsamples=10, seed=0)
+    assert np.allclose(auto_conv, manual_conv)
+
+    # check posterior
+    manual_conv = (
+        flow.posterior(xsample, column="y", grid=grid, normalize=False)
+        .reshape(3, 10, -1)
+        .sum(axis=1)
+    )
+    manual_conv /= manual_conv.sum(axis=1).reshape(-1, 1) * (grid[1] - grid[0])
+    auto_conv = flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0)
+    print("HERE!! -->\n", auto_conv, "\n", manual_conv)
+    assert np.allclose(auto_conv, manual_conv)
 
 
 def test_columns_with_errs():

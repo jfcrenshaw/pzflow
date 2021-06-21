@@ -335,8 +335,8 @@ class Flow:
             # set the seed
             seed = onp.random.randint(1e18) if seed is None else seed
             # alias _log_prob_convolved with nsamples and seed plugged in
-            log_prob_fun = lambda params, X, C: self._log_prob_convolved(
-                params, X, C, nsamples, seed
+            log_prob_fun = lambda p, x, c: self._log_prob_convolved(
+                p, x, c, nsamples, seed
             )
 
         # if this is a conditional flow, get the conditions
