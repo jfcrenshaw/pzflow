@@ -241,3 +241,22 @@ def test_train_no_errs_same():
     losses1 = flow.train(x, sample_errs=True)
     losses2 = flow.train(x, sample_errs=False)
     assert np.allclose(losses1, losses2)
+
+
+def test_get_samples():
+
+    rng = random.PRNGKey(0)
+
+    # check Gaussian data samples
+    columns = ("x", "y")
+    flow = Flow(columns, Reverse())
+    xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
+    x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
+
+    # test skip
+
+    # check incorrect type
+    with pytest.raises(ValueError):
+        flow._get_samples(x, 10, rng, type="wrong")
+
+    # check Gaussian conditional samples
