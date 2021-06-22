@@ -93,8 +93,17 @@ class Flow:
 
         # if file is provided, load everything from the file
         if file is not None:
+            save_dict = {
+                "data_columns": None,
+                "conditional_columns": None,
+                "info": None,
+                "latent_info": None,
+                "bijector_info": None,
+                "params": None,
+            }
             with open(file, "rb") as handle:
-                save_dict = pickle.load(handle)
+                save_dict.update(pickle.load(handle))
+
             # load columns and dimensions
             self.data_columns = save_dict["data_columns"]
             self.conditional_columns = save_dict["conditional_columns"]
@@ -450,7 +459,7 @@ class Flow:
 
         WARNING: Currently, this method only works for bijectors that are
         implemented in the `bijectors` module. If you want to save a flow
-        with a custom bijector, you either need to add the it to that
+        with a custom bijector, you either need to add the bijector to that
         module, or handle the saving and loading on your end.
 
         Parameters
