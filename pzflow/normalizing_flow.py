@@ -1,16 +1,16 @@
 import itertools
-import dill as pickle
 from typing import Any, Callable, Sequence, Tuple
-import numpy as onp
 
+import dill as pickle
 import jax.numpy as np
+import numpy as onp
 import pandas as pd
-from jax import grad, jacfwd, jit, ops, random, vmap
+from jax import grad, jit, ops, random, vmap
 from jax.experimental.optimizers import Optimizer, adam
 
 from pzflow import distributions
 from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
-from pzflow.utils import build_bijector_from_info, sub_diag_indices
+from pzflow.utils import build_bijector_from_info
 
 
 class Flow:
@@ -155,7 +155,7 @@ class Flow:
         return conditions
 
     def _get_samples(
-        self, inputs: pd.DataFrame, nsamples: int, seed, skip: str = None
+        self, inputs: pd.DataFrame, nsamples: int, rng, skip: str = None
     ) -> np.ndarray:
         """Draw Gaussian samples for each row of inputs. """
 
@@ -178,7 +178,6 @@ class Flow:
         # lower bound on Xerr to avoid singular matrix
         Xerr = np.clip(Xerr, 1e-8, None)
         # generate samples
-        rng = random.PRNGKey(seed)
         Xsamples = random.multivariate_normal(
             rng, X, vmap(np.diag)(Xerr ** 2), shape=(nsamples, X.shape[0])
         )
@@ -238,7 +237,8 @@ class Flow:
             assert nsamples > 0, "nsamples must be a positive integer."
             # get Gaussian samples
             seed = onp.random.randint(1e18) if seed is None else seed
-            X = self._get_samples(inputs, nsamples, seed)
+            rng = random.PRNGKey(seed)
+            X = self._get_samples(inputs, nsamples, rng)
             # get conditions
             C = self._get_conditions(inputs, len(inputs))
             C = np.repeat(C, nsamples, axis=0)
@@ -311,6 +311,7 @@ class Flow:
             assert nsamples > 0, "nsamples must be a positive integer."
             # set the seed
             seed = onp.random.randint(1e18) if seed is None else seed
+            rng = random.PRNGKey(seed)
 
         # if this is a conditional flow, get the conditions
         conditions = self._get_conditions(inputs, len(inputs))
@@ -329,7 +330,7 @@ class Flow:
             if nsamples is None:
                 batch = np.array(batch[columns].values)
             else:
-                batch = self._get_samples(batch, nsamples, seed, skip=column)
+                batch = self._get_samples(batch, nsamples, rng, skip=column)
                 batch_conditions = np.repeat(conditions, nsamples, axis=0)
 
             # make a new copy of each row for each value of the column
@@ -478,13 +479,11 @@ class Flow:
         batch_size: int = 1024,
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
+        sample_errs: bool = False,
         seed: int = 0,
         verbose: bool = False,
     ) -> list:
         """Trains the normalizing flow on the provided inputs.
-
-        Calculates the conditional posterior distribution, assuming the
-        data values in the other columns of the DataFrame.
 
         Parameters
         ----------
@@ -500,8 +499,15 @@ class Flow:
         loss_fn : Callable, optional
             A function to calculate the loss: loss = loss_fn(params, x).
             If not provided, will be -mean(log_prob).
+        sample_errs : bool, default=False
+            Whether to draw new data from the error distributions during
+            each epoch of training. Assumes errors are Gaussian, and method
+            will look for error columns in `inputs`. Error columns must end
+            in `_err`. E.g. the error column for the variable `u` must be
+            `u_err`. Zero error assumed for any missing error columns.
         seed : int, default=0
-            A random seed to control the batching.
+            A random seed to control the batching and the (optional)
+            error sampling.
         verbose : bool, default=False
             If true, print the training loss every 5% of epochs.
 
@@ -534,10 +540,19 @@ class Flow:
             gradients = grad(loss_fn)(params, x, c)
             return opt_update(i, gradients, opt_state)
 
-        # convert data to an array with required columns
+        # get list of data columns
         columns = list(self.data_columns)
-        X = np.array(inputs[columns].values)
-        C = self._get_conditions(inputs, inputs.shape[0])
+
+        # define a function to return batches
+        if sample_errs:
+
+            def get_batch(x, sample_rng):
+                return self._get_samples(x, 1, sample_rng)
+
+        else:
+
+            def get_batch(x, sample_rng):
+                return np.array(x[columns].values)
 
         # get random seed for training loop
         rng = random.PRNGKey(seed)
@@ -546,6 +561,8 @@ class Flow:
             print(f"Training {epochs} epochs \nLoss:")
 
         # save the initial loss
+        X = np.array(inputs[columns].values)
+        C = self._get_conditions(inputs, inputs.shape[0])
         losses = [loss_fn(self._params, X, C)]
         if verbose:
             print(f"(0) {losses[-1]:.4f}")
@@ -554,22 +571,31 @@ class Flow:
         itercount = itertools.count()
         for epoch in range(epochs):
             # new permutation of batches
-            permute_rng, rng = random.split(rng)
+            permute_rng, sample_rng, rng = random.split(rng, num=3)
             idx = random.permutation(permute_rng, inputs.shape[0])
-            X_permuted = X[idx]
-            C_permuted = C[idx]
+            X = inputs.iloc[idx]
+            C = self._get_conditions(X, X.shape[0])
+
             # loop through batches and step optimizer
             for batch_idx in range(0, len(X), batch_size):
+
+                # if sampling from the error distribution, this returns a
+                # Gaussian sample of the batch. Else just returns batch as a
+                # jax array
+                batch = get_batch(
+                    X.iloc[batch_idx : batch_idx + batch_size], sample_rng
+                )
+
                 opt_state = step(
                     next(itercount),
                     opt_state,
-                    X_permuted[batch_idx : batch_idx + batch_size],
-                    C_permuted[batch_idx : batch_idx + batch_size],
+                    batch,
+                    C[batch_idx : batch_idx + batch_size],
                 )
 
             # save end-of-epoch training loss
             params = get_params(opt_state)
-            losses.append(loss_fn(params, X, C))
+            losses.append(loss_fn(params, np.array(X[columns].values), C))
 
             if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
                 print(f"({epoch+1}) {losses[-1]:.4f}")
