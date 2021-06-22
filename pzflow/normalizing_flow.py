@@ -140,27 +140,6 @@ class Flow:
             )
             self._params = (self.latent._params, bijector_params)
 
-    def _array_with_errs(self, inputs: pd.DataFrame, skip: str = None) -> np.ndarray:
-        """Convert pandas DataFrame to Jax array with columns for errors.
-
-        Skip can be one of the columns in self.data_columns. If provided,
-        that data column isn't returned (but its zero-error column is).
-        This is a useful utility for the posterior method.
-        """
-        X = inputs.copy()
-        for col in self.data_columns:
-            # if errors not provided for the column, fill in zeros
-            if f"{col}_err" not in inputs.columns or col == skip:
-                X[f"{col}_err"] = np.zeros(X.shape[0])
-        # get list of columns in correct order
-        cols_with_errs = list(self.data_columns)
-        if skip is not None:
-            cols_with_errs.remove(skip)
-        cols_with_errs += [col + "_err" for col in self.data_columns]
-        # convert to jax array
-        X = np.array(X[cols_with_errs].values)
-        return X
-
     def _get_conditions(
         self, inputs: pd.DataFrame = None, nrows: int = None
     ) -> np.ndarray:
@@ -175,6 +154,37 @@ class Flow:
             conditions = np.array(inputs[columns].values)
         return conditions
 
+    def _get_samples(
+        self, inputs: pd.DataFrame, nsamples: int, seed, skip: str = None
+    ) -> np.ndarray:
+        """Draw Gaussian samples for each row of inputs. """
+
+        # convert data to an array with columns ordered
+        X = inputs.copy()
+
+        # make sure all relevant variables have error columns
+        for col in self.data_columns:
+            # if errors not provided for the column, fill in zeros
+            if f"{col}_err" not in inputs.columns and col != skip:
+                X[f"{col}_err"] = np.zeros(X.shape[0])
+
+        # pull out data and error columns
+        columns = list(self.data_columns)
+        if skip is not None:
+            columns.remove(skip)
+        err_columns = [col + "_err" for col in columns]
+        X, Xerr = np.array(X[columns].values), np.array(X[err_columns].values)
+
+        # lower bound on Xerr to avoid singular matrix
+        Xerr = np.clip(Xerr, 1e-8, None)
+        # generate samples
+        rng = random.PRNGKey(seed)
+        Xsamples = random.multivariate_normal(
+            rng, X, vmap(np.diag)(Xerr ** 2), shape=(nsamples, X.shape[0])
+        )
+        Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
+        return Xsamples
+
     def _log_prob(
         self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
     ) -> np.ndarray:
@@ -185,34 +195,6 @@ class Flow:
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
-
-    def _log_prob_convolved(
-        self,
-        params: Pytree,
-        inputs: np.ndarray,
-        conditions: np.ndarray,
-        nsamples: int,
-        seed,
-    ) -> np.ndarray:
-        """Log prob for arrays, with error convolution via Gaussian sampling."""
-
-        # separate data from data errs
-        ncols = len(self.data_columns)
-        X, Xerr = inputs[:, :ncols], inputs[:, ncols:]
-        # lower bound on Xerr to avoid singular matrix
-        Xerr = np.clip(Xerr, 1e-16, None)
-        # generate samples
-        rng = random.PRNGKey(seed)
-        Xsamples = random.multivariate_normal(
-            rng, X, vmap(np.diag)(Xerr), shape=(nsamples, X.shape[0])
-        )
-        Xsamples = Xsamples.reshape(-1, ncols, order="F")
-        # get conditions
-        C = np.repeat(conditions, nsamples, axis=0)
-        # calculate log_probs
-        log_probs = self._log_prob(params, Xsamples, C)
-        log_probs = log_probs.reshape(-1, nsamples)
-        return log_probs.mean(axis=1)
 
     def log_prob(
         self, inputs: pd.DataFrame, nsamples: int = None, seed: int = None
@@ -254,13 +236,17 @@ class Flow:
             # validate nsamples
             assert isinstance(nsamples, int), "nsamples must be a positive integer."
             assert nsamples > 0, "nsamples must be a positive integer."
-            # convert data to an array with columns ordered
-            X = self._array_with_errs(inputs)
-            # get conditions
-            conditions = self._get_conditions(inputs, len(inputs))
-            # set the seed
+            # get Gaussian samples
             seed = onp.random.randint(1e18) if seed is None else seed
-            return self._log_prob_convolved(self._params, X, conditions, nsamples, seed)
+            X = self._get_samples(inputs, nsamples, seed)
+            # get conditions
+            C = self._get_conditions(inputs, len(inputs))
+            C = np.repeat(C, nsamples, axis=0)
+            # set the seed
+            # calculate log_probs
+            log_probs = self._log_prob(self._params, X, C)
+            probs = np.exp(log_probs.reshape(-1, nsamples))
+            return np.log(probs.mean(axis=1))
 
     def posterior(
         self,
@@ -319,25 +305,12 @@ class Flow:
         nrows = inputs.shape[0]
         batch_size = nrows if batch_size is None else batch_size
 
-        # convert data (sans the provided column) to array with columns ordered
-        # and alias the appropriate log_prob function
-        if nsamples is None:
-            # get array of data
-            X = np.array(inputs[columns].values)
-            # alias _log_prob_convolved
-            log_prob_fun = self._log_prob
-        else:
+        if nsamples is not None:
             # validate nsamples
             assert isinstance(nsamples, int), "nsamples must be a positive integer."
             assert nsamples > 0, "nsamples must be a positive integer."
-            # get array of [data, data_err]
-            X = self._array_with_errs(inputs, skip=column)
             # set the seed
             seed = onp.random.randint(1e18) if seed is None else seed
-            # alias _log_prob_convolved with nsamples and seed plugged in
-            log_prob_fun = lambda p, x, c: self._log_prob_convolved(
-                p, x, c, nsamples, seed
-            )
 
         # if this is a conditional flow, get the conditions
         conditions = self._get_conditions(inputs, len(inputs))
@@ -350,8 +323,14 @@ class Flow:
 
             # get the data batch
             # and, if this is a conditional flow, the correpsonding conditions
-            batch = X[batch_idx : batch_idx + batch_size]
+            batch = inputs.iloc[batch_idx : batch_idx + batch_size]
             batch_conditions = conditions[batch_idx : batch_idx + batch_size]
+
+            if nsamples is None:
+                batch = np.array(batch[columns].values)
+            else:
+                batch = self._get_samples(batch, nsamples, seed, skip=column)
+                batch_conditions = np.repeat(conditions, nsamples, axis=0)
 
             # make a new copy of each row for each value of the column
             # for which we are calculating the posterior
@@ -375,19 +354,23 @@ class Flow:
             batch_conditions = np.repeat(batch_conditions, len(grid), axis=0)
 
             # calculate probability densities
-            log_prob = log_prob_fun(self._params, batch, batch_conditions).reshape(
+            log_prob = self._log_prob(self._params, batch, batch_conditions).reshape(
                 (-1, len(grid))
             )
+            prob = np.exp(log_prob)
+            # if we were Gaussian sampling, average over the samples
+            if nsamples is not None:
+                prob = prob.reshape(-1, nsamples, len(grid))
+                prob = prob.mean(axis=1)
+            # add the pdfs to the bigger list
             pdfs = ops.index_update(
                 pdfs,
                 ops.index[batch_idx : batch_idx + batch_size, :],
-                np.exp(log_prob),
+                prob,
                 indices_are_sorted=True,
                 unique_indices=True,
             )
 
-        # reshape so that each row is a posterior
-        pdfs = pdfs.reshape((nrows, len(grid)))
         if normalize:
             # normalize so they integrate to one
             pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
