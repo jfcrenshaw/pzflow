@@ -5,6 +5,7 @@ import sys
 import jax.numpy as np
 from jax import random
 from jax.scipy.special import gammaln
+from jax.scipy.stats import multivariate_normal
 
 from pzflow.bijectors import Pytree
 
@@ -13,7 +14,6 @@ epsilon = sys.float_info.epsilon
 
 def _mahalanobis_and_logdet(x, cov):
     """Calculate mahalanobis distance and log_det of cov.
-
     Uses scipy method, explained here:
     http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
     """
@@ -40,44 +40,27 @@ class Normal:
         self._params = ()
         self.info = ("Normal", (input_dim,))
 
-    def log_prob(
-        self, params: Pytree, inputs: np.ndarray, cov: np.ndarray = None
-    ) -> np.ndarray:
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Calculates log probability density of inputs.
 
-                Parameters
-                ----------
-                params : a Jax pytree
-                    Empty pytree -- this distribution doesn't have learnable parameters.
-                    This parameter is present to ensure a consistent interface.
-                inputs : np.ndarray
-                    Input data for which log probability density is calculated.
-                cov : np.ndarray, default=None
-                    Covariance matrix for the log probability calculation.
+        Parameters
+        ----------
+        params : a Jax pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        inputs : np.ndarray
+            Input data for which log probability density is calculated.
 
-                Returns
-                -------
-                np.ndarray
-                    Device array of shape (inputs.shape[0],).
-        WARNING
-                Notes
-                -----
-                jax.scipy.stats.multivariate_normal.log_pdf doesn't seem to work with
-                different covariances for each input. To get around this, I implemented
-                the method from the original scipy code.
-                See:
-                https://github.com/scipy/scipy/blob/v1.6.0/scipy/stats/_multivariate.py
-                or
-                http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (inputs.shape[0],).
         """
-        if cov is None:
-            maha = (inputs ** 2).sum(axis=1)
-            log_det = 0.0
-        else:
-            maha, log_det = _mahalanobis_and_logdet(inputs, cov)
-
-        log_prob = -0.5 * (inputs.shape[-1] * np.log(2 * np.pi) + log_det + maha)
-        return log_prob
+        return multivariate_normal.logpdf(
+            inputs,
+            mean=np.zeros(self.input_dim),
+            cov=np.identity(self.input_dim),
+        )
 
     def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
         """Returns samples from the distribution.
