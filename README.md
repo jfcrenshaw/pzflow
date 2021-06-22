@@ -10,7 +10,7 @@ Probabilistic modeling of tabular data with normalizing flows.
 If your data consists of continuous variables that can be put into a Pandas DataFrame, pzflow can model the joint probability distribution of your data set.
 
 The `Flow` class makes building and training a normalizing flow simple.
-It also allows you to easily sample from the normalizing flow (e.g. for forward modeling or data augmentation), and to calculate posteriors over any of your variables.
+It also allows you to easily sample from the normalizing flow (e.g., for forward modeling or data augmentation), and calculate posteriors over any of your variables.
 
 There are several example notebooks demonstrating how to use pzflow
 1. [Introduction of a basic flow with the two moons data set](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/intro.ipynb)
@@ -22,7 +22,7 @@ If you notice any bugs or have any questions, feel free to reach out!
 
 It is important to note that there are two different conventions in the literature for the direction of the bijection in normalizing flows.
 pzflow defines the bijection as the mapping from the data space to the latent space, and the inverse bijection as the mapping from the latent space to the data space.
-This distinction can be important when designing more complicated bijections (e.g. in Example 2 below).
+This distinction can be important when designing more complicated bijections (e.g., in Example 2 below).
 
 ## Citation
 
@@ -33,18 +33,18 @@ In the meantime, please cite the [Zenodo release](https://zenodo.org/badge/lates
 ## Installation
 
 You can install pzflow from PyPI with pip:
-```
+```shell
 pip install pzflow
 ```
 If you want to run pzflow on a GPU with CUDA, you need to follow the GPU-enabled installation instructions for jaxlib [here](https://github.com/google/jax).
 You may also need to add the following to your `.bashrc`:
-```
+```shell
 # cuda setup
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 export PATH=$PATH:/usr/local/cuda/bin
 ```
 If you have the GPU enabled version of jax installed, but would like to run on a CPU, add the following to the top of your scripts/notebooks:
-```
+```python
 import jax
 # Global flag to set a specific platform, must be used at startup.
 jax.config.update('jax_platform_name', 'cpu')
