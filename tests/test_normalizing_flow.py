@@ -58,6 +58,7 @@ def test_returns_correct_shape(flow):
     assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
+    assert len(flow.train(x, epochs=11, verbose=True, sample_errs=True)) == 12
 
 
 def test_error_convolution():
@@ -103,18 +104,10 @@ def test_error_convolution():
         flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0),
         flow.posterior(x, column="y", grid=grid),
     )
-    # assert ~np.allclose(
-    #    flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
-    #    flow.posterior(x_with_err, column="y", grid=grid),
-    # )
     assert np.allclose(
         flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
         flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
     )
-    # assert ~np.allclose(
-    #    flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
-    #    flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=1),
-    # )
 
     # now I will compare values against manual calculations
     rng = random.PRNGKey(0)
@@ -236,3 +229,15 @@ def test_conditional_sample():
 
     samples = flow.sample(4, conditions=x, save_conditions=False)
     assert samples.shape == (4 * x.shape[0], 2)
+
+
+def test_train_no_errs_same():
+    columns = ("redshift", "y")
+    flow = Flow(columns, Reverse())
+
+    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    x = pd.DataFrame(xarray, columns=columns)
+
+    losses1 = flow.train(x, sample_errs=True)
+    losses2 = flow.train(x, sample_errs=False)
+    assert np.allclose(losses1, losses2)
