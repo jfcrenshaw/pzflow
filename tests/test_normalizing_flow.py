@@ -35,7 +35,7 @@ def test_returns_correct_shape(flow):
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
-    conditions = flow._get_conditions(x, xarray.shape[0])
+    conditions = flow._get_conditions(x)
 
     xfwd, xfwd_log_det = flow._forward(flow._params, xarray, conditions=conditions)
     assert xfwd.shape == x.shape
@@ -218,7 +218,7 @@ def test_conditional_sample():
     x = np.arange(12).reshape(-1, 4)
     x = pd.DataFrame(x, columns=("x", "y", "a", "b"))
 
-    conditions = flow._get_conditions(x, x.shape[0])
+    conditions = flow._get_conditions(x)
     assert conditions.shape == (x.shape[0], 2)
 
     with pytest.raises(ValueError):
