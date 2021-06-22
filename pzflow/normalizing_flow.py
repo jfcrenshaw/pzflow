@@ -571,12 +571,10 @@ class Flow:
         else:
 
             def get_batch(x, sample_rng, type):
-                if type == "data":
-                    return np.array(x[columns].values)
-                elif type == "conditions":
+                if type == "conditions":
                     return self._get_conditions(x)
                 else:
-                    raise ValueError("type must be `data` or `conditions`.")
+                    return np.array(x[columns].values)
 
         # get random seed for training loop
         rng = random.PRNGKey(seed)
