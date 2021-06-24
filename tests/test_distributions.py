@@ -6,6 +6,7 @@ from pzflow.distributions import *
 @pytest.mark.parametrize(
     "distribution,inputs,params",
     [
+        (CentBeta, (2, 3), ((0, 1), (2, 3))),
         (Normal, (2,), ()),
         (Tdist, (2,), np.log(30.0)),
         (Uniform, ((0, 1), (0, 1)), ()),
