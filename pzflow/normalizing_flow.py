@@ -342,8 +342,8 @@ class Flow:
             batch = inputs.iloc[batch_idx : batch_idx + batch_size]
 
             if nsamples is None:
-                batch = np.array(batch[columns].values)
                 conditions = self._get_conditions(batch)
+                batch = np.array(batch[columns].values)
             else:
                 batch = self._get_samples(
                     rng, batch, nsamples, skip=column, type="data"
