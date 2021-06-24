@@ -61,19 +61,114 @@ def test_returns_correct_shape(flow):
     assert len(flow.train(x, epochs=11, verbose=True, sample_errs=True)) == 12
 
 
-def test_error_convolution():
-
-    flow = Flow(("redshift", "y"), Reverse(), latent=Normal(2))
-
-    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    x = pd.DataFrame(xarray, columns=("redshift", "y"))
-
-    xarray_with_err = np.array(
-        [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.2, 0.3], [5.0, 6.0, 0.1, 0.2]]
-    )
-    x_with_err = pd.DataFrame(
-        xarray_with_err, columns=("redshift", "y", "redshift_err", "y_err")
-    )
+@pytest.mark.parametrize(
+    "flow,x,x_with_err",
+    [
+        (
+            Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
+            pd.DataFrame(
+                np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
+                columns=("redshift", "y"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.2, 0.3], [5.0, 6.0, 0.1, 0.2]]
+                ),
+                columns=("redshift", "y", "redshift_err", "y_err"),
+            ),
+        ),
+        (
+            Flow(
+                ("redshift", "y"),
+                Reverse(),
+                latent=Normal(2),
+                conditional_columns=("a", "b"),
+            ),
+            pd.DataFrame(
+                np.array([[1.0, 2.0, 10, 20], [3.0, 4.0, 30, 40], [5.0, 6.0, 50, 60]]),
+                columns=("redshift", "y", "a", "b"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [
+                        [1.0, 2.0, 10, 20, 0.1, 0.2, 1, 2],
+                        [3.0, 4.0, 30, 40, 0.2, 0.3, 3, 4],
+                        [5.0, 6.0, 50, 60, 0.1, 0.2, 5, 6],
+                    ]
+                ),
+                columns=(
+                    "redshift",
+                    "y",
+                    "a",
+                    "b",
+                    "redshift_err",
+                    "y_err",
+                    "a_err",
+                    "b_err",
+                ),
+            ),
+        ),
+        (
+            Flow(
+                ("redshift", "y"),
+                Reverse(),
+                latent=Normal(2),
+                conditional_columns=("a",),
+            ),
+            pd.DataFrame(
+                np.array([[1.0, 2.0, 10], [3.0, 4.0, 30], [5.0, 6.0, 50]]),
+                columns=("redshift", "y", "a"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [
+                        [1.0, 2.0, 10, 0.1, 0.2, 1],
+                        [3.0, 4.0, 30, 0.2, 0.3, 3],
+                        [5.0, 6.0, 50, 0.1, 0.2, 5],
+                    ]
+                ),
+                columns=(
+                    "redshift",
+                    "y",
+                    "a",
+                    "redshift_err",
+                    "y_err",
+                    "a_err",
+                ),
+            ),
+        ),
+        (
+            Flow(
+                ("y",),
+                Reverse(),
+                latent=Normal(2),
+                conditional_columns=("a", "b"),
+            ),
+            pd.DataFrame(
+                np.array([[1.0, 10, 20], [3.0, 30, 40], [5.0, 50, 60]]),
+                columns=("y", "a", "b"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [
+                        [1.0, 10, 20, 0.1, 1, 2],
+                        [3.0, 30, 40, 0.2, 3, 4],
+                        [5.0, 50, 60, 0.1, 5, 6],
+                    ]
+                ),
+                columns=(
+                    "y",
+                    "a",
+                    "b",
+                    "y_err",
+                    "a_err",
+                    "b_err",
+                ),
+            ),
+        ),
+    ],
+)
+def test_error_convolution(flow, x, x_with_err):
 
     assert flow.log_prob(x, nsamples=10).shape == (x.shape[0],)
     assert np.allclose(
@@ -108,23 +203,6 @@ def test_error_convolution():
         flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
         flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
     )
-
-    # now I will compare values against manual calculations
-    rng = random.PRNGKey(0)
-    xsample = random.multivariate_normal(
-        rng,
-        xarray_with_err[:, :2],
-        vmap(np.diag)(xarray_with_err[:, 2:] ** 2),
-        shape=(10, 3),
-    ).reshape(-1, 2, order="F")
-    xsample = pd.DataFrame(xsample, columns=("redshift", "y"))
-    # check log_prob
-    manual_conv = np.log(np.exp(flow.log_prob(xsample).reshape(3, -1)).mean(axis=1))
-    auto_conv = flow.log_prob(x_with_err, nsamples=10, seed=0)
-    assert np.allclose(auto_conv, manual_conv)
-
-    # I didn't write a test checking posterior values. Should probably
-    # do that at some point...
 
 
 def test_posterior_batch():
