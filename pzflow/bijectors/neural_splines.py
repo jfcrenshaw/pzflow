@@ -177,7 +177,7 @@ def _RationalQuadraticSpline(
 @Bijector
 def NeuralSplineCoupling(
     K: int = 16,
-    B: float = 3,
+    B: float = 5,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
     transformed_dim: int = None,
@@ -201,9 +201,11 @@ def NeuralSplineCoupling(
     ----------
     K : int, default=16
         Number of bins in the spline (the number of knots is K+1).
-    B : float, default=3
+    B : float, default=5
         Range of the splines.
-        Outside of (-B,B), the transformation is just the identity.
+        If periodic=False, outside of (-B,B), the transformation is just
+        the identity. If periodic=True, the input is mapped into the
+        appropriate location in the range (-B,B).
     hidden_layers : int, default=2
         The number of hidden layers in the neural network used to calculate
         the positions and derivatives of the spline knots.
@@ -314,7 +316,7 @@ def RollingSplineCoupling(
     nlayers: int,
     shift: int = 1,
     K: int = 16,
-    B: float = 3,
+    B: float = 5,
     hidden_layers: int = 2,
     hidden_dim: int = 128,
     transformed_dim: int = None,
@@ -331,8 +333,11 @@ def RollingSplineCoupling(
         How far the inputs are shifted on each Roll().
     K : int, default=16
         Number of bins in the RollingSplineCoupling.
-    B : float, default=3
+    B : float, default=5
         Range of the splines in the RollingSplineCoupling.
+        If periodic=False, outside of (-B,B), the transformation is just
+        the identity. If periodic=True, the input is mapped into the
+        appropriate location in the range (-B,B).
     hidden_layers : int, default=2
         The number of hidden layers in the neural network used to calculate
         the bins and derivatives in the RollingSplineCoupling.
