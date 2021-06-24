@@ -5,7 +5,7 @@ import sys
 import jax.numpy as np
 from jax import random
 from jax.scipy.special import gammaln
-from jax.scipy.stats import multivariate_normal
+from jax.scipy.stats import beta, multivariate_normal
 
 from pzflow.bijectors import Pytree
 
@@ -22,6 +22,97 @@ def _mahalanobis_and_logdet(x, cov):
     maha = np.square(U @ x[..., None]).reshape(x.shape[0], -1).sum(axis=1)
     log_det = np.log(vals).sum(axis=-1)
     return maha, log_det
+
+
+class CentBeta:
+    """A centered Beta distribution.
+
+    This distribution is just a regular Beta distribution, scaled and shifted
+    to have support on the domain (-B, B) for each dimension.
+
+    The alpha and beta parameters for each dimension are learned during training.
+    """
+
+    def __init__(self, input_dim: int, B: float = 5):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            The dimension of the distribution.
+        B : float, default=5
+            The distribution has support (-B, B) along each dimension.
+        """
+        self.input_dim = input_dim
+        self.B = B
+
+        # save dist info
+        self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
+        self.info = ("CentBeta", (input_dim, B))
+
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+        """Calculates log probability density of inputs.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Tuple of ((a1, b1), (a2, b2), ...) where aN,bN are log(alpha),log(beta)
+            for the Nth dimension.
+        inputs : np.ndarray
+            Input data for which log probability density is calculated.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (inputs.shape[0],).
+        """
+        log_prob = np.hstack(
+            [
+                beta.logpdf(
+                    inputs[:, i],
+                    a=np.exp(params[i][0]),
+                    b=np.exp(params[i][1]),
+                    loc=-self.B,
+                    scale=2 * self.B,
+                ).reshape(-1, 1)
+                for i in range(self.input_dim)
+            ]
+        ).sum(axis=1)
+        print(log_prob.shape)
+
+        return log_prob
+
+    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+        """Returns samples from the distribution.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Tuple of ((a1, b1), (a2, b2), ...) where aN,bN are log(alpha),log(beta)
+            for the Nth dimension.
+        nsamples : int
+            The number of samples to be returned.
+        seed : int, optional
+            Sets the random seed for the samples.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (nsamples, self.input_dim).
+        """
+        seed = onp.random.randint(1e18) if seed is None else seed
+        seeds = random.split(random.PRNGKey(seed), self.input_dim)
+        samples = np.hstack(
+            [
+                random.beta(
+                    seeds[i],
+                    np.exp(params[i][0]),
+                    np.exp(params[i][1]),
+                    shape=(nsamples, 1),
+                )
+                for i in range(self.input_dim)
+            ]
+        )
+        return 2 * self.B * (samples - 0.5)
 
 
 class Normal:
