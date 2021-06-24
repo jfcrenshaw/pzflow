@@ -149,14 +149,12 @@ class Flow:
             )
             self._params = (self.latent._params, bijector_params)
 
-    def _get_conditions(
-        self, inputs: pd.DataFrame = None, nrows: int = None
-    ) -> np.ndarray:
+    def _get_conditions(self, inputs: pd.DataFrame) -> np.ndarray:
         """Return an array of the bijector conditions."""
 
         # if this isn't a conditional flow, just return empty conditions
         if self.conditional_columns is None:
-            conditions = np.zeros((nrows, 1))
+            conditions = np.zeros((inputs.shape[0], 1))
         # if this a conditional flow, return an array of the conditions
         else:
             columns = list(self.conditional_columns)
@@ -164,21 +162,35 @@ class Flow:
         return conditions
 
     def _get_samples(
-        self, inputs: pd.DataFrame, nsamples: int, rng, skip: str = None
+        self,
+        rng,
+        inputs: pd.DataFrame,
+        nsamples: int,
+        type: str = "data",
+        skip: str = None,
     ) -> np.ndarray:
         """Draw Gaussian samples for each row of inputs. """
 
-        # convert data to an array with columns ordered
         X = inputs.copy()
 
+        # get list of columns
+        if type == "data":
+            columns = list(self.data_columns)
+        elif type == "conditions":
+            if self.conditional_columns is None:
+                return np.zeros((X.shape[0], 1))
+            else:
+                columns = list(self.conditional_columns)
+        else:
+            raise ValueError("type must be `data` or `conditions`.")
+
         # make sure all relevant variables have error columns
-        for col in self.data_columns:
+        for col in columns:
             # if errors not provided for the column, fill in zeros
             if f"{col}_err" not in inputs.columns and col != skip:
                 X[f"{col}_err"] = np.zeros(X.shape[0])
 
-        # pull out data and error columns
-        columns = list(self.data_columns)
+        # pull out relevant columns
         if skip is not None:
             columns.remove(skip)
         err_columns = [col + "_err" for col in columns]
@@ -236,7 +248,7 @@ class Flow:
             columns = list(self.data_columns)
             X = np.array(inputs[columns].values)
             # get conditions
-            conditions = self._get_conditions(inputs, len(inputs))
+            conditions = self._get_conditions(inputs)
             # calculate log_prob
             return self._log_prob(self._params, X, conditions)
 
@@ -247,11 +259,8 @@ class Flow:
             # get Gaussian samples
             seed = onp.random.randint(1e18) if seed is None else seed
             rng = random.PRNGKey(seed)
-            X = self._get_samples(inputs, nsamples, rng)
-            # get conditions
-            C = self._get_conditions(inputs, len(inputs))
-            C = np.repeat(C, nsamples, axis=0)
-            # set the seed
+            X = self._get_samples(rng, inputs, nsamples, type="data")
+            C = self._get_samples(rng, inputs, nsamples, type="conditions")
             # calculate log_probs
             log_probs = self._log_prob(self._params, X, C)
             probs = np.exp(log_probs.reshape(-1, nsamples))
@@ -322,9 +331,6 @@ class Flow:
             seed = onp.random.randint(1e18) if seed is None else seed
             rng = random.PRNGKey(seed)
 
-        # if this is a conditional flow, get the conditions
-        conditions = self._get_conditions(inputs, len(inputs))
-
         # empty array to hold pdfs
         pdfs = np.zeros((nrows, len(grid)))
 
@@ -334,13 +340,21 @@ class Flow:
             # get the data batch
             # and, if this is a conditional flow, the correpsonding conditions
             batch = inputs.iloc[batch_idx : batch_idx + batch_size]
-            batch_conditions = conditions[batch_idx : batch_idx + batch_size]
 
+            # if not drawing samples, just grab batch and conditions
             if nsamples is None:
+                conditions = self._get_conditions(batch)
                 batch = np.array(batch[columns].values)
+            # if only drawing condition samples...
+            elif len(self.data_columns) == 1:
+                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
+                batch = np.repeat(batch[columns].values, nsamples, axis=0)
+            # if drawing data and condition samples...
             else:
-                batch = self._get_samples(batch, nsamples, rng, skip=column)
-                batch_conditions = np.repeat(conditions, nsamples, axis=0)
+                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
+                batch = self._get_samples(
+                    rng, batch, nsamples, skip=column, type="data"
+                )
 
             # make a new copy of each row for each value of the column
             # for which we are calculating the posterior
@@ -361,10 +375,10 @@ class Flow:
             )
 
             # make similar copies of the conditions
-            batch_conditions = np.repeat(batch_conditions, len(grid), axis=0)
+            conditions = np.repeat(conditions, len(grid), axis=0)
 
             # calculate probability densities
-            log_prob = self._log_prob(self._params, batch, batch_conditions).reshape(
+            log_prob = self._log_prob(self._params, batch, conditions).reshape(
                 (-1, len(grid))
             )
             prob = np.exp(log_prob)
@@ -425,18 +439,18 @@ class Flow:
                 f"Must provide the following conditions\n{self.conditional_columns}"
             )
 
-        # if this is a conditional flow, get the conditions
-        conditions = self._get_conditions(conditions, nsamples)
-        if self.conditional_columns is not None:
-            # repeat each condition nsamples-times
+        # if this isn't a conditional flow, get empty conditions
+        if self.conditional_columns is None:
+            conditions = np.zeros((nsamples, 1))
+        # otherwise get conditions and make `nsamples` copies of each
+        else:
+            conditions = self._get_conditions(conditions)
             conditions = np.repeat(conditions, nsamples, axis=0)
-            nsamples = conditions.shape[0]
 
         # draw from latent distribution
-        u = self.latent.sample(self._params[0], nsamples, seed)
+        u = self.latent.sample(self._params[0], conditions.shape[0], seed)
         # take the inverse back to the data distribution
         x = self._inverse(self._params[1], u, conditions=conditions)[0]
-
         # if not conditional, or save_conditions is False, this is all we need
         if self.conditional_columns is None or save_conditions is False:
             x = pd.DataFrame(x, columns=self.data_columns)
@@ -555,13 +569,16 @@ class Flow:
         # define a function to return batches
         if sample_errs:
 
-            def get_batch(x, sample_rng):
-                return self._get_samples(x, 1, sample_rng)
+            def get_batch(sample_rng, x, type):
+                return self._get_samples(sample_rng, x, 1, type=type)
 
         else:
 
-            def get_batch(x, sample_rng):
-                return np.array(x[columns].values)
+            def get_batch(sample_rng, x, type):
+                if type == "conditions":
+                    return self._get_conditions(x)
+                else:
+                    return np.array(x[columns].values)
 
         # get random seed for training loop
         rng = random.PRNGKey(seed)
@@ -571,7 +588,7 @@ class Flow:
 
         # save the initial loss
         X = np.array(inputs[columns].values)
-        C = self._get_conditions(inputs, inputs.shape[0])
+        C = self._get_conditions(inputs)
         losses = [loss_fn(self._params, X, C)]
         if verbose:
             print(f"(0) {losses[-1]:.4f}")
@@ -583,7 +600,6 @@ class Flow:
             permute_rng, sample_rng, rng = random.split(rng, num=3)
             idx = random.permutation(permute_rng, inputs.shape[0])
             X = inputs.iloc[idx]
-            C = self._get_conditions(X, X.shape[0])
 
             # loop through batches and step optimizer
             for batch_idx in range(0, len(X), batch_size):
@@ -592,19 +608,30 @@ class Flow:
                 # Gaussian sample of the batch. Else just returns batch as a
                 # jax array
                 batch = get_batch(
-                    X.iloc[batch_idx : batch_idx + batch_size], sample_rng
+                    sample_rng, X.iloc[batch_idx : batch_idx + batch_size], type="data"
+                )
+                batch_conditions = get_batch(
+                    sample_rng,
+                    X.iloc[batch_idx : batch_idx + batch_size],
+                    type="conditions",
                 )
 
                 opt_state = step(
                     next(itercount),
                     opt_state,
                     batch,
-                    C[batch_idx : batch_idx + batch_size],
+                    batch_conditions,
                 )
 
             # save end-of-epoch training loss
             params = get_params(opt_state)
-            losses.append(loss_fn(params, np.array(X[columns].values), C))
+            losses.append(
+                loss_fn(
+                    params,
+                    np.array(X[columns].values),
+                    self._get_conditions(X),
+                )
+            )
 
             if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
                 print(f"({epoch+1}) {losses[-1]:.4f}")
