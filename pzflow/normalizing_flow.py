@@ -633,7 +633,9 @@ class Flow:
                 )
             )
 
-            if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
+            if verbose and (
+                epoch % max(int(0.05 * epochs), 1) == 0 or (epoch + 1) == epochs
+            ):
                 print(f"({epoch+1}) {losses[-1]:.4f}")
 
         # update the flow parameters with the final training state
