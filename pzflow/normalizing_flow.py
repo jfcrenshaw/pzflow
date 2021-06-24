@@ -341,15 +341,19 @@ class Flow:
             # and, if this is a conditional flow, the correpsonding conditions
             batch = inputs.iloc[batch_idx : batch_idx + batch_size]
 
+            # if not drawing samples, just grab batch and conditions
             if nsamples is None:
                 conditions = self._get_conditions(batch)
                 batch = np.array(batch[columns].values)
+            # if only drawing condition samples...
+            elif len(self.data_columns) == 1:
+                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
+                batch = np.repeat(batch[columns].values, nsamples, axis=0)
+            # if drawing data and condition samples...
             else:
+                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
                 batch = self._get_samples(
                     rng, batch, nsamples, skip=column, type="data"
-                )
-                conditions = self._get_samples(
-                    rng, batch, nsamples, skip=column, type="conditions"
                 )
 
             # make a new copy of each row for each value of the column
