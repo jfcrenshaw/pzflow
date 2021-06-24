@@ -163,9 +163,9 @@ class Flow:
 
     def _get_samples(
         self,
+        rng,
         inputs: pd.DataFrame,
         nsamples: int,
-        rng,
         type: str = "data",
         skip: str = None,
     ) -> np.ndarray:
@@ -259,8 +259,8 @@ class Flow:
             # get Gaussian samples
             seed = onp.random.randint(1e18) if seed is None else seed
             rng = random.PRNGKey(seed)
-            X = self._get_samples(inputs, nsamples, rng, type="data")
-            C = self._get_samples(inputs, nsamples, rng, type="conditions")
+            X = self._get_samples(rng, inputs, nsamples, type="data")
+            C = self._get_samples(rng, inputs, nsamples, type="conditions")
             # calculate log_probs
             log_probs = self._log_prob(self._params, X, C)
             probs = np.exp(log_probs.reshape(-1, nsamples))
@@ -346,10 +346,10 @@ class Flow:
                 conditions = self._get_conditions(batch)
             else:
                 batch = self._get_samples(
-                    batch, nsamples, rng, skip=column, type="data"
+                    rng, batch, nsamples, skip=column, type="data"
                 )
                 conditions = self._get_samples(
-                    batch, nsamples, rng, skip=column, type="conditions"
+                    rng, batch, nsamples, skip=column, type="conditions"
                 )
 
             # make a new copy of each row for each value of the column
@@ -565,12 +565,12 @@ class Flow:
         # define a function to return batches
         if sample_errs:
 
-            def get_batch(x, sample_rng, type):
-                return self._get_samples(x, 1, sample_rng, type=type)
+            def get_batch(sample_rng, x, type):
+                return self._get_samples(sample_rng, x, 1, type=type)
 
         else:
 
-            def get_batch(x, sample_rng, type):
+            def get_batch(sample_rng, x, type):
                 if type == "conditions":
                     return self._get_conditions(x)
                 else:
@@ -604,11 +604,11 @@ class Flow:
                 # Gaussian sample of the batch. Else just returns batch as a
                 # jax array
                 batch = get_batch(
-                    X.iloc[batch_idx : batch_idx + batch_size], sample_rng, type="data"
+                    sample_rng, X.iloc[batch_idx : batch_idx + batch_size], type="data"
                 )
                 batch_conditions = get_batch(
-                    X.iloc[batch_idx : batch_idx + batch_size],
                     sample_rng,
+                    X.iloc[batch_idx : batch_idx + batch_size],
                     type="conditions",
                 )
 

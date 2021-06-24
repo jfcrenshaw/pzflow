@@ -252,22 +252,22 @@ def test_get_samples():
     flow = Flow(columns, Reverse())
     xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
     x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
-    samples = flow._get_samples(x, 10, rng)
+    samples = flow._get_samples(rng, x, 10)
     assert samples.shape == (20, 2)
 
     # test skip
     xarray = np.array([[1.0, 2.0, 0, 0]])
     x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
-    samples = flow._get_samples(x, 10, rng, skip="y")
+    samples = flow._get_samples(rng, x, 10, skip="y")
     assert np.allclose(samples, np.ones((10, 1)))
-    samples = flow._get_samples(x, 10, rng, skip="x")
+    samples = flow._get_samples(rng, x, 10, skip="x")
     assert np.allclose(samples, 2 * np.ones((10, 1)))
 
     # check Gaussian conditional samples
     flow = Flow(("x"), Reverse(), conditional_columns=("y"))
-    samples = flow._get_samples(x, 10, rng, type="conditions")
+    samples = flow._get_samples(rng, x, 10, type="conditions")
     assert np.allclose(samples, 2 * np.ones((10, 1)))
 
     # check incorrect type
     with pytest.raises(ValueError):
-        flow._get_samples(x, 10, rng, type="wrong")
+        flow._get_samples(rng, x, 10, type="wrong")
