@@ -1,7 +1,8 @@
 import jax.numpy as np
+from jax.experimental.optimizers import Optimizer
 import pandas as pd
 from pzflow import Flow
-from typing import Any, Sequence, Tuple
+from typing import Any, Sequence, Tuple, Callable
 from pzflow.bijectors import InitFunction, Bijector_Info
 
 
@@ -283,3 +284,69 @@ class FlowEnsemble:
                 ]
             )
             return samples.sample(nsamples).reset_index(drop=True)
+
+    def train(
+        self,
+        inputs: pd.DataFrame,
+        epochs: int = 50,
+        batch_size: int = 1024,
+        optimizer: Optimizer = None,
+        loss_fn: Callable = None,
+        sample_errs: bool = False,
+        seed: int = 0,
+        verbose: bool = False,
+    ) -> dict:
+        """Trains the normalizing flows on the provided inputs.
+
+        Parameters
+        ----------
+        inputs : pd.DataFrame
+            Data on which to train the normalizing flows.
+            Must have columns matching self.data_columns.
+        epochs : int, default=50
+            Number of epochs to train.
+        batch_size : int, default=1024
+            Batch size for training.
+        optimizer : jax Optimizer, default=adam(step_size=1e-3)
+            An optimizer from jax.experimental.optimizers.
+        loss_fn : Callable, optional
+            A function to calculate the loss: loss = loss_fn(params, x).
+            If not provided, will be -mean(log_prob).
+        sample_errs : bool, default=False
+            Whether to draw new data from the error distributions during
+            each epoch of training. Assumes errors are Gaussian, and method
+            will look for error columns in `inputs`. Error columns must end
+            in `_err`. E.g. the error column for the variable `u` must be
+            `u_err`. Zero error assumed for any missing error columns.
+        seed : int, default=0
+            A random seed to control the batching and the (optional)
+            error sampling.
+        verbose : bool, default=False
+            If true, print the training loss every 5% of epochs.
+
+        Returns
+        -------
+        dict
+            Dictionary of training losses from every epoch for each flow
+            in the ensemble.
+        """
+
+        loss_dict = dict()
+
+        for name, flow in self._ensemble.items():
+
+            if verbose:
+                print(name)
+
+            loss_dict[name] = flow.train(
+                inputs,
+                epochs,
+                batch_size,
+                optimizer,
+                loss_fn,
+                sample_errs,
+                seed,
+                verbose,
+            )
+
+        return loss_dict
