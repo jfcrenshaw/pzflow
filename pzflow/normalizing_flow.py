@@ -96,6 +96,8 @@ class Flow:
             save_dict = {
                 "data_columns": None,
                 "conditional_columns": None,
+                "condition_means": None,
+                "condition_stds": None,
                 "info": None,
                 "latent_info": None,
                 "bijector_info": None,
@@ -124,6 +126,10 @@ class Flow:
             )
             self._params = save_dict["params"]
 
+            # load the conditional means and stds
+            self._condition_means = save_dict["condition_means"]
+            self._condition_stds = save_dict["condition_stds"]
+
         # if no file is provided, use provided parameters
         else:
             self.data_columns = tuple(data_columns)
@@ -132,8 +138,12 @@ class Flow:
 
             if conditional_columns is None:
                 self.conditional_columns = None
+                self._condition_means = None
+                self._condition_stds = None
             else:
                 self.conditional_columns = tuple(conditional_columns)
+                self._condition_means = np.zeros(len(self.conditional_columns))
+                self._condition_stds = np.ones(len(self.conditional_columns))
 
             # set up the latent distribution
             if latent is None:
@@ -159,6 +169,7 @@ class Flow:
         else:
             columns = list(self.conditional_columns)
             conditions = np.array(inputs[columns].values)
+            conditions = (conditions - self._condition_means) / self._condition_stds
         return conditions
 
     def _get_samples(
@@ -203,6 +214,11 @@ class Flow:
             rng, X, vmap(np.diag)(Xerr ** 2), shape=(nsamples, X.shape[0])
         )
         Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
+
+        # if these are samples of conditions, standard scale them!
+        if type == "conditions":
+            Xsamples = (Xsamples - self._condition_means) / self._condition_stds
+
         return Xsamples
 
     def _log_prob(
@@ -457,6 +473,8 @@ class Flow:
         # but if conditional and save_conditions is True,
         # save conditions with samples
         else:
+            # unscale the conditons
+            conditions = conditions * self._condition_stds + self._condition_means
             x = pd.DataFrame(
                 np.hstack((x, conditions)),
                 columns=self.data_columns + self.conditional_columns,
@@ -485,6 +503,8 @@ class Flow:
         save_dict = {
             "data_columns": self.data_columns,
             "conditional_columns": self.conditional_columns,
+            "condition_means": self._condition_means,
+            "condition_stds": self._condition_stds,
             "info": self.info,
             "latent_info": self._latent_info,
             "bijector_info": self._bijector_info,
@@ -565,6 +585,15 @@ class Flow:
 
         # get list of data columns
         columns = list(self.data_columns)
+
+        # if this is a conditional flow, save the means and stds of the conditional columns
+        if self.conditional_columns is not None:
+            self._condition_means = np.array(
+                inputs[list(self.conditional_columns)].values.mean(axis=0)
+            )
+            self._condition_stds = np.array(
+                inputs[list(self.conditional_columns)].values.std(axis=0)
+            )
 
         # define a function to return batches
         if sample_errs:
