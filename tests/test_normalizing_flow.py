@@ -1,9 +1,9 @@
 import pytest
 import jax.numpy as np
-from jax import random, vmap
+from jax import random
 import pandas as pd
 from pzflow import Flow
-from pzflow.bijectors import Chain, Reverse, Scale
+from pzflow.bijectors import Reverse
 from pzflow.distributions import *
 
 

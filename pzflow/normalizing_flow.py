@@ -39,6 +39,7 @@ class Flow:
         seed: int = 0,
         info: Any = None,
         file: str = None,
+        _dictionary: dict = None,
     ):
         """Instantiate a normalizing flow.
 
@@ -72,13 +73,18 @@ class Flow:
         """
 
         # validate parameters
-        if data_columns is None and bijector is None and file is None:
+        if (
+            data_columns is None
+            and bijector is None
+            and file is None
+            and _dictionary is None
+        ):
             raise ValueError("You must provide data_columns and bijector OR file.")
         if data_columns is not None and bijector is None:
             raise ValueError("Please also provide a bijector.")
         if data_columns is None and bijector is not None:
             raise ValueError("Please also provide data_columns.")
-        if file is not None and any(
+        if any(
             (
                 data_columns is not None,
                 bijector is not None,
@@ -87,24 +93,32 @@ class Flow:
                 info is not None,
             )
         ):
-            raise ValueError(
-                "If providing a file, please do not provide any other parameters."
-            )
+            if file is not None:
+                raise ValueError(
+                    "If providing a file, please do not provide any other parameters."
+                )
+            if _dictionary is not None:
+                raise ValueError(
+                    "If providing a dictionary, please do not provide any other parameters."
+                )
+        if file is not None and _dictionary is not None:
+            raise ValueError("Only provide file or _dictionary, not both.")
 
-        # if file is provided, load everything from the file
-        if file is not None:
-            save_dict = {
-                "data_columns": None,
-                "conditional_columns": None,
-                "condition_means": None,
-                "condition_stds": None,
-                "info": None,
-                "latent_info": None,
-                "bijector_info": None,
-                "params": None,
-            }
-            with open(file, "rb") as handle:
-                save_dict.update(pickle.load(handle))
+        # if file or dictionary is provided, load everything from it
+        if file is not None or _dictionary is not None:
+
+            save_dict = self._save_dict()
+            if file is not None:
+                with open(file, "rb") as handle:
+                    save_dict.update(pickle.load(handle))
+            else:
+                save_dict.update(_dictionary)
+
+            if save_dict["class"] != self.__class__.__name__:
+                raise TypeError(
+                    f"This save file isn't a {self.__class__.__name__}."
+                    + f"It is a {save_dict['class']}"
+                )
 
             # load columns and dimensions
             self.data_columns = save_dict["data_columns"]
@@ -231,6 +245,30 @@ class Flow:
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
+
+    def _save_dict(self):
+        """Returns the dictionary of all flow params to be saved."""
+        save_dict = {"class": "Flow"}
+        keys = [
+            "data_columns",
+            "conditional_columns",
+            "condition_means",
+            "condition_stds",
+            "info",
+            "latent_info",
+            "bijector_info",
+            "params",
+        ]
+        for key in keys:
+            try:
+                save_dict[key] = getattr(self, key)
+            except AttributeError:
+                try:
+                    save_dict[key] = getattr(self, "_" + key)
+                except AttributeError:
+                    save_dict[key] = None
+
+        return save_dict
 
     def log_prob(
         self, inputs: pd.DataFrame, nsamples: int = None, seed: int = None
@@ -500,16 +538,8 @@ class Flow:
             Path to where the flow will be saved.
             Extension `.pkl` will be appended if not already present.
         """
-        save_dict = {
-            "data_columns": self.data_columns,
-            "conditional_columns": self.conditional_columns,
-            "condition_means": self._condition_means,
-            "condition_stds": self._condition_stds,
-            "info": self.info,
-            "latent_info": self._latent_info,
-            "bijector_info": self._bijector_info,
-            "params": self._params,
-        }
+        save_dict = self._save_dict()
+
         if not file.endswith(".pkl"):
             file += ".pkl"
         with open(file, "wb") as handle:

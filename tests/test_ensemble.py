@@ -82,3 +82,20 @@ def test_train():
     losses1 = flow1.train(data, epochs=4, batch_size=50)
     assert np.allclose(loss_dict["Flow 0"], losses0)
     assert np.allclose(loss_dict["Flow 1"], losses1)
+
+
+def test_load_ensemble(tmp_path):
+
+    flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
+
+    preSave = flowEns.sample(10, seed=0)
+
+    file = tmp_path / "test-ensemble"
+    flowEns.save(str(file))
+
+    file = tmp_path / "test-ensemble.pkl"
+    flowEns = FlowEnsemble(file=str(file))
+
+    postSave = flowEns.sample(10, seed=0)
+
+    assert np.allclose(preSave.values, postSave.values)

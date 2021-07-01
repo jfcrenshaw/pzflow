@@ -4,6 +4,7 @@ import pandas as pd
 from pzflow import Flow
 from typing import Any, Sequence, Tuple, Callable
 from pzflow.bijectors import InitFunction, Bijector_Info
+import dill as pickle
 
 
 class FlowEnsemble:
@@ -86,7 +87,24 @@ class FlowEnsemble:
 
         # if file is provided, load everything from the file
         if file is not None:
-            raise NotImplementedError
+
+            # load the file
+            with open(file, "rb") as handle:
+                save_dict = pickle.load(handle)
+
+            # make sure the saved file is for this class
+            c = save_dict.pop("class")
+            if c != self.__class__.__name__:
+                raise TypeError(
+                    f"This save file isn't a {self.__class__.__name__}. It is a {c}."
+                )
+
+            # load the ensemble from the dictionary
+            self._ensemble = {
+                name: Flow(_dictionary=flow_dict)
+                for name, flow_dict in save_dict.items()
+            }
+        # otherwise create a new ensemble from the provided parameters
         else:
             self._ensemble = {
                 f"Flow {i}": Flow(
@@ -283,7 +301,32 @@ class FlowEnsemble:
                     for flow in self._ensemble.values()
                 ]
             )
-            return samples.sample(nsamples).reset_index(drop=True)
+            return samples.sample(nsamples, random_state=seed).reset_index(drop=True)
+
+    def save(self, file: str):
+        """Saves the ensemble to a file.
+
+        Pickles the ensemble and saves it to a file that can be passed as
+        the `file` argument during flow instantiation.
+
+        WARNING: Currently, this method only works for bijectors that are
+        implemented in the `bijectors` module. If you want to save a flow
+        with a custom bijector, you either need to add the bijector to that
+        module, or handle the saving and loading on your end.
+
+        Parameters
+        ----------
+        file : str
+            Path to where the ensemble will be saved.
+            Extension `.pkl` will be appended if not already present.
+        """
+        save_dict = {name: flow._save_dict() for name, flow in self._ensemble.items()}
+        save_dict["class"] = "FlowEnsemble"
+
+        if not file.endswith(".pkl"):
+            file += ".pkl"
+        with open(file, "wb") as handle:
+            pickle.dump(save_dict, handle, recurse=True)
 
     def train(
         self,
