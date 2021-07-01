@@ -589,10 +589,10 @@ class Flow:
         # if this is a conditional flow, save the means and stds of the conditional columns
         if self.conditional_columns is not None:
             self._condition_means = np.array(
-                inputs[list(self.conditional_columns)].mean(axis=0).values
+                inputs[list(self.conditional_columns)].values.mean(axis=0)
             )
             self._condition_stds = np.array(
-                inputs[list(self.conditional_columns)].std(axis=0).values
+                inputs[list(self.conditional_columns)].values.std(axis=0)
             )
 
         # define a function to return batches

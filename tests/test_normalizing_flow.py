@@ -349,3 +349,22 @@ def test_get_samples():
     # check incorrect type
     with pytest.raises(ValueError):
         flow._get_samples(rng, x, 10, type="wrong")
+
+
+def test_train_w_conditions():
+
+    xarray = np.array(
+        [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4], [5.0, 6.0, 0.5, 0.6]]
+    )
+    x = pd.DataFrame(xarray, columns=("redshift", "y", "a", "b"))
+
+    flow = Flow(
+        ("redshift", "y"), Reverse(), latent=Normal(2), conditional_columns=("a", "b")
+    )
+    assert len(flow.train(x, epochs=11)) == 12
+
+    print("------->>>>>")
+    print(flow._condition_stds, "\n\n")
+    print(xarray[:, 2:].std(axis=0))
+    assert np.allclose(flow._condition_means, xarray[:, 2:].mean(axis=0))
+    assert np.allclose(flow._condition_stds, xarray[:, 2:].std(axis=0))
