@@ -238,7 +238,7 @@ class FlowEnsemble:
         save_conditions: bool = True,
         seed: int = None,
         returnEnsemble: bool = False,
-    ):
+    ) -> pd.DataFrame:
         """Returns samples from the normalizing flow.
 
         Parameters
