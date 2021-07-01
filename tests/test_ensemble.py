@@ -1,11 +1,11 @@
 from pzflow import Flow, FlowEnsemble
-from pzflow.bijectors import NeuralSplineCoupling
+from pzflow.bijectors import RollingSplineCoupling
 import jax.numpy as np
 import pandas as pd
 
-flowEns = FlowEnsemble(("x", "y"), NeuralSplineCoupling(), N=2)
-flow0 = Flow(("x", "y"), NeuralSplineCoupling(), seed=0)
-flow1 = Flow(("x", "y"), NeuralSplineCoupling(), seed=1)
+flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
+flow0 = Flow(("x", "y"), RollingSplineCoupling(nlayers=2), seed=0)
+flow1 = Flow(("x", "y"), RollingSplineCoupling(nlayers=2), seed=1)
 
 xarray = np.arange(6).reshape(3, 2) / 10
 x = pd.DataFrame(xarray, columns=("x", "y"))
@@ -48,3 +48,24 @@ def test_posterior():
     manualMean = (p0 + p1) / 2
     manualMean = manualMean / np.trapz(y=manualMean, x=grid).reshape(-1, 1)
     assert np.allclose(pEnsMean, manualMean)
+
+
+def test_sample():
+
+    # first test everything with returnEnsemble=False
+    sEns = flowEns.sample(10, seed=0).values
+    assert sEns.shape == (10, 2)
+
+    s0 = flow0.sample(5, seed=0)
+    s1 = flow1.sample(5, seed=0)
+    sManual = np.vstack([s0.values, s1.values])
+    assert np.allclose(sEns[sEns[:, 0].argsort()], sManual[sManual[:, 0].argsort()])
+
+    # now test everything with returnEnsemble=True
+    sEns = flowEns.sample(10, seed=0, returnEnsemble=True).values
+    assert sEns.shape == (20, 2)
+
+    s0 = flow0.sample(10, seed=0)
+    s1 = flow1.sample(10, seed=0)
+    sManual = np.vstack([s0.values, s1.values])
+    assert np.allclose(sEns, sManual)
