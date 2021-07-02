@@ -124,4 +124,4 @@ def test_load_ensemble(tmp_path):
 )
 def test_bad_inputs(data_columns, bijector, info, file):
     with pytest.raises(ValueError):
-        Flow(data_columns, bijector=bijector, info=info, file=file)
+        FlowEnsemble(data_columns, bijector=bijector, info=info, file=file)

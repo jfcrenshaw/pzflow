@@ -17,7 +17,7 @@ from pzflow.distributions import *
         (("x", "y"), None, None, "file", None),
         (None, Reverse(), None, "file", None),
         (None, None, "fake", "file", None),
-        (None, Reverse(), None, None, "dict"),
+        (("x", "y"), Reverse(), None, None, "dict"),
         (None, None, None, "file", "dict"),
     ],
 )
