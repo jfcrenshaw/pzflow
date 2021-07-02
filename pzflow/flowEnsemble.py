@@ -1,10 +1,12 @@
-import jax.numpy as np
-from jax.experimental.optimizers import Optimizer
-import pandas as pd
-from pzflow import Flow
-from typing import Any, Sequence, Tuple, Callable
-from pzflow.bijectors import InitFunction, Bijector_Info
+from typing import Any, Callable, Sequence, Tuple
+
 import dill as pickle
+import jax.numpy as np
+import pandas as pd
+from jax.experimental.optimizers import Optimizer
+
+from pzflow import Flow
+from pzflow.bijectors import Bijector_Info, InitFunction
 
 
 class FlowEnsemble:

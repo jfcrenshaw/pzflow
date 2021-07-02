@@ -1,26 +1,35 @@
-import pytest
+import dill as pickle
 import jax.numpy as np
-from jax import random
 import pandas as pd
+import pytest
+from jax import random
 from pzflow import Flow
 from pzflow.bijectors import Reverse
 from pzflow.distributions import *
 
 
 @pytest.mark.parametrize(
-    "data_columns,bijector,info,file",
+    "data_columns,bijector,info,file,_dictionary",
     [
-        (None, None, None, None),
-        (("x", "y"), None, None, None),
-        (None, Reverse(), None, None),
-        (("x", "y"), None, None, "file"),
-        (None, Reverse(), None, "file"),
-        (None, None, "fake", "file"),
+        (None, None, None, None, None),
+        (("x", "y"), None, None, None, None),
+        (None, Reverse(), None, None, None),
+        (("x", "y"), None, None, "file", None),
+        (None, Reverse(), None, "file", None),
+        (None, None, "fake", "file", None),
+        (None, Reverse(), None, None, "dict"),
+        (None, None, None, "file", "dict"),
     ],
 )
-def test_bad_inputs(data_columns, bijector, info, file):
+def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
     with pytest.raises(ValueError):
-        Flow(data_columns, bijector=bijector, info=info, file=file)
+        Flow(
+            data_columns,
+            bijector=bijector,
+            info=info,
+            file=file,
+            _dictionary=_dictionary,
+        )
 
 
 @pytest.mark.parametrize(
@@ -257,6 +266,14 @@ def test_load_flow(tmp_path):
         flow._forward(flow._params, x)[1], flow._inverse(flow._params, x)[1]
     )
     assert flow.info == ["random", 42]
+
+    with open(str(file), "rb") as handle:
+        save_dict = pickle.load(handle)
+    save_dict["class"] = "FlowEnsemble"
+    with open(str(file), "wb") as handle:
+        pickle.dump(save_dict, handle, recurse=True)
+    with pytest.raises(TypeError):
+        Flow(file=str(file))
 
 
 def test_control_sample_randomness():

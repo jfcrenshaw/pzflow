@@ -1,8 +1,10 @@
-from pzflow import Flow, FlowEnsemble
-from pzflow.bijectors import RollingSplineCoupling
+import dill as pickle
 import jax.numpy as np
-from jax import random
 import pandas as pd
+import pytest
+from jax import random
+from pzflow import Flow, FlowEnsemble
+from pzflow.bijectors import Reverse, RollingSplineCoupling
 
 flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
 flow0 = Flow(("x", "y"), RollingSplineCoupling(nlayers=2), seed=0)
@@ -99,3 +101,27 @@ def test_load_ensemble(tmp_path):
     postSave = flowEns.sample(10, seed=0)
 
     assert np.allclose(preSave.values, postSave.values)
+
+    with open(str(file), "rb") as handle:
+        save_dict = pickle.load(handle)
+    save_dict["class"] = "Flow"
+    with open(str(file), "wb") as handle:
+        pickle.dump(save_dict, handle, recurse=True)
+    with pytest.raises(TypeError):
+        FlowEnsemble(file=str(file))
+
+
+@pytest.mark.parametrize(
+    "data_columns,bijector,info,file",
+    [
+        (None, None, None, None),
+        (("x", "y"), None, None, None),
+        (None, Reverse(), None, None),
+        (("x", "y"), None, None, "file"),
+        (None, Reverse(), None, "file"),
+        (None, None, "fake", "file"),
+    ],
+)
+def test_bad_inputs(data_columns, bijector, info, file):
+    with pytest.raises(ValueError):
+        Flow(data_columns, bijector=bijector, info=info, file=file)
