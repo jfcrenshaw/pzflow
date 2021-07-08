@@ -15,8 +15,10 @@ It also allows you to easily sample from the normalizing flow (e.g., for forward
 There are several example notebooks demonstrating how to use pzflow
 1. [Introduction of a basic flow with the two moons data set](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/intro.ipynb)
 2. [A more complex example with galaxy redshifts](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb)
-3. [An example of building a conditional flow on redshift data](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/conditional_redshift_example.ipynb)
-4. [An example of using a more complicated joint latent distribution to model data with periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
+3. [Building a conditional flow on redshift data](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/conditional_redshift_example.ipynb)
+4. [Using a more complicated joint latent distribution to model data with periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
+5. [Using error convolution during training and posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/error_convolution_demo.ipynb)
+6. [Using `FlowEnsemble` to build a deep ensemble](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/ensemble_demo.ipynb)
 
 If you notice any bugs or have any questions, feel free to reach out!
 
