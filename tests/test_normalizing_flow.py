@@ -1,25 +1,35 @@
-import pytest
+import dill as pickle
 import jax.numpy as np
 import pandas as pd
+import pytest
+from jax import random
 from pzflow import Flow
-from pzflow.bijectors import Chain, Reverse, Scale
+from pzflow.bijectors import Reverse, RollingSplineCoupling
 from pzflow.distributions import *
 
 
 @pytest.mark.parametrize(
-    "data_columns,bijector,info,file",
+    "data_columns,bijector,info,file,_dictionary",
     [
-        (None, None, None, None),
-        (("x", "y"), None, None, None),
-        (None, Reverse(), None, None),
-        (("x", "y"), None, None, "file"),
-        (None, Reverse(), None, "file"),
-        (None, None, "fake", "file"),
+        (None, None, None, None, None),
+        (("x", "y"), None, None, None, None),
+        (None, Reverse(), None, None, None),
+        (("x", "y"), None, None, "file", None),
+        (None, Reverse(), None, "file", None),
+        (None, None, "fake", "file", None),
+        (("x", "y"), Reverse(), None, None, "dict"),
+        (None, None, None, "file", "dict"),
     ],
 )
-def test_bad_inputs(data_columns, bijector, info, file):
+def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
     with pytest.raises(ValueError):
-        Flow(data_columns, bijector=bijector, info=info, file=file)
+        Flow(
+            data_columns,
+            bijector=bijector,
+            info=info,
+            file=file,
+            _dictionary=_dictionary,
+        )
 
 
 @pytest.mark.parametrize(
@@ -34,12 +44,7 @@ def test_returns_correct_shape(flow):
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
-    conditions = flow._get_conditions(x, xarray.shape[0])
-
-    x_with_errs = flow._array_with_errs(x)
-    assert x_with_errs.shape == (3, 4)
-    x_with_errs = flow._array_with_errs(x, skip="redshift")
-    assert x_with_errs.shape == (3, 3)
+    conditions = flow._get_conditions(x)
 
     xfwd, xfwd_log_det = flow._forward(flow._params, xarray, conditions=conditions)
     assert xfwd.shape == x.shape
@@ -48,9 +53,6 @@ def test_returns_correct_shape(flow):
     xinv, xinv_log_det = flow._inverse(flow._params, xarray, conditions=conditions)
     assert xinv.shape == x.shape
     assert xinv_log_det.shape == (x.shape[0],)
-
-    J = flow._jacobian(flow._params, xarray, conditions=conditions)
-    assert J.shape == (3, 2, 2)
 
     nsamples = 4
     assert flow.sample(nsamples).shape == (nsamples, x.shape[1])
@@ -65,68 +67,150 @@ def test_returns_correct_shape(flow):
     assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
+    assert len(flow.train(x, epochs=11, verbose=True, sample_errs=True)) == 12
 
 
-def test_error_convolution():
+@pytest.mark.parametrize(
+    "flow,x,x_with_err",
+    [
+        (
+            Flow(("redshift", "y"), RollingSplineCoupling(2), latent=Normal(2)),
+            pd.DataFrame(
+                np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
+                columns=("redshift", "y"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.2, 0.3], [5.0, 6.0, 0.1, 0.2]]
+                ),
+                columns=("redshift", "y", "redshift_err", "y_err"),
+            ),
+        ),
+        (
+            Flow(
+                ("redshift", "y"),
+                RollingSplineCoupling(2, n_conditions=2),
+                latent=Normal(2),
+                conditional_columns=("a", "b"),
+            ),
+            pd.DataFrame(
+                np.array([[1.0, 2.0, 10, 20], [3.0, 4.0, 30, 40], [5.0, 6.0, 50, 60]]),
+                columns=("redshift", "y", "a", "b"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [
+                        [1.0, 2.0, 10, 20, 0.1, 0.2, 1, 2],
+                        [3.0, 4.0, 30, 40, 0.2, 0.3, 3, 4],
+                        [5.0, 6.0, 50, 60, 0.1, 0.2, 5, 6],
+                    ]
+                ),
+                columns=(
+                    "redshift",
+                    "y",
+                    "a",
+                    "b",
+                    "redshift_err",
+                    "y_err",
+                    "a_err",
+                    "b_err",
+                ),
+            ),
+        ),
+        (
+            Flow(
+                ("redshift", "y"),
+                RollingSplineCoupling(2, n_conditions=1),
+                latent=Normal(2),
+                conditional_columns=("a",),
+            ),
+            pd.DataFrame(
+                np.array([[1.0, 2.0, 10], [3.0, 4.0, 30], [5.0, 6.0, 50]]),
+                columns=("redshift", "y", "a"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [
+                        [1.0, 2.0, 10, 0.1, 0.2, 1],
+                        [3.0, 4.0, 30, 0.2, 0.3, 3],
+                        [5.0, 6.0, 50, 0.1, 0.2, 5],
+                    ]
+                ),
+                columns=(
+                    "redshift",
+                    "y",
+                    "a",
+                    "redshift_err",
+                    "y_err",
+                    "a_err",
+                ),
+            ),
+        ),
+        (
+            Flow(
+                ("y",),
+                RollingSplineCoupling(1, n_conditions=2),
+                latent=Normal(1),
+                conditional_columns=("a", "b"),
+            ),
+            pd.DataFrame(
+                np.array([[1.0, 10, 20], [3.0, 30, 40], [5.0, 50, 60]]),
+                columns=("y", "a", "b"),
+            ),
+            pd.DataFrame(
+                np.array(
+                    [
+                        [1.0, 10, 20, 0.1, 1, 2],
+                        [3.0, 30, 40, 0.2, 3, 4],
+                        [5.0, 50, 60, 0.1, 5, 6],
+                    ]
+                ),
+                columns=(
+                    "y",
+                    "a",
+                    "b",
+                    "y_err",
+                    "a_err",
+                    "b_err",
+                ),
+            ),
+        ),
+    ],
+)
+def test_error_convolution(flow, x, x_with_err):
 
-    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    x = pd.DataFrame(xarray, columns=("redshift", "y"))
-
-    flow = Flow(("redshift", "y"), Reverse(), latent=Normal(2))
-
-    assert flow.log_prob(x, convolve_err=True).shape == (x.shape[0],)
+    assert flow.log_prob(x, nsamples=10).shape == (x.shape[0],)
     assert np.allclose(
-        flow.log_prob(x, convolve_err=True),
-        flow.log_prob(x, convolve_err=False),
+        flow.log_prob(x, nsamples=10, seed=0),
+        flow.log_prob(x),
+    )
+    assert ~np.allclose(
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err),
+    )
+    assert np.allclose(
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+    )
+    assert ~np.allclose(
+        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err, nsamples=10, seed=1),
+    )
+    assert ~np.allclose(
+        flow.log_prob(x_with_err, nsamples=10),
+        flow.log_prob(x_with_err, nsamples=10),
     )
 
     grid = np.arange(0, 2.1, 0.12)
-    pdfs = flow.posterior(x, column="y", grid=grid, convolve_err=True)
+    pdfs = flow.posterior(x, column="y", grid=grid, nsamples=10)
     assert pdfs.shape == (x.shape[0], grid.size)
-
-    assert (
-        len(flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4, verbose=True))
-        == 17
-    )
-
-    flow = Flow(("redshift", "y"), Reverse(), latent=Tdist(2))
-    with pytest.raises(ValueError):
-        flow.log_prob(x, convolve_err=True).shape
-    with pytest.raises(ValueError):
-        flow.posterior(x, column="y", grid=grid, convolve_err=True)
-    with pytest.raises(ValueError):
-        flow.train(x, epochs=11, convolve_err=True, burn_in_epochs=4, verbose=True)
-
-
-def test_columns_with_errs():
-    columns = ("redshift", "y")
-    flow = Flow(columns, Reverse())
-
-    xarray = np.array([[1, 2, 0.4, 0.2], [3, 4, 0.1, 0.9]])
-    x = pd.DataFrame(xarray, columns=("redshift", "y", "y_err", "redshift_err"))
-    x_with_errs = flow._array_with_errs(x)
-    assert np.allclose(x_with_errs, np.array([[1, 2, 0.2, 0.4], [3, 4, 0.9, 0.1]]))
-
-    xarray = np.array([[1, 2, 0.4], [3, 4, 0.1]])
-    x = pd.DataFrame(xarray, columns=("redshift", "y", "y_err"))
-    x_with_errs = flow._array_with_errs(x)
-    assert np.allclose(x_with_errs, np.array([[1, 2, 0, 0.4], [3, 4, 0, 0.1]]))
-
-    xarray = np.array([[1, 2, 0.4, 0.2], [3, 4, 0.1, 0.9]])
-    x = pd.DataFrame(xarray, columns=("redshift", "y", "y_err", "redshift_err"))
-    x_with_errs = flow._array_with_errs(x, skip="redshift")
-    assert np.allclose(x_with_errs, np.array([[2, 0, 0.4], [4, 0, 0.1]]))
-
-
-def test_jacobian():
-    columns = ("redshift", "y")
-    flow = Flow(columns, Chain(Reverse(), Scale(2.0)))
-    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    conditions = flow._get_conditions(None, xarray.shape[0])
-    J = flow._jacobian(flow._params, xarray, conditions=conditions)
     assert np.allclose(
-        J,
-        np.array([[[0, 2.0], [2.0, 0]], [[0, 2.0], [2.0, 0]], [[0, 2.0], [2.0, 0]]]),
+        flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x, column="y", grid=grid),
+    )
+    assert np.allclose(
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
     )
 
 
@@ -183,6 +267,14 @@ def test_load_flow(tmp_path):
     )
     assert flow.info == ["random", 42]
 
+    with open(str(file), "rb") as handle:
+        save_dict = pickle.load(handle)
+    save_dict["class"] = "FlowEnsemble"
+    with open(str(file), "wb") as handle:
+        pickle.dump(save_dict, handle, recurse=True)
+    with pytest.raises(TypeError):
+        Flow(file=str(file))
+
 
 def test_control_sample_randomness():
     columns = ("x", "y")
@@ -193,18 +285,14 @@ def test_control_sample_randomness():
 
 
 @pytest.mark.parametrize(
-    "epochs,burn_in_epochs,loss_fn,",
+    "epochs,loss_fn,",
     [
-        (-1, 10, None),
-        (2.4, 10, None),
-        ("a", 10, None),
-        (10, -1, None),
-        (10, 1.4, None),
-        (10, "a", None),
-        (10, 10, lambda x: x ** 2),
+        (-1, None),
+        (2.4, None),
+        ("a", None),
     ],
 )
-def test_train_bad_inputs(epochs, burn_in_epochs, loss_fn):
+def test_train_bad_inputs(epochs, loss_fn):
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -215,9 +303,7 @@ def test_train_bad_inputs(epochs, burn_in_epochs, loss_fn):
         flow.train(
             x,
             epochs=epochs,
-            burn_in_epochs=burn_in_epochs,
-            loss_fn=lambda x: x ** 2,
-            convolve_err=True,
+            loss_fn=loss_fn,
         )
 
 
@@ -227,7 +313,7 @@ def test_conditional_sample():
     x = np.arange(12).reshape(-1, 4)
     x = pd.DataFrame(x, columns=("x", "y", "a", "b"))
 
-    conditions = flow._get_conditions(x, x.shape[0])
+    conditions = flow._get_conditions(x)
     assert conditions.shape == (x.shape[0], 2)
 
     with pytest.raises(ValueError):
@@ -238,3 +324,64 @@ def test_conditional_sample():
 
     samples = flow.sample(4, conditions=x, save_conditions=False)
     assert samples.shape == (4 * x.shape[0], 2)
+
+
+def test_train_no_errs_same():
+    columns = ("redshift", "y")
+    flow = Flow(columns, Reverse())
+
+    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    x = pd.DataFrame(xarray, columns=columns)
+
+    losses1 = flow.train(x, sample_errs=True)
+    losses2 = flow.train(x, sample_errs=False)
+    assert np.allclose(losses1, losses2)
+
+
+def test_get_samples():
+
+    rng = random.PRNGKey(0)
+
+    # check Gaussian data samples
+    columns = ("x", "y")
+    flow = Flow(columns, Reverse())
+    xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
+    x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
+    samples = flow._get_samples(rng, x, 10)
+    assert samples.shape == (20, 2)
+
+    # test skip
+    xarray = np.array([[1.0, 2.0, 0, 0]])
+    x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
+    samples = flow._get_samples(rng, x, 10, skip="y")
+    assert np.allclose(samples, np.ones((10, 1)))
+    samples = flow._get_samples(rng, x, 10, skip="x")
+    assert np.allclose(samples, 2 * np.ones((10, 1)))
+
+    # check Gaussian conditional samples
+    flow = Flow(("x"), Reverse(), conditional_columns=("y"))
+    samples = flow._get_samples(rng, x, 10, type="conditions")
+    assert np.allclose(samples, 2 * np.ones((10, 1)))
+
+    # check incorrect type
+    with pytest.raises(ValueError):
+        flow._get_samples(rng, x, 10, type="wrong")
+
+
+def test_train_w_conditions():
+
+    xarray = np.array(
+        [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4], [5.0, 6.0, 0.5, 0.6]]
+    )
+    x = pd.DataFrame(xarray, columns=("redshift", "y", "a", "b"))
+
+    flow = Flow(
+        ("redshift", "y"), Reverse(), latent=Normal(2), conditional_columns=("a", "b")
+    )
+    assert len(flow.train(x, epochs=11)) == 12
+
+    print("------->>>>>")
+    print(flow._condition_stds, "\n\n")
+    print(xarray[:, 2:].std(axis=0))
+    assert np.allclose(flow._condition_means, xarray[:, 2:].mean(axis=0))
+    assert np.allclose(flow._condition_stds, xarray[:, 2:].std(axis=0))

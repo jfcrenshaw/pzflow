@@ -5,6 +5,7 @@ import sys
 import jax.numpy as np
 from jax import random
 from jax.scipy.special import gammaln
+from jax.scipy.stats import beta, multivariate_normal
 
 from pzflow.bijectors import Pytree
 
@@ -13,7 +14,6 @@ epsilon = sys.float_info.epsilon
 
 def _mahalanobis_and_logdet(x, cov):
     """Calculate mahalanobis distance and log_det of cov.
-
     Uses scipy method, explained here:
     http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
     """
@@ -22,6 +22,97 @@ def _mahalanobis_and_logdet(x, cov):
     maha = np.square(U @ x[..., None]).reshape(x.shape[0], -1).sum(axis=1)
     log_det = np.log(vals).sum(axis=-1)
     return maha, log_det
+
+
+class CentBeta:
+    """A centered Beta distribution.
+
+    This distribution is just a regular Beta distribution, scaled and shifted
+    to have support on the domain (-B, B) for each dimension.
+
+    The alpha and beta parameters for each dimension are learned during training.
+    """
+
+    def __init__(self, input_dim: int, B: float = 5):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            The dimension of the distribution.
+        B : float, default=5
+            The distribution has support (-B, B) along each dimension.
+        """
+        self.input_dim = input_dim
+        self.B = B
+
+        # save dist info
+        self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
+        self.info = ("CentBeta", (input_dim, B))
+
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+        """Calculates log probability density of inputs.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Tuple of ((a1, b1), (a2, b2), ...) where aN,bN are log(alpha),log(beta)
+            for the Nth dimension.
+        inputs : np.ndarray
+            Input data for which log probability density is calculated.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (inputs.shape[0],).
+        """
+        log_prob = np.hstack(
+            [
+                beta.logpdf(
+                    inputs[:, i],
+                    a=np.exp(params[i][0]),
+                    b=np.exp(params[i][1]),
+                    loc=-self.B,
+                    scale=2 * self.B,
+                ).reshape(-1, 1)
+                for i in range(self.input_dim)
+            ]
+        ).sum(axis=1)
+        print(log_prob.shape)
+
+        return log_prob
+
+    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+        """Returns samples from the distribution.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Tuple of ((a1, b1), (a2, b2), ...) where aN,bN are log(alpha),log(beta)
+            for the Nth dimension.
+        nsamples : int
+            The number of samples to be returned.
+        seed : int, optional
+            Sets the random seed for the samples.
+
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (nsamples, self.input_dim).
+        """
+        seed = onp.random.randint(1e18) if seed is None else seed
+        seeds = random.split(random.PRNGKey(seed), self.input_dim)
+        samples = np.hstack(
+            [
+                random.beta(
+                    seeds[i],
+                    np.exp(params[i][0]),
+                    np.exp(params[i][1]),
+                    shape=(nsamples, 1),
+                )
+                for i in range(self.input_dim)
+            ]
+        )
+        return 2 * self.B * (samples - 0.5)
 
 
 class Normal:
@@ -40,44 +131,27 @@ class Normal:
         self._params = ()
         self.info = ("Normal", (input_dim,))
 
-    def log_prob(
-        self, params: Pytree, inputs: np.ndarray, cov: np.ndarray = None
-    ) -> np.ndarray:
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Calculates log probability density of inputs.
 
-                Parameters
-                ----------
-                params : a Jax pytree
-                    Empty pytree -- this distribution doesn't have learnable parameters.
-                    This parameter is present to ensure a consistent interface.
-                inputs : np.ndarray
-                    Input data for which log probability density is calculated.
-                cov : np.ndarray, default=None
-                    Covariance matrix for the log probability calculation.
+        Parameters
+        ----------
+        params : a Jax pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        inputs : np.ndarray
+            Input data for which log probability density is calculated.
 
-                Returns
-                -------
-                np.ndarray
-                    Device array of shape (inputs.shape[0],).
-        WARNING
-                Notes
-                -----
-                jax.scipy.stats.multivariate_normal.log_pdf doesn't seem to work with
-                different covariances for each input. To get around this, I implemented
-                the method from the original scipy code.
-                See:
-                https://github.com/scipy/scipy/blob/v1.6.0/scipy/stats/_multivariate.py
-                or
-                http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
+        Returns
+        -------
+        np.ndarray
+            Device array of shape (inputs.shape[0],).
         """
-        if cov is None:
-            maha = (inputs ** 2).sum(axis=1)
-            log_det = 0.0
-        else:
-            maha, log_det = _mahalanobis_and_logdet(inputs, cov)
-
-        log_prob = -0.5 * (inputs.shape[-1] * np.log(2 * np.pi) + log_det + maha)
-        return log_prob
+        return multivariate_normal.logpdf(
+            inputs,
+            mean=np.zeros(self.input_dim),
+            cov=np.identity(self.input_dim),
+        )
 
     def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
         """Returns samples from the distribution.

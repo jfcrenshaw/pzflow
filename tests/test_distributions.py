@@ -6,6 +6,7 @@ from pzflow.distributions import *
 @pytest.mark.parametrize(
     "distribution,inputs,params",
     [
+        (CentBeta, (2, 3), ((0, 1), (2, 3))),
         (Normal, (2,), ()),
         (Tdist, (2,), np.log(30.0)),
         (Uniform, ((0, 1), (0, 1)), ()),
@@ -38,18 +39,6 @@ class TestDistributions:
         s1 = dist.sample(params, nsamples, seed=0)
         s2 = dist.sample(params, nsamples, seed=0)
         assert np.allclose(s1, s2)
-
-
-def test_normal_cov():
-
-    dist = Normal(2)
-
-    nsamples = 2
-    samples = dist.sample((), nsamples)
-
-    cov = np.array([[[1, 0], [0, 1]], [[1, 1], [1, 1]]])
-    log_prob = dist.log_prob(4, samples, cov=cov)
-    assert log_prob.shape == (nsamples,)
 
 
 @pytest.mark.parametrize(

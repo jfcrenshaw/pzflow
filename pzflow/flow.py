@@ -1,15 +1,16 @@
 import itertools
-import dill as pickle
 from typing import Any, Callable, Sequence, Tuple
 
+import dill as pickle
 import jax.numpy as np
+import numpy as onp
 import pandas as pd
-from jax import grad, jacfwd, jit, ops, random, vmap
+from jax import grad, jit, ops, random, vmap
 from jax.experimental.optimizers import Optimizer, adam
 
 from pzflow import distributions
 from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
-from pzflow.utils import build_bijector_from_info, sub_diag_indices
+from pzflow.utils import build_bijector_from_info
 
 
 class Flow:
@@ -38,6 +39,7 @@ class Flow:
         seed: int = 0,
         info: Any = None,
         file: str = None,
+        _dictionary: dict = None,
     ):
         """Instantiate a normalizing flow.
 
@@ -71,29 +73,53 @@ class Flow:
         """
 
         # validate parameters
-        if data_columns is None and bijector is None and file is None:
+        if (
+            data_columns is None
+            and bijector is None
+            and file is None
+            and _dictionary is None
+        ):
             raise ValueError("You must provide data_columns and bijector OR file.")
-        elif data_columns is not None and bijector is None:
+        if data_columns is not None and bijector is None:
             raise ValueError("Please also provide a bijector.")
-        elif data_columns is None and bijector is not None:
+        if data_columns is None and bijector is not None:
             raise ValueError("Please also provide data_columns.")
-        elif file is not None and any(
+        if any(
             (
-                data_columns != None,
-                bijector != None,
-                conditional_columns != None,
-                latent != None,
-                info != None,
+                data_columns is not None,
+                bijector is not None,
+                conditional_columns is not None,
+                latent is not None,
+                info is not None,
             )
         ):
-            raise ValueError(
-                "If providing a file, please do not provide any other parameters."
-            )
+            if file is not None:
+                raise ValueError(
+                    "If providing a file, please do not provide any other parameters."
+                )
+            if _dictionary is not None:
+                raise ValueError(
+                    "If providing a dictionary, please do not provide any other parameters."
+                )
+        if file is not None and _dictionary is not None:
+            raise ValueError("Only provide file or _dictionary, not both.")
 
-        # if file is provided, load everything from the file
-        if file is not None:
-            with open(file, "rb") as handle:
-                save_dict = pickle.load(handle)
+        # if file or dictionary is provided, load everything from it
+        if file is not None or _dictionary is not None:
+
+            save_dict = self._save_dict()
+            if file is not None:
+                with open(file, "rb") as handle:
+                    save_dict.update(pickle.load(handle))
+            else:
+                save_dict.update(_dictionary)
+
+            if save_dict["class"] != self.__class__.__name__:
+                raise TypeError(
+                    f"This save file isn't a {self.__class__.__name__}."
+                    + f"It is a {save_dict['class']}"
+                )
+
             # load columns and dimensions
             self.data_columns = save_dict["data_columns"]
             self.conditional_columns = save_dict["conditional_columns"]
@@ -114,6 +140,10 @@ class Flow:
             )
             self._params = save_dict["params"]
 
+            # load the conditional means and stds
+            self._condition_means = save_dict["condition_means"]
+            self._condition_stds = save_dict["condition_stds"]
+
         # if no file is provided, use provided parameters
         else:
             self.data_columns = tuple(data_columns)
@@ -122,12 +152,16 @@ class Flow:
 
             if conditional_columns is None:
                 self.conditional_columns = None
+                self._condition_means = None
+                self._condition_stds = None
             else:
                 self.conditional_columns = tuple(conditional_columns)
+                self._condition_means = np.zeros(len(self.conditional_columns))
+                self._condition_stds = np.ones(len(self.conditional_columns))
 
             # set up the latent distribution
             if latent is None:
-                self.latent = getattr(distributions, "Normal")(self._input_dim)
+                self.latent = distributions.Normal(self._input_dim)
             else:
                 self.latent = latent
             self._latent_info = self.latent.info
@@ -139,58 +173,67 @@ class Flow:
             )
             self._params = (self.latent._params, bijector_params)
 
-    def _array_with_errs(self, inputs: pd.DataFrame, skip: str = None) -> np.ndarray:
-        """Convert pandas DataFrame to Jax array with columns for errors.
-
-        Skip can be one of the columns in self.data_columns. If provided,
-        that data column isn't returned (but its zero-error column is).
-        This is a useful utility for the posterior method.
-        """
-        X = inputs.copy()
-        for col in self.data_columns:
-            # if errors not provided for the column, fill in zeros
-            if f"{col}_err" not in inputs.columns or col == skip:
-                X[f"{col}_err"] = np.zeros(X.shape[0])
-        # get list of columns in correct order
-        cols_with_errs = list(self.data_columns)
-        if skip is not None:
-            cols_with_errs.remove(skip)
-        cols_with_errs += [col + "_err" for col in self.data_columns]
-        # convert to jax array
-        X = np.array(X[cols_with_errs].values)
-        return X
-
-    def _get_conditions(
-        self, inputs: pd.DataFrame = None, nrows: int = None
-    ) -> np.ndarray:
+    def _get_conditions(self, inputs: pd.DataFrame) -> np.ndarray:
         """Return an array of the bijector conditions."""
 
         # if this isn't a conditional flow, just return empty conditions
         if self.conditional_columns is None:
-            conditions = np.zeros((nrows, 1))
+            conditions = np.zeros((inputs.shape[0], 1))
         # if this a conditional flow, return an array of the conditions
         else:
             columns = list(self.conditional_columns)
             conditions = np.array(inputs[columns].values)
+            conditions = (conditions - self._condition_means) / self._condition_stds
         return conditions
 
-    def _jacobian(
-        self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
+    def _get_samples(
+        self,
+        rng,
+        inputs: pd.DataFrame,
+        nsamples: int,
+        type: str = "data",
+        skip: str = None,
     ) -> np.ndarray:
-        """Calculates the Jacobian of the forward bijection"""
+        """Draw Gaussian samples for each row of inputs. """
 
-        # calculates jacobian for a single input
-        # first we define a lambda that calculates the forward
-        # (but drops the log_det). then we take the Jacobian of that
-        # evaluated at the vector y. the [None, :] and .squeeze() are
-        # just making sure the inputs and outputs are of the correct shape
-        def J(y, c):
-            return jacfwd(lambda x: self._forward(params, x, conditions=c[None, :])[0])(
-                y[None, :]
-            ).squeeze()
+        X = inputs.copy()
 
-        # now we can vectorize with Jax and apply to whole set of inputs at once
-        return vmap(J)(inputs, conditions)
+        # get list of columns
+        if type == "data":
+            columns = list(self.data_columns)
+        elif type == "conditions":
+            if self.conditional_columns is None:
+                return np.zeros((nsamples * X.shape[0], 1))
+            else:
+                columns = list(self.conditional_columns)
+        else:
+            raise ValueError("type must be `data` or `conditions`.")
+
+        # make sure all relevant variables have error columns
+        for col in columns:
+            # if errors not provided for the column, fill in zeros
+            if f"{col}_err" not in inputs.columns and col != skip:
+                X[f"{col}_err"] = np.zeros(X.shape[0])
+
+        # pull out relevant columns
+        if skip is not None:
+            columns.remove(skip)
+        err_columns = [col + "_err" for col in columns]
+        X, Xerr = np.array(X[columns].values), np.array(X[err_columns].values)
+
+        # lower bound on Xerr to avoid singular matrix
+        Xerr = np.clip(Xerr, 1e-8, None)
+        # generate samples
+        Xsamples = random.multivariate_normal(
+            rng, X, vmap(np.diag)(Xerr ** 2), shape=(nsamples, X.shape[0])
+        )
+        Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
+
+        # if these are samples of conditions, standard scale them!
+        if type == "conditions":
+            Xsamples = (Xsamples - self._condition_means) / self._condition_stds
+
+        return Xsamples
 
     def _log_prob(
         self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
@@ -203,33 +246,33 @@ class Flow:
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
 
-    def _log_prob_convolved(
-        self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
+    def _save_dict(self):
+        """Returns the dictionary of all flow params to be saved."""
+        save_dict = {"class": "Flow"}
+        keys = [
+            "data_columns",
+            "conditional_columns",
+            "condition_means",
+            "condition_stds",
+            "info",
+            "latent_info",
+            "bijector_info",
+            "params",
+        ]
+        for key in keys:
+            try:
+                save_dict[key] = getattr(self, key)
+            except AttributeError:
+                try:
+                    save_dict[key] = getattr(self, "_" + key)
+                except AttributeError:
+                    save_dict[key] = None
+
+        return save_dict
+
+    def log_prob(
+        self, inputs: pd.DataFrame, nsamples: int = None, seed: int = None
     ) -> np.ndarray:
-        """Log prob for arrays, with error convolution"""
-
-        # separate data from data errs
-        ncols = len(self.data_columns)
-        X, Xerr = inputs[:, :ncols], inputs[:, ncols:]
-
-        # forward and log determinant
-        u, log_det = self._forward(params[1], X, conditions=conditions)
-
-        # Jacobian of forward bijection
-        J = self._jacobian(params[1], X, conditions)
-        # calculate modified covariances
-        sig_u = J @ (Xerr[..., None] ** 2 * J.transpose((0, 2, 1)))
-        # add identity matrix to each covariance matrix
-        idx = sub_diag_indices(sig_u)
-        sig = ops.index_update(sig_u, idx, sig_u[idx] + 1)
-
-        # calculate log_prob w.r.t the latent distribution, with the new covariances
-        log_prob = self.latent.log_prob(params[0], u, sig) + log_det
-        # set NaN's to negative infinity (i.e. zero probability)
-        log_prob = np.nan_to_num(log_prob, nan=np.NINF)
-        return log_prob
-
-    def log_prob(self, inputs: pd.DataFrame, convolve_err=False) -> np.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
@@ -239,37 +282,43 @@ class Flow:
             Every column in self.data_columns must be present.
             If self.conditional_columns is not None, those must be present
             as well. If other columns are present, they are ignored.
-        convolve_err : boolean, default=False
-            Whether to analytically convolve Gaussian errors.
-            Looks for in `inputs` for columns with names ending in `_err`.
-            I.e., the error for column `u` needs to be in the column `u_err`.
+        nsamples : int, default=None
+            Number of samples to average over for the log_prob calculation.
+            If provided, then Gaussian errors are assumed, and method will
+            look for error columns in `inputs`. Error columns must end in
+            `_err`. E.g. the error column for the variable `u` must be `u_err`.
             Zero error assumed for any missing error columns.
+        seed : int, default=None
+            Random seed for drawing the samples with Gaussian errors.
 
         Returns
         -------
         np.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        if convolve_err and not isinstance(self.latent, distributions.Normal):
-            raise ValueError(
-                "Currently can only convolve error when using a Normal latent distribution."
-            )
 
-        if not convolve_err:
+        if nsamples is None:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
             X = np.array(inputs[columns].values)
             # get conditions
-            conditions = self._get_conditions(inputs, len(inputs))
+            conditions = self._get_conditions(inputs)
             # calculate log_prob
             return self._log_prob(self._params, X, conditions)
+
         else:
-            # convert data to an array with columns ordered
-            X = self._array_with_errs(inputs)
-            # get conditions
-            conditions = self._get_conditions(inputs, len(inputs))
-            # calculate log_prob
-            return self._log_prob_convolved(self._params, X, conditions)
+            # validate nsamples
+            assert isinstance(nsamples, int), "nsamples must be a positive integer."
+            assert nsamples > 0, "nsamples must be a positive integer."
+            # get Gaussian samples
+            seed = onp.random.randint(1e18) if seed is None else seed
+            rng = random.PRNGKey(seed)
+            X = self._get_samples(rng, inputs, nsamples, type="data")
+            C = self._get_samples(rng, inputs, nsamples, type="conditions")
+            # calculate log_probs
+            log_probs = self._log_prob(self._params, X, C)
+            probs = np.exp(log_probs.reshape(-1, nsamples))
+            return np.log(probs.mean(axis=1))
 
     def posterior(
         self,
@@ -277,7 +326,8 @@ class Flow:
         column: str,
         grid: np.ndarray,
         normalize: bool = True,
-        convolve_err: bool = False,
+        nsamples: int = None,
+        seed: int = None,
         batch_size: int = None,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
@@ -300,11 +350,14 @@ class Flow:
             Grid on which to calculate the posterior.
         normalize : boolean, default=True
             Whether to normalize the posterior so that it integrates to 1.
-        convolve_err : boolean, default=False
-            Whether to analytically convolve Gaussian errors in the posterior.
-            Looks for in `inputs` for columns with names ending in `_err`.
-            I.e., the error for column `u` needs to be in the column `u_err`.
+        nsamples : int, default=None
+            Number of samples to average over for the posterior calculation.
+            If provided, then Gaussian errors are assumed, and method will
+            look for error columns in `inputs`. Error columns must end in
+            `_err`. E.g. the error column for the variable `u` must be `u_err`.
             Zero error assumed for any missing error columns.
+        seed : int, default=None
+            Random seed for drawing the samples with Gaussian errors.
         batch_size : int, default=None
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
@@ -315,10 +368,6 @@ class Flow:
         np.ndarray
             Device array of shape (inputs.shape[0], grid.size).
         """
-        if convolve_err and not isinstance(self.latent, distributions.Normal):
-            raise ValueError(
-                "Currently can only convolve error when using a Normal latent distribution."
-            )
 
         # get the index of the provided column, and remove it from the list
         columns = list(self.data_columns)
@@ -328,17 +377,13 @@ class Flow:
         nrows = inputs.shape[0]
         batch_size = nrows if batch_size is None else batch_size
 
-        # 1. convert data (sans the provided column) to array with columns ordered
-        # 2. if this is a conditional flow, get array of conditions
-        # 3. alias the required log_prob function
-        if convolve_err:
-            X = self._array_with_errs(inputs, skip=column)
-            conditions = self._get_conditions(inputs, len(inputs))
-            log_prob_fun = self._log_prob_convolved
-        else:
-            X = np.array(inputs[columns].values)
-            conditions = self._get_conditions(inputs, len(inputs))
-            log_prob_fun = self._log_prob
+        if nsamples is not None:
+            # validate nsamples
+            assert isinstance(nsamples, int), "nsamples must be a positive integer."
+            assert nsamples > 0, "nsamples must be a positive integer."
+            # set the seed
+            seed = onp.random.randint(1e18) if seed is None else seed
+            rng = random.PRNGKey(seed)
 
         # empty array to hold pdfs
         pdfs = np.zeros((nrows, len(grid)))
@@ -348,8 +393,22 @@ class Flow:
 
             # get the data batch
             # and, if this is a conditional flow, the correpsonding conditions
-            batch = X[batch_idx : batch_idx + batch_size]
-            batch_conditions = conditions[batch_idx : batch_idx + batch_size]
+            batch = inputs.iloc[batch_idx : batch_idx + batch_size]
+
+            # if not drawing samples, just grab batch and conditions
+            if nsamples is None:
+                conditions = self._get_conditions(batch)
+                batch = np.array(batch[columns].values)
+            # if only drawing condition samples...
+            elif len(self.data_columns) == 1:
+                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
+                batch = np.repeat(batch[columns].values, nsamples, axis=0)
+            # if drawing data and condition samples...
+            else:
+                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
+                batch = self._get_samples(
+                    rng, batch, nsamples, skip=column, type="data"
+                )
 
             # make a new copy of each row for each value of the column
             # for which we are calculating the posterior
@@ -370,22 +429,26 @@ class Flow:
             )
 
             # make similar copies of the conditions
-            batch_conditions = np.repeat(batch_conditions, len(grid), axis=0)
+            conditions = np.repeat(conditions, len(grid), axis=0)
 
             # calculate probability densities
-            log_prob = log_prob_fun(self._params, batch, batch_conditions).reshape(
+            log_prob = self._log_prob(self._params, batch, conditions).reshape(
                 (-1, len(grid))
             )
+            prob = np.exp(log_prob)
+            # if we were Gaussian sampling, average over the samples
+            if nsamples is not None:
+                prob = prob.reshape(-1, nsamples, len(grid))
+                prob = prob.mean(axis=1)
+            # add the pdfs to the bigger list
             pdfs = ops.index_update(
                 pdfs,
                 ops.index[batch_idx : batch_idx + batch_size, :],
-                np.exp(log_prob),
+                prob,
                 indices_are_sorted=True,
                 unique_indices=True,
             )
 
-        # reshape so that each row is a posterior
-        pdfs = pdfs.reshape((nrows, len(grid)))
         if normalize:
             # normalize so they integrate to one
             pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
@@ -420,29 +483,36 @@ class Flow:
         pd.DataFrame
             Pandas DataFrame of samples.
         """
+
+        # validate nsamples
+        assert isinstance(nsamples, int), "nsamples must be a positive integer."
+        assert nsamples > 0, "nsamples must be a positive integer."
+
         if self.conditional_columns is not None and conditions is None:
             raise ValueError(
                 f"Must provide the following conditions\n{self.conditional_columns}"
             )
 
-        # if this is a conditional flow, get the conditions
-        conditions = self._get_conditions(conditions, nsamples)
-        if self.conditional_columns is not None:
-            # repeat each condition nsamples-times
+        # if this isn't a conditional flow, get empty conditions
+        if self.conditional_columns is None:
+            conditions = np.zeros((nsamples, 1))
+        # otherwise get conditions and make `nsamples` copies of each
+        else:
+            conditions = self._get_conditions(conditions)
             conditions = np.repeat(conditions, nsamples, axis=0)
-            nsamples = conditions.shape[0]
 
         # draw from latent distribution
-        u = self.latent.sample(self._params[0], nsamples, seed)
+        u = self.latent.sample(self._params[0], conditions.shape[0], seed)
         # take the inverse back to the data distribution
         x = self._inverse(self._params[1], u, conditions=conditions)[0]
-
         # if not conditional, or save_conditions is False, this is all we need
         if self.conditional_columns is None or save_conditions is False:
             x = pd.DataFrame(x, columns=self.data_columns)
         # but if conditional and save_conditions is True,
         # save conditions with samples
         else:
+            # unscale the conditons
+            conditions = conditions * self._condition_stds + self._condition_means
             x = pd.DataFrame(
                 np.hstack((x, conditions)),
                 columns=self.data_columns + self.conditional_columns,
@@ -459,7 +529,7 @@ class Flow:
 
         WARNING: Currently, this method only works for bijectors that are
         implemented in the `bijectors` module. If you want to save a flow
-        with a custom bijector, you either need to add the it to that
+        with a custom bijector, you either need to add the bijector to that
         module, or handle the saving and loading on your end.
 
         Parameters
@@ -468,76 +538,12 @@ class Flow:
             Path to where the flow will be saved.
             Extension `.pkl` will be appended if not already present.
         """
-        save_dict = {
-            "data_columns": self.data_columns,
-            "conditional_columns": self.conditional_columns,
-            "info": self.info,
-            "latent_info": self._latent_info,
-            "bijector_info": self._bijector_info,
-            "params": self._params,
-        }
+        save_dict = self._save_dict()
+
         if not file.endswith(".pkl"):
             file += ".pkl"
         with open(file, "wb") as handle:
             pickle.dump(save_dict, handle, recurse=True)
-
-    def _train(
-        self,
-        inputs: np.ndarray,
-        conditions: np.ndarray,
-        epochs: int,
-        batch_size: int,
-        optimizer: Optimizer,
-        loss_fn: Callable,
-        rng: np.ndarray,
-        verbose: bool,
-    ) -> list:
-        """Private training loop that is called by the public train method."""
-
-        # initialize the optimizer
-        optimizer = adam(step_size=1e-3) if optimizer is None else optimizer
-        opt_init, opt_update, get_params = optimizer
-        opt_state = opt_init(self._params)
-
-        # define the training step function
-        @jit
-        def step(i, opt_state, x, c):
-            params = get_params(opt_state)
-            gradients = grad(loss_fn)(params, x, c)
-            return opt_update(i, gradients, opt_state)
-
-        # save the initial loss
-        losses = [loss_fn(self._params, inputs, conditions)]
-        if verbose:
-            print(f"{losses[-1]:.4f}")
-
-        # loop through training
-        itercount = itertools.count()
-        for epoch in range(epochs):
-            # new permutation of batches
-            permute_rng, rng = random.split(rng)
-            idx = random.permutation(permute_rng, inputs.shape[0])
-            X = inputs[idx]
-            C = conditions[idx]
-            # loop through batches and step optimizer
-            for batch_idx in range(0, len(X), batch_size):
-                opt_state = step(
-                    next(itercount),
-                    opt_state,
-                    X[batch_idx : batch_idx + batch_size],
-                    C[batch_idx : batch_idx + batch_size],
-                )
-
-            # save end-of-epoch training loss
-            params = get_params(opt_state)
-            losses.append(loss_fn(params, inputs, conditions))
-
-            if verbose and epoch % max(int(0.05 * epochs), 1) == 0:
-                print(f"{losses[-1]:.4f}")
-
-        # update the flow parameters with the final training state
-        self._params = get_params(opt_state)
-        return losses
 
     def train(
         self,
@@ -546,15 +552,11 @@ class Flow:
         batch_size: int = 1024,
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
-        convolve_err: bool = False,
-        burn_in_epochs: int = 0,
+        sample_errs: bool = False,
         seed: int = 0,
         verbose: bool = False,
     ) -> list:
         """Trains the normalizing flow on the provided inputs.
-
-        Calculates the conditional posterior distribution, assuming the
-        data values in the other columns of the DataFrame.
 
         Parameters
         ----------
@@ -570,24 +572,15 @@ class Flow:
         loss_fn : Callable, optional
             A function to calculate the loss: loss = loss_fn(params, x).
             If not provided, will be -mean(log_prob).
-        convolve_err : boolean, default=False
-            Whether to convolve Gaussian errors in the loss function.
-            Looks for in `inputs` for columns with names ending in `_err`.
-            I.e., the error for column `u` needs to be in the column `u_err`.
-            Zero error assumed for any missing error columns.
-            Note this only works with the default loss function and a
-            Gaussian latent distribution.
-            WARNING this is still experimental -- training is unstable and
-            often results in NaN's.
-
-        burn_in_epochs : int, default=0
-            The number of epochs to train without error convolution,
-            before beginning to train with error convolution.
-            E.g., if epochs=50 and convolve_burn_in=20, then the flow
-            is trained for 20 epochs without error convolution, followed
-            by 50 epochs with error convolution.
+        sample_errs : bool, default=False
+            Whether to draw new data from the error distributions during
+            each epoch of training. Assumes errors are Gaussian, and method
+            will look for error columns in `inputs`. Error columns must end
+            in `_err`. E.g. the error column for the variable `u` must be
+            `u_err`. Zero error assumed for any missing error columns.
         seed : int, default=0
-            A random seed to control the batching.
+            A random seed to control the batching and the (optional)
+            error sampling.
         verbose : bool, default=False
             If true, print the training loss every 5% of epochs.
 
@@ -597,102 +590,114 @@ class Flow:
             List of training losses from every epoch.
         """
 
-        if convolve_err:
-            print("WARNING: error convolution in training is still experimental.")
-
-        if convolve_err and not isinstance(self.latent, distributions.Normal):
-            raise ValueError(
-                "Currently can only convolve error when using a Normal latent distribution."
-            )
-
         # validate epochs
         if not isinstance(epochs, int) or epochs <= 0:
             raise ValueError("epochs must be a positive integer.")
-        if not isinstance(burn_in_epochs, int) or burn_in_epochs < 0:
-            raise ValueError("burn_in_epochs must be a non-negative integer.")
 
-        # get random seeds for training loops
-        rng = random.PRNGKey(seed)
-        burn_in_rng, main_train_rng = random.split(rng)
+        # if no loss_fn is provided, use the default loss function
+        if loss_fn is None:
 
-        # if we are convolving errors, we will first perform burn-in
-        # then will set up for the real training loop
-        burn_in_losses = []
-        if convolve_err:
-            # make sure we are using the default loss function
-            if loss_fn is not None:
-                raise ValueError(
-                    "Error convolution is currently only implemented for the default loss function."
-                )
-            # perform burn-in
-            if burn_in_epochs > 0:
-                if verbose:
-                    print(f"Burning-in {burn_in_epochs} epochs \nLoss:")
-                # use the loss function without error convolution
-                @jit
-                def loss_fn(params, x, c):
-                    return -np.mean(self._log_prob(params, x, c))
-
-                # convert data to an array with required columns
-                columns = list(self.data_columns)
-                X = np.array(inputs[columns].values)
-                conditions = self._get_conditions(inputs, inputs.shape[0])
-
-                # run the training
-                burn_in_losses = self._train(
-                    X,
-                    conditions,
-                    burn_in_epochs,
-                    batch_size,
-                    optimizer,
-                    loss_fn,
-                    burn_in_rng,
-                    verbose,
-                )
-                if verbose:
-                    print("Burn-in complete \n")
-
-            # AFTER BURN-IN
-            # switch to the convolved loss function
             @jit
             def loss_fn(params, x, c):
-                return -np.mean(self._log_prob_convolved(params, x, c))
+                return -np.mean(self._log_prob(params, x, c))
 
-            # and get a data array with error columns
-            X = self._array_with_errs(inputs)
-            conditions = self._get_conditions(inputs, inputs.shape[0])
+        # initialize the optimizer
+        optimizer = adam(step_size=1e-3) if optimizer is None else optimizer
+        opt_init, opt_update, get_params = optimizer
+        opt_state = opt_init(self._params)
 
-        # if not performing error convolution,
-        # simply get ready for the real training loop
+        # define the training step function
+        @jit
+        def step(i, opt_state, x, c):
+            params = get_params(opt_state)
+            gradients = grad(loss_fn)(params, x, c)
+            return opt_update(i, gradients, opt_state)
+
+        # get list of data columns
+        columns = list(self.data_columns)
+
+        # if this is a conditional flow, save the means and stds of the conditional columns
+        if self.conditional_columns is not None:
+            self._condition_means = np.array(
+                inputs[list(self.conditional_columns)].values.mean(axis=0)
+            )
+            self._condition_stds = np.array(
+                inputs[list(self.conditional_columns)].values.std(axis=0)
+            )
+
+        # define a function to return batches
+        if sample_errs:
+
+            def get_batch(sample_rng, x, type):
+                return self._get_samples(sample_rng, x, 1, type=type)
+
         else:
-            # if no loss_fn is provided, use the default loss function
-            if loss_fn is None:
 
-                @jit
-                def loss_fn(params, x, c):
-                    return -np.mean(self._log_prob(params, x, c))
+            def get_batch(sample_rng, x, type):
+                if type == "conditions":
+                    return self._get_conditions(x)
+                else:
+                    return np.array(x[columns].values)
 
-            # convert data to an array with required columns
-            columns = list(self.data_columns)
-            X = np.array(inputs[columns].values)
-            conditions = self._get_conditions(inputs, inputs.shape[0])
+        # get random seed for training loop
+        rng = random.PRNGKey(seed)
 
         if verbose:
             print(f"Training {epochs} epochs \nLoss:")
 
-        # normal training run
-        main_train_losses = self._train(
-            X,
-            conditions,
-            epochs,
-            batch_size,
-            optimizer,
-            loss_fn,
-            main_train_rng,
-            verbose,
-        )
+        # save the initial loss
+        X = np.array(inputs[columns].values)
+        C = self._get_conditions(inputs)
+        losses = [loss_fn(self._params, X, C)]
+        if verbose:
+            print(f"(0) {losses[-1]:.4f}")
 
-        # combine the burn-in and main training losses
-        losses = burn_in_losses + main_train_losses
+        # loop through training
+        itercount = itertools.count()
+        for epoch in range(epochs):
+            # new permutation of batches
+            permute_rng, sample_rng, rng = random.split(rng, num=3)
+            idx = random.permutation(permute_rng, inputs.shape[0])
+            X = inputs.iloc[idx]
+
+            # loop through batches and step optimizer
+            for batch_idx in range(0, len(X), batch_size):
+
+                # if sampling from the error distribution, this returns a
+                # Gaussian sample of the batch. Else just returns batch as a
+                # jax array
+                batch = get_batch(
+                    sample_rng, X.iloc[batch_idx : batch_idx + batch_size], type="data"
+                )
+                batch_conditions = get_batch(
+                    sample_rng,
+                    X.iloc[batch_idx : batch_idx + batch_size],
+                    type="conditions",
+                )
+
+                opt_state = step(
+                    next(itercount),
+                    opt_state,
+                    batch,
+                    batch_conditions,
+                )
+
+            # save end-of-epoch training loss
+            params = get_params(opt_state)
+            losses.append(
+                loss_fn(
+                    params,
+                    np.array(X[columns].values),
+                    self._get_conditions(X),
+                )
+            )
+
+            if verbose and (
+                epoch % max(int(0.05 * epochs), 1) == 0 or (epoch + 1) == epochs
+            ):
+                print(f"({epoch+1}) {losses[-1]:.4f}")
+
+        # update the flow parameters with the final training state
+        self._params = get_params(opt_state)
 
         return losses
