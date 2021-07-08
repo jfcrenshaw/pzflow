@@ -202,16 +202,16 @@ def test_error_convolution(flow, x, x_with_err):
     )
 
     grid = np.arange(0, 2.1, 0.12)
-    # pdfs = flow.posterior(x, column="y", grid=grid, nsamples=10)
-    # assert pdfs.shape == (x.shape[0], grid.size)
-    # assert np.allclose(
-    #    flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0),
-    #    flow.posterior(x, column="y", grid=grid),
-    # )
-    # assert np.allclose(
-    #    flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
-    #    flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
-    # )
+    pdfs = flow.posterior(x, column="y", grid=grid, nsamples=10)
+    assert pdfs.shape == (x.shape[0], grid.size)
+    assert np.allclose(
+        flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x, column="y", grid=grid),
+    )
+    assert np.allclose(
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+    )
 
 
 def test_posterior_batch():
