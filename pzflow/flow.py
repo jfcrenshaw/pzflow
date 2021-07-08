@@ -203,7 +203,7 @@ class Flow:
             columns = list(self.data_columns)
         elif type == "conditions":
             if self.conditional_columns is None:
-                return np.zeros((X.shape[0], 1))
+                return np.zeros((nsamples * X.shape[0], 1))
             else:
                 columns = list(self.conditional_columns)
         else:

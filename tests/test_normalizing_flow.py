@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from jax import random
 from pzflow import Flow
-from pzflow.bijectors import Reverse
+from pzflow.bijectors import Reverse, RollingSplineCoupling
 from pzflow.distributions import *
 
 
@@ -74,7 +74,7 @@ def test_returns_correct_shape(flow):
     "flow,x,x_with_err",
     [
         (
-            Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
+            Flow(("redshift", "y"), RollingSplineCoupling(2), latent=Normal(2)),
             pd.DataFrame(
                 np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
                 columns=("redshift", "y"),
@@ -89,7 +89,7 @@ def test_returns_correct_shape(flow):
         (
             Flow(
                 ("redshift", "y"),
-                Reverse(),
+                RollingSplineCoupling(2, n_conditions=2),
                 latent=Normal(2),
                 conditional_columns=("a", "b"),
             ),
@@ -120,7 +120,7 @@ def test_returns_correct_shape(flow):
         (
             Flow(
                 ("redshift", "y"),
-                Reverse(),
+                RollingSplineCoupling(2, n_conditions=1),
                 latent=Normal(2),
                 conditional_columns=("a",),
             ),
@@ -149,8 +149,8 @@ def test_returns_correct_shape(flow):
         (
             Flow(
                 ("y",),
-                Reverse(),
-                latent=Normal(2),
+                RollingSplineCoupling(1, n_conditions=2),
+                latent=Normal(1),
                 conditional_columns=("a", "b"),
             ),
             pd.DataFrame(
