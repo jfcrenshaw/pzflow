@@ -74,6 +74,33 @@ def test_sample():
     assert np.allclose(sEns, sManual)
 
 
+def test_conditional_sample():
+
+    cEns = FlowEnsemble(("x", "y"), 
+                        RollingSplineCoupling(nlayers=2, n_conditions=2), 
+                        conditional_columns=("a", "b"), N=2)
+
+    # test with nsamples = 1, fewer samples than flows
+    conditions = pd.DataFrame(np.arange(2).reshape(-1,2), columns=("a", "b"))
+    samples = cEns.sample(nsamples=1, conditions=conditions, save_conditions=False)
+    assert samples.shape == (1, 2)
+
+    # test with nsamples = 1, more samples than flows
+    conditions = pd.DataFrame(np.arange(10).reshape(-1,2), columns=("a", "b"))
+    samples = cEns.sample(nsamples=1, conditions=conditions, save_conditions=False)
+    assert samples.shape == (5, 2)
+
+    # test with nsamples = 2, more samples than flows
+    conditions = pd.DataFrame(np.arange(10).reshape(-1,2), columns=("a", "b"))
+    samples = cEns.sample(nsamples=2, conditions=conditions, save_conditions=False)
+    assert samples.shape == (10, 2)
+
+    # test with returnEnsemble=True
+    conditions = pd.DataFrame(np.arange(10).reshape(-1,2), columns=("a", "b"))
+    samples = cEns.sample(nsamples=1, conditions=conditions, save_conditions=False, returnEnsemble=True)
+    assert samples.shape == (10, 2)
+
+
 def test_train():
 
     data = random.normal(random.PRNGKey(0), shape=(100, 2))
