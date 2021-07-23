@@ -326,14 +326,14 @@ class FlowEnsemble:
                     )
                 # if nsamples = 1, we can proceed with the main sampling algorithm
                 else:
-                    seed = onp.random.randint(1e9) if seed is None else seed
+                    seed = onp.random.randint(1e18) if seed is None else seed
                     # if we are drawing more samples than the number of flows in
                     # the ensemble, then we will shuffle the conditions and randomly
                     # assign them to one of the constituent flows
                     if conditions.shape[0] > len(self._ensemble):
                         # shuffle the conditions
                         conditions_shuffled = conditions.sample(
-                            frac=1.0, random_state=seed
+                            frac=1.0, random_state=int(seed / 1e9)
                         )
                         # split conditions into ~equal sized chunks
                         chunks = onp.array_split(
@@ -365,7 +365,7 @@ class FlowEnsemble:
                             replace=True,
                         )
                         # sample from each flow and return all the samples together
-                        seeds = rng.integers(1e9, size=conditions.shape[0])
+                        seeds = rng.integers(1e18, size=conditions.shape[0])
                         return pd.concat(
                             [
                                 flow.sample(
