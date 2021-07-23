@@ -262,7 +262,7 @@ class FlowEnsemble:
         seed: int = None,
         returnEnsemble: bool = False,
     ) -> pd.DataFrame:
-        """Returns samples from the normalizing flow.
+        """Returns samples from the ensemble.
 
         # UPDATE THIS DOCSTRING TO REFLECT THE NEW METHOD FOR CONDITIONAL SAMPLING
 
@@ -326,7 +326,7 @@ class FlowEnsemble:
                     )
                 # if nsamples = 1, we can proceed with the main sampling algorithm
                 else:
-                    seed = onp.random.randint(1e18) if seed is None else seed
+                    seed = onp.random.randint(1e9) if seed is None else seed
                     # if we are drawing more samples than the number of flows in
                     # the ensemble, then we will shuffle the conditions and randomly
                     # assign them to one of the constituent flows
@@ -358,24 +358,23 @@ class FlowEnsemble:
                     # being drawn, then we will randomly select flows for each condition
                     else:
                         rng = onp.random.default_rng(seed)
+                        # randomly select a flow to sample from for each condition
                         flows = rng.choice(
                             list(self._ensemble.values()),
                             size=conditions.shape[0],
                             replace=True,
                         )
                         # sample from each flow and return all the samples together
-                        seeds = rng.integers(1e18, size=conditions.shape[0])
+                        seeds = rng.integers(1e9, size=conditions.shape[0])
                         return pd.concat(
                             [
                                 flow.sample(
                                     1, conditions[i : i + 1], save_conditions, new_seed
                                 )
-                                for i, (flow, new_seed) in enumerate(
-                                    zip(self._ensemble.values(), seeds)
-                                )
+                                for i, (flow, new_seed) in enumerate(zip(flows, seeds))
                             ],
                             ignore_index=True,
-                        ).sample(frac=1.0, random_state=seed)
+                        )
 
     def save(self, file: str):
         """Saves the ensemble to a file.
