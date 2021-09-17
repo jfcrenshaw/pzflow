@@ -414,8 +414,6 @@ class FlowEnsemble:
             },
         }
 
-        if not file.endswith(".pkl"):
-            file += ".pkl"
         with open(file, "wb") as handle:
             pickle.dump(save_dict, handle, recurse=True)
 

@@ -250,10 +250,10 @@ def test_load_flow(tmp_path):
     columns = ("x", "y")
     flow = Flow(columns, Reverse(), info=["random", 42])
 
-    file = tmp_path / "test-flow"
+    file = tmp_path / "test-flow.pzflow.pkl"
     flow.save(str(file))
 
-    file = tmp_path / "test-flow.pkl"
+    file = tmp_path / "test-flow.pzflow.pkl"
     flow = Flow(file=str(file))
 
     x = np.array([[1, 2], [3, 4]])
