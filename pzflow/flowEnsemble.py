@@ -106,10 +106,16 @@ class FlowEnsemble:
             # load the ensemble from the dictionary
             self._ensemble = {
                 name: Flow(_dictionary=flow_dict)
-                for name, flow_dict in save_dict.items()
+                for name, flow_dict in save_dict["ensemble"].items()
             }
+            # load the metadata
+            self.data_columns = save_dict["data_columns"]
+            self.conditional_columns = save_dict["conditional_columns"]
+            self.info = save_dict["info"]
+
         # otherwise create a new ensemble from the provided parameters
         else:
+            # save the ensemble of flows
             self._ensemble = {
                 f"Flow {i}": Flow(
                     data_columns=data_columns,
@@ -117,9 +123,14 @@ class FlowEnsemble:
                     conditional_columns=conditional_columns,
                     latent=latent,
                     seed=i,
+                    info=f"Flow {i}",
                 )
                 for i in range(N)
             }
+            # save the metadata
+            self.data_columns = data_columns
+            self.conditional_columns = conditional_columns
+            self.info = info
 
     def log_prob(
         self,
@@ -393,8 +404,15 @@ class FlowEnsemble:
             Path to where the ensemble will be saved.
             Extension `.pkl` will be appended if not already present.
         """
-        save_dict = {name: flow._save_dict() for name, flow in self._ensemble.items()}
-        save_dict["class"] = "FlowEnsemble"
+        save_dict = {
+            "data_columns": self.data_columns,
+            "conditional_columns": self.conditional_columns,
+            "info": self.info,
+            "class": self.__class__.__name__,
+            "ensemble": {
+                name: flow._save_dict() for name, flow in self._ensemble.items()
+            },
+        }
 
         if not file.endswith(".pkl"):
             file += ".pkl"
