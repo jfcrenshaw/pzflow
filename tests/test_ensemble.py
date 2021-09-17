@@ -124,10 +124,10 @@ def test_load_ensemble(tmp_path):
 
     preSave = flowEns.sample(10, seed=0)
 
-    file = tmp_path / "test-ensemble"
+    file = tmp_path / "test-ensemble.pzflow.pkl"
     flowEns.save(str(file))
 
-    file = tmp_path / "test-ensemble.pkl"
+    file = tmp_path / "test-ensemble.pzflow.pkl"
     flowEns = FlowEnsemble(file=str(file))
 
     postSave = flowEns.sample(10, seed=0)
