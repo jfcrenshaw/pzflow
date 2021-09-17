@@ -6,7 +6,7 @@ extras = {
 }
 
 # load the version number
-with open("rail/version.py") as f:
+with open("pzflow/version.py") as f:
     __version__ = f.read().replace('"', "").split("=")[1]
 
 setup(
