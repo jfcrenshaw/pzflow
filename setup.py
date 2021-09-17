@@ -5,9 +5,13 @@ extras = {
     "docs": ["sphinx", "sphinx-rtd-theme"],
 }
 
+# load the version number
+with open("pzflow/version.py") as f:
+    __version__ = f.read().replace('"', "").split("=")[1]
+
 setup(
     name="pzflow",
-    version="1.7.1",
+    version=__version__,
     author="John Franklin Crenshaw",
     author_email="jfc20@uw.edu",
     description="Probabilistic modeling of tabular data with normalizing flows.",
