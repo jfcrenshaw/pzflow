@@ -246,30 +246,6 @@ class Flow:
         log_prob = np.nan_to_num(log_prob, nan=np.NINF)
         return log_prob
 
-    def _save_dict(self):
-        """Returns the dictionary of all flow params to be saved."""
-        save_dict = {"class": "Flow"}
-        keys = [
-            "data_columns",
-            "conditional_columns",
-            "condition_means",
-            "condition_stds",
-            "info",
-            "latent_info",
-            "bijector_info",
-            "params",
-        ]
-        for key in keys:
-            try:
-                save_dict[key] = getattr(self, key)
-            except AttributeError:
-                try:
-                    save_dict[key] = getattr(self, "_" + key)
-                except AttributeError:
-                    save_dict[key] = None
-
-        return save_dict
-
     def log_prob(
         self, inputs: pd.DataFrame, nsamples: int = None, seed: int = None
     ) -> np.ndarray:
@@ -520,6 +496,30 @@ class Flow:
 
         # return the samples!
         return x
+
+    def _save_dict(self):
+        """Returns the dictionary of all flow params to be saved."""
+        save_dict = {"class": self.__class__.__name__}
+        keys = [
+            "data_columns",
+            "conditional_columns",
+            "condition_means",
+            "condition_stds",
+            "info",
+            "latent_info",
+            "bijector_info",
+            "params",
+        ]
+        for key in keys:
+            try:
+                save_dict[key] = getattr(self, key)
+            except AttributeError:
+                try:
+                    save_dict[key] = getattr(self, "_" + key)
+                except AttributeError:
+                    save_dict[key] = None
+
+        return save_dict
 
     def save(self, file: str):
         """Saves the flow to a file.
