@@ -225,7 +225,7 @@ class Flow:
         Xerr = np.clip(Xerr, 1e-8, None)
         # generate samples
         Xsamples = random.multivariate_normal(
-            rng, X, vmap(np.diag)(Xerr ** 2), shape=(nsamples, X.shape[0])
+            rng, X, vmap(np.diag)(Xerr ** 2), shape=(err_samples, X.shape[0])
         )
         Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
 
