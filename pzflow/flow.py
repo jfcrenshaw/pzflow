@@ -540,8 +540,8 @@ class Flow:
         """
         save_dict = self._save_dict()
 
-        if not file.endswith(".pkl"):
-            file += ".pkl"
+        if not file.endswith(".pzflow.pkl"):
+            file += ".pzflow.pkl"
         with open(file, "wb") as handle:
             pickle.dump(save_dict, handle, recurse=True)
 

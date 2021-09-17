@@ -396,8 +396,8 @@ class FlowEnsemble:
         save_dict = {name: flow._save_dict() for name, flow in self._ensemble.items()}
         save_dict["class"] = "FlowEnsemble"
 
-        if not file.endswith(".pkl"):
-            file += ".pkl"
+        if not file.endswith(".pzflow.pkl"):
+            file += ".pzflow.pkl"
         with open(file, "wb") as handle:
             pickle.dump(save_dict, handle, recurse=True)
 

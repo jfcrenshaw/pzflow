@@ -252,7 +252,7 @@ def test_load_flow(tmp_path):
     file = tmp_path / "test-flow"
     flow.save(str(file))
 
-    file = tmp_path / "test-flow.pkl"
+    file = tmp_path / "test-flow.pzflow.pkl"
     flow = Flow(file=str(file))
 
     x = np.array([[1, 2], [3, 4]])
