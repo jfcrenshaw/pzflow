@@ -207,6 +207,7 @@ def test_error_convolution(flow, x, x_with_err):
     assert np.allclose(
         flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0),
         flow.posterior(x, column="y", grid=grid),
+        rtol=1e-4,
     )
     assert np.allclose(
         flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
