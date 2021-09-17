@@ -186,11 +186,11 @@ class Flow:
             conditions = (conditions - self._condition_means) / self._condition_stds
         return conditions
 
-    def _get_samples(
+    def _get_err_samples(
         self,
         rng,
         inputs: pd.DataFrame,
-        nsamples: int,
+        err_samples: int,
         type: str = "data",
         skip: str = None,
     ) -> np.ndarray:
@@ -203,7 +203,7 @@ class Flow:
             columns = list(self.data_columns)
         elif type == "conditions":
             if self.conditional_columns is None:
-                return np.zeros((nsamples * X.shape[0], 1))
+                return np.zeros((err_samples * X.shape[0], 1))
             else:
                 columns = list(self.conditional_columns)
         else:
@@ -225,7 +225,7 @@ class Flow:
         Xerr = np.clip(Xerr, 1e-8, None)
         # generate samples
         Xsamples = random.multivariate_normal(
-            rng, X, vmap(np.diag)(Xerr ** 2), shape=(nsamples, X.shape[0])
+            rng, X, vmap(np.diag)(Xerr ** 2), shape=(err_samples, X.shape[0])
         )
         Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
 
@@ -247,7 +247,7 @@ class Flow:
         return log_prob
 
     def log_prob(
-        self, inputs: pd.DataFrame, nsamples: int = None, seed: int = None
+        self, inputs: pd.DataFrame, err_samples: int = None, seed: int = None
     ) -> np.ndarray:
         """Calculates log probability density of inputs.
 
@@ -258,12 +258,12 @@ class Flow:
             Every column in self.data_columns must be present.
             If self.conditional_columns is not None, those must be present
             as well. If other columns are present, they are ignored.
-        nsamples : int, default=None
-            Number of samples to average over for the log_prob calculation.
-            If provided, then Gaussian errors are assumed, and method will
-            look for error columns in `inputs`. Error columns must end in
-            `_err`. E.g. the error column for the variable `u` must be `u_err`.
-            Zero error assumed for any missing error columns.
+        err_samples : int, default=None
+            Number of samples from the error distribution to average over for
+            the log_prob calculation. If provided, Gaussian errors are assumed,
+            and method will look for error columns in `inputs`. Error columns
+            must end in `_err`. E.g. the error column for the variable `u` must
+            be `u_err`. Zero error assumed for any missing error columns.
         seed : int, default=None
             Random seed for drawing the samples with Gaussian errors.
 
@@ -273,7 +273,7 @@ class Flow:
             Device array of shape (inputs.shape[0],).
         """
 
-        if nsamples is None:
+        if err_samples is None:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
             X = np.array(inputs[columns].values)
@@ -284,16 +284,18 @@ class Flow:
 
         else:
             # validate nsamples
-            assert isinstance(nsamples, int), "nsamples must be a positive integer."
-            assert nsamples > 0, "nsamples must be a positive integer."
+            assert isinstance(
+                err_samples, int
+            ), "err_samples must be a positive integer."
+            assert err_samples > 0, "nsamples must be a positive integer."
             # get Gaussian samples
             seed = onp.random.randint(1e18) if seed is None else seed
             rng = random.PRNGKey(seed)
-            X = self._get_samples(rng, inputs, nsamples, type="data")
-            C = self._get_samples(rng, inputs, nsamples, type="conditions")
+            X = self._get_err_samples(rng, inputs, err_samples, type="data")
+            C = self._get_err_samples(rng, inputs, err_samples, type="conditions")
             # calculate log_probs
             log_probs = self._log_prob(self._params, X, C)
-            probs = np.exp(log_probs.reshape(-1, nsamples))
+            probs = np.exp(log_probs.reshape(-1, err_samples))
             return np.log(probs.mean(axis=1))
 
     def posterior(
@@ -302,7 +304,7 @@ class Flow:
         column: str,
         grid: np.ndarray,
         normalize: bool = True,
-        nsamples: int = None,
+        err_samples: int = None,
         seed: int = None,
         batch_size: int = None,
     ) -> np.ndarray:
@@ -326,12 +328,12 @@ class Flow:
             Grid on which to calculate the posterior.
         normalize : boolean, default=True
             Whether to normalize the posterior so that it integrates to 1.
-        nsamples : int, default=None
-            Number of samples to average over for the posterior calculation.
-            If provided, then Gaussian errors are assumed, and method will
-            look for error columns in `inputs`. Error columns must end in
-            `_err`. E.g. the error column for the variable `u` must be `u_err`.
-            Zero error assumed for any missing error columns.
+        err_samples : int, default=None
+            Number of samples from the error distribution to average over for
+            the posterior calculation. If provided, Gaussian errors are assumed,
+            and method will look for error columns in `inputs`. Error columns
+            must end in `_err`. E.g. the error column for the variable `u` must
+            be `u_err`. Zero error assumed for any missing error columns.
         seed : int, default=None
             Random seed for drawing the samples with Gaussian errors.
         batch_size : int, default=None
@@ -353,10 +355,10 @@ class Flow:
         nrows = inputs.shape[0]
         batch_size = nrows if batch_size is None else batch_size
 
-        if nsamples is not None:
+        if err_samples is not None:
             # validate nsamples
-            assert isinstance(nsamples, int), "nsamples must be a positive integer."
-            assert nsamples > 0, "nsamples must be a positive integer."
+            assert isinstance(err_samples, int), "nsamples must be a positive integer."
+            assert err_samples > 0, "nsamples must be a positive integer."
             # set the seed
             seed = onp.random.randint(1e18) if seed is None else seed
             rng = random.PRNGKey(seed)
@@ -372,18 +374,22 @@ class Flow:
             batch = inputs.iloc[batch_idx : batch_idx + batch_size]
 
             # if not drawing samples, just grab batch and conditions
-            if nsamples is None:
+            if err_samples is None:
                 conditions = self._get_conditions(batch)
                 batch = np.array(batch[columns].values)
             # if only drawing condition samples...
             elif len(self.data_columns) == 1:
-                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
-                batch = np.repeat(batch[columns].values, nsamples, axis=0)
+                conditions = self._get_err_samples(
+                    rng, batch, err_samples, type="conditions"
+                )
+                batch = np.repeat(batch[columns].values, err_samples, axis=0)
             # if drawing data and condition samples...
             else:
-                conditions = self._get_samples(rng, batch, nsamples, type="conditions")
-                batch = self._get_samples(
-                    rng, batch, nsamples, skip=column, type="data"
+                conditions = self._get_err_samples(
+                    rng, batch, err_samples, type="conditions"
+                )
+                batch = self._get_err_samples(
+                    rng, batch, err_samples, skip=column, type="data"
                 )
 
             # make a new copy of each row for each value of the column
@@ -413,8 +419,8 @@ class Flow:
             )
             prob = np.exp(log_prob)
             # if we were Gaussian sampling, average over the samples
-            if nsamples is not None:
-                prob = prob.reshape(-1, nsamples, len(grid))
+            if err_samples is not None:
+                prob = prob.reshape(-1, err_samples, len(grid))
                 prob = prob.mean(axis=1)
             # add the pdfs to the bigger list
             pdfs = ops.index_update(
@@ -550,7 +556,7 @@ class Flow:
         batch_size: int = 1024,
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
-        sample_errs: bool = False,
+        convolve_errs: bool = False,
         seed: int = 0,
         verbose: bool = False,
     ) -> list:
@@ -570,7 +576,7 @@ class Flow:
         loss_fn : Callable, optional
             A function to calculate the loss: loss = loss_fn(params, x).
             If not provided, will be -mean(log_prob).
-        sample_errs : bool, default=False
+        convolve_errs : bool, default=False
             Whether to draw new data from the error distributions during
             each epoch of training. Assumes errors are Gaussian, and method
             will look for error columns in `inputs`. Error columns must end
@@ -624,10 +630,10 @@ class Flow:
             )
 
         # define a function to return batches
-        if sample_errs:
+        if convolve_errs:
 
             def get_batch(sample_rng, x, type):
-                return self._get_samples(sample_rng, x, 1, type=type)
+                return self._get_err_samples(sample_rng, x, 1, type=type)
 
         else:
 

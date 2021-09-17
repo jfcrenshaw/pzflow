@@ -135,7 +135,7 @@ class FlowEnsemble:
     def log_prob(
         self,
         inputs: pd.DataFrame,
-        nsamples: int = None,
+        err_samples: int = None,
         seed: int = None,
         returnEnsemble: bool = False,
     ) -> np.ndarray:
@@ -148,12 +148,12 @@ class FlowEnsemble:
             Every column in self.data_columns must be present.
             If self.conditional_columns is not None, those must be present
             as well. If other columns are present, they are ignored.
-        nsamples : int, default=None
-            Number of samples to average over for the log_prob calculation.
-            If provided, then Gaussian errors are assumed, and method will
-            look for error columns in `inputs`. Error columns must end in
-            `_err`. E.g. the error column for the variable `u` must be `u_err`.
-            Zero error assumed for any missing error columns.
+        err_samples : int, default=None
+            Number of samples from the error distribution to average over for
+            the log_prob calculation. If provided, Gaussian errors are assumed,
+            and method will look for error columns in `inputs`. Error columns
+            must end in `_err`. E.g. the error column for the variable `u` must
+            be `u_err`. Zero error assumed for any missing error columns.
         seed : int, default=None
             Random seed for drawing the samples with Gaussian errors.
         returnEnsemble : bool, default=False
@@ -171,7 +171,10 @@ class FlowEnsemble:
 
         # calculate log_prob for each flow in the ensemble
         ensemble = np.array(
-            [flow.log_prob(inputs, nsamples, seed) for flow in self._ensemble.values()]
+            [
+                flow.log_prob(inputs, err_samples, seed)
+                for flow in self._ensemble.values()
+            ]
         )
 
         # re-arrange so that (axis 0, axis 1) = (inputs, flows in ensemble)
@@ -191,7 +194,7 @@ class FlowEnsemble:
         column: str,
         grid: np.ndarray,
         normalize: bool = True,
-        nsamples: int = None,
+        err_samples: int = None,
         seed: int = None,
         batch_size: int = None,
         returnEnsemble: bool = False,
@@ -216,12 +219,12 @@ class FlowEnsemble:
             Grid on which to calculate the posterior.
         normalize : boolean, default=True
             Whether to normalize the posterior so that it integrates to 1.
-        nsamples : int, default=None
-            Number of samples to average over for the posterior calculation.
-            If provided, then Gaussian errors are assumed, and method will
-            look for error columns in `inputs`. Error columns must end in
-            `_err`. E.g. the error column for the variable `u` must be `u_err`.
-            Zero error assumed for any missing error columns.
+        err_samples : int, default=None
+            Number of samples from the error distribution to average over for
+            the posterior calculation. If provided, Gaussian errors are assumed,
+            and method will look for error columns in `inputs`. Error columns
+            must end in `_err`. E.g. the error column for the variable `u` must
+            be `u_err`. Zero error assumed for any missing error columns.
         seed : int, default=None
             Random seed for drawing the samples with Gaussian errors.
         batch_size : int, default=None
@@ -243,7 +246,9 @@ class FlowEnsemble:
         # calculate posterior for each flow in the ensemble
         ensemble = np.array(
             [
-                flow.posterior(inputs, column, grid, False, nsamples, seed, batch_size)
+                flow.posterior(
+                    inputs, column, grid, False, err_samples, seed, batch_size
+                )
                 for flow in self._ensemble.values()
             ]
         )
@@ -424,7 +429,7 @@ class FlowEnsemble:
         batch_size: int = 1024,
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
-        sample_errs: bool = False,
+        convolve_errs: bool = False,
         seed: int = 0,
         verbose: bool = False,
     ) -> dict:
@@ -444,7 +449,7 @@ class FlowEnsemble:
         loss_fn : Callable, optional
             A function to calculate the loss: loss = loss_fn(params, x).
             If not provided, will be -mean(log_prob).
-        sample_errs : bool, default=False
+        convolve_errs : bool, default=False
             Whether to draw new data from the error distributions during
             each epoch of training. Assumes errors are Gaussian, and method
             will look for error columns in `inputs`. Error columns must end
@@ -476,7 +481,7 @@ class FlowEnsemble:
                 batch_size,
                 optimizer,
                 loss_fn,
-                sample_errs,
+                convolve_errs,
                 seed,
                 verbose,
             )
