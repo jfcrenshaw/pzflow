@@ -49,6 +49,18 @@ def DenseReluNetwork(
     return init_fun, forward_fun
 
 
+def gaussian_error_model(
+    key, X: np.ndarray, Xerr: np.ndarray, nsamples: int
+) -> np.ndarray:
+    """
+    Default Gaussian error model were X are the means and Xerr are the stds.
+    """
+
+    eps = random.normal(key, shape=(X.shape[0], nsamples, X.shape[1]))
+
+    return X[:, None, :] + eps * Xerr[:, None, :]
+
+
 def sub_diag_indices(inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return indices for diagonal of 2D blocks in 3D array"""
     if inputs.ndim != 3:
