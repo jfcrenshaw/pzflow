@@ -339,7 +339,7 @@ def test_train_no_errs_same():
     assert np.allclose(losses1, losses2)
 
 
-def test_get_samples():
+def test_get_err_samples():
 
     rng = random.PRNGKey(0)
 
@@ -367,6 +367,31 @@ def test_get_samples():
     # check incorrect type
     with pytest.raises(ValueError):
         flow._get_err_samples(rng, x, 10, type="wrong")
+
+    # check constant shift data samples
+    columns = ("x", "y")
+    shift_err_model = lambda key, X, Xerr, nsamples: np.repeat(
+        X + Xerr, nsamples, axis=0
+    ).reshape(X.shape[0], nsamples, X.shape[1])
+    flow = Flow(columns, Reverse(), data_error_model=shift_err_model)
+    xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
+    x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
+    samples = flow._get_err_samples(rng, x, 10)
+    assert samples.shape == (20, 2)
+    assert np.allclose(
+        samples,
+        shift_err_model(None, xarray[:, :2], xarray[:, 2:], 10).reshape(20, 2),
+    )
+
+    # check constant shift conditional samples
+    flow = Flow(
+        ("x"),
+        Reverse(),
+        conditional_columns=("y"),
+        condition_error_model=shift_err_model,
+    )
+    samples = flow._get_err_samples(rng, x, 10, type="conditions")
+    assert np.allclose(samples, np.repeat(np.array([[2.2], [4.4]]), 10, axis=0))
 
 
 def test_train_w_conditions():
