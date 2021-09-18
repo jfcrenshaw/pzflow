@@ -256,10 +256,12 @@ class Flow:
             # if errors not provided for the column, fill in zeros
             if f"{col}_err" not in inputs.columns and col != skip:
                 X[f"{col}_err"] = np.zeros(X.shape[0])
+            # if we are skipping this column, fill in nan's
+            elif col == skip:
+                X[col] = np.nan * np.zeros(X.shape[0])
+                X[f"{col}_err"] = np.nan * np.zeros(X.shape[0])
 
         # pull out relevant columns
-        if skip is not None:
-            columns.remove(skip)
         err_columns = [col + "_err" for col in columns]
         X, Xerr = np.array(X[columns].values), np.array(X[err_columns].values)
 
@@ -267,13 +269,10 @@ class Flow:
         Xsamples = error_model(key, X, Xerr, err_samples)
         Xsamples = Xsamples.reshape(X.shape[0] * err_samples, X.shape[1])
 
-        # lower bound on Xerr to avoid singular matrix
-        # Xerr = np.clip(Xerr, 1e-8, None)
-        # generate samples
-        # Xsamples = random.multivariate_normal(
-        #    rng, X, vmap(np.diag)(Xerr ** 2), shape=(err_samples, X.shape[0])
-        # )
-        # Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
+        # delete the column corresponding to skip
+        if skip is not None:
+            idx = columns.index(skip)
+            Xsamples = np.delete(Xsamples, idx, axis=1)
 
         # if these are samples of conditions, standard scale them!
         if type == "conditions":
