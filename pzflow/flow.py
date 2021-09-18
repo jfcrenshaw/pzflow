@@ -36,8 +36,8 @@ class Flow:
         bijector: Tuple[InitFunction, Bijector_Info] = None,
         conditional_columns: Sequence[str] = None,
         latent=None,
-        data_error_model: callable = None,
-        condition_error_model: callable = None,
+        data_error_model: Callable = None,
+        condition_error_model: Callable = None,
         seed: int = 0,
         info: Any = None,
         file: str = None,
@@ -65,7 +65,7 @@ class Flow:
             the distributions from pzflow.distributions. If not provided,
             a normal distribution is used with the number of dimensions
             inferred.
-        data_error_model : callable, optional
+        data_error_model : Callable, optional
             A callable that defines the error model for data variables.
             data_error_model must take key, X, Xerr, nsamples as arguments where:
                 key is a jax rng key, e.g. jax.random.PRNGKey(0)
@@ -76,7 +76,7 @@ class Flow:
             data_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
             If data_error_model is not provided, a Gaussian error model is assumed.
-        condition_error_model : callable, optional
+        condition_error_model : Callable, optional
             A callable that defines the error model for conditional variables.
             condition_error_model must take key, X, Xerr, nsamples as arguments where:
                 key is a jax rng key, e.g. jax.random.PRNGKey(0)
