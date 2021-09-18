@@ -10,7 +10,7 @@ from jax.experimental.optimizers import Optimizer, adam
 
 from pzflow import distributions
 from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
-from pzflow.utils import build_bijector_from_info
+from pzflow.utils import build_bijector_from_info, gaussian_error_model
 
 
 class Flow:
@@ -36,6 +36,8 @@ class Flow:
         bijector: Tuple[InitFunction, Bijector_Info] = None,
         conditional_columns: Sequence[str] = None,
         latent=None,
+        data_error_model: callable = None,
+        condition_error_model: callable = None,
         seed: int = 0,
         info: Any = None,
         file: str = None,
@@ -63,6 +65,28 @@ class Flow:
             the distributions from pzflow.distributions. If not provided,
             a normal distribution is used with the number of dimensions
             inferred.
+        data_error_model : callable, optional
+            A callable that defines the error model for data variables.
+            data_error_model must take key, X, Xerr, nsamples as arguments where:
+                key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                X is a 2 dimensional array of data variables, where the order
+                    of variables matches the order of the columns in data_columns
+                Xerr is the corresponding 2 dimensional array of errors
+                nsamples is the number of samples to draw from the error distribution
+            data_error_model must return an array of samples with the shape
+            (X.shape[0], nsamples, X.shape[1]).
+            If data_error_model is not provided, a Gaussian error model is assumed.
+        condition_error_model : callable, optional
+            A callable that defines the error model for conditional variables.
+            condition_error_model must take key, X, Xerr, nsamples as arguments where:
+                key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                X is a 2 dimensional array of conditional variables, where the order
+                    of variables matches the order of the columns in conditional_columns
+                Xerr is the corresponding 2 dimensional array of errors
+                nsamples is the number of samples to draw from the error distribution
+            condition_error_model must return an array of samples with the shape
+            (X.shape[0], nsamples, X.shape[1]).
+            If condition_error_model is not provided, a Gaussian error model is assumed.
         seed : int, default=0
             The random seed for initial parameters
         info : Any, optional
@@ -90,6 +114,8 @@ class Flow:
                 bijector is not None,
                 conditional_columns is not None,
                 latent is not None,
+                data_error_model is not None,
+                condition_error_model is not None,
                 info is not None,
             )
         ):
@@ -132,6 +158,10 @@ class Flow:
                 *self._latent_info[1]
             )
 
+            # load the error models
+            self.data_error_model = save_dict["data_error_model"]
+            self.condition_error_model = save_dict["condition_error_model"]
+
             # load the bijector
             self._bijector_info = save_dict["bijector_info"]
             init_fun, _ = build_bijector_from_info(self._bijector_info)
@@ -166,6 +196,16 @@ class Flow:
                 self.latent = latent
             self._latent_info = self.latent.info
 
+            # set up the error models
+            if data_error_model is None:
+                self.data_error_model = gaussian_error_model
+            else:
+                self.data_error_model = data_error_model
+            if condition_error_model is None:
+                self.condition_error_model = gaussian_error_model
+            else:
+                self.condition_error_model = condition_error_model
+
             # set up the bijector with random params
             init_fun, self._bijector_info = bijector
             bijector_params, self._forward, self._inverse = init_fun(
@@ -188,7 +228,7 @@ class Flow:
 
     def _get_err_samples(
         self,
-        rng,
+        key,
         inputs: pd.DataFrame,
         err_samples: int,
         type: str = "data",
@@ -201,11 +241,13 @@ class Flow:
         # get list of columns
         if type == "data":
             columns = list(self.data_columns)
+            error_model = self.data_error_model
         elif type == "conditions":
             if self.conditional_columns is None:
                 return np.zeros((err_samples * X.shape[0], 1))
             else:
                 columns = list(self.conditional_columns)
+                error_model = self.condition_error_model
         else:
             raise ValueError("type must be `data` or `conditions`.")
 
@@ -221,13 +263,17 @@ class Flow:
         err_columns = [col + "_err" for col in columns]
         X, Xerr = np.array(X[columns].values), np.array(X[err_columns].values)
 
-        # lower bound on Xerr to avoid singular matrix
-        Xerr = np.clip(Xerr, 1e-8, None)
         # generate samples
-        Xsamples = random.multivariate_normal(
-            rng, X, vmap(np.diag)(Xerr ** 2), shape=(err_samples, X.shape[0])
-        )
-        Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
+        Xsamples = error_model(key, X, Xerr, err_samples)
+        Xsamples = Xsamples.reshape(X.shape[0] * err_samples, X.shape[1])
+
+        # lower bound on Xerr to avoid singular matrix
+        # Xerr = np.clip(Xerr, 1e-8, None)
+        # generate samples
+        # Xsamples = random.multivariate_normal(
+        #    rng, X, vmap(np.diag)(Xerr ** 2), shape=(err_samples, X.shape[0])
+        # )
+        # Xsamples = Xsamples.reshape(-1, X.shape[1], order="F")
 
         # if these are samples of conditions, standard scale them!
         if type == "conditions":
@@ -290,9 +336,9 @@ class Flow:
             assert err_samples > 0, "nsamples must be a positive integer."
             # get Gaussian samples
             seed = onp.random.randint(1e18) if seed is None else seed
-            rng = random.PRNGKey(seed)
-            X = self._get_err_samples(rng, inputs, err_samples, type="data")
-            C = self._get_err_samples(rng, inputs, err_samples, type="conditions")
+            key = random.PRNGKey(seed)
+            X = self._get_err_samples(key, inputs, err_samples, type="data")
+            C = self._get_err_samples(key, inputs, err_samples, type="conditions")
             # calculate log_probs
             log_probs = self._log_prob(self._params, X, C)
             probs = np.exp(log_probs.reshape(-1, err_samples))
@@ -361,7 +407,7 @@ class Flow:
             assert err_samples > 0, "nsamples must be a positive integer."
             # set the seed
             seed = onp.random.randint(1e18) if seed is None else seed
-            rng = random.PRNGKey(seed)
+            key = random.PRNGKey(seed)
 
         # empty array to hold pdfs
         pdfs = np.zeros((nrows, len(grid)))
@@ -380,16 +426,16 @@ class Flow:
             # if only drawing condition samples...
             elif len(self.data_columns) == 1:
                 conditions = self._get_err_samples(
-                    rng, batch, err_samples, type="conditions"
+                    key, batch, err_samples, type="conditions"
                 )
                 batch = np.repeat(batch[columns].values, err_samples, axis=0)
             # if drawing data and condition samples...
             else:
                 conditions = self._get_err_samples(
-                    rng, batch, err_samples, type="conditions"
+                    key, batch, err_samples, type="conditions"
                 )
                 batch = self._get_err_samples(
-                    rng, batch, err_samples, skip=column, type="data"
+                    key, batch, err_samples, skip=column, type="data"
                 )
 
             # make a new copy of each row for each value of the column
@@ -511,6 +557,8 @@ class Flow:
             "conditional_columns",
             "condition_means",
             "condition_stds",
+            "data_error_model",
+            "condition_error_model",
             "info",
             "latent_info",
             "bijector_info",
@@ -632,19 +680,19 @@ class Flow:
         # define a function to return batches
         if convolve_errs:
 
-            def get_batch(sample_rng, x, type):
-                return self._get_err_samples(sample_rng, x, 1, type=type)
+            def get_batch(sample_key, x, type):
+                return self._get_err_samples(sample_key, x, 1, type=type)
 
         else:
 
-            def get_batch(sample_rng, x, type):
+            def get_batch(sample_key, x, type):
                 if type == "conditions":
                     return self._get_conditions(x)
                 else:
                     return np.array(x[columns].values)
 
         # get random seed for training loop
-        rng = random.PRNGKey(seed)
+        key = random.PRNGKey(seed)
 
         if verbose:
             print(f"Training {epochs} epochs \nLoss:")
@@ -660,8 +708,8 @@ class Flow:
         itercount = itertools.count()
         for epoch in range(epochs):
             # new permutation of batches
-            permute_rng, sample_rng, rng = random.split(rng, num=3)
-            idx = random.permutation(permute_rng, inputs.shape[0])
+            permute_key, sample_key, key = random.split(key, num=3)
+            idx = random.permutation(permute_key, inputs.shape[0])
             X = inputs.iloc[idx]
 
             # loop through batches and step optimizer
@@ -671,10 +719,10 @@ class Flow:
                 # Gaussian sample of the batch. Else just returns batch as a
                 # jax array
                 batch = get_batch(
-                    sample_rng, X.iloc[batch_idx : batch_idx + batch_size], type="data"
+                    sample_key, X.iloc[batch_idx : batch_idx + batch_size], type="data"
                 )
                 batch_conditions = get_batch(
-                    sample_rng,
+                    sample_key,
                     X.iloc[batch_idx : batch_idx + batch_size],
                     type="conditions",
                 )
