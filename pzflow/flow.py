@@ -234,7 +234,7 @@ class Flow:
         type: str = "data",
         skip: str = None,
     ) -> np.ndarray:
-        """Draw Gaussian samples for each row of inputs. """
+        """Draw error samples for each row of inputs. """
 
         X = inputs.copy()
 
