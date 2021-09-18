@@ -34,6 +34,8 @@ class FlowEnsemble:
         bijector: Tuple[InitFunction, Bijector_Info] = None,
         conditional_columns: Sequence[str] = None,
         latent=None,
+        data_error_model: Callable = None,
+        condition_error_model: Callable = None,
         N: int = 1,
         info: Any = None,
         file: str = None,
@@ -60,6 +62,28 @@ class FlowEnsemble:
             the distributions from pzflow.distributions. If not provided,
             a normal distribution is used with the number of dimensions
             inferred.
+        data_error_model : Callable, optional
+            A callable that defines the error model for data variables.
+            data_error_model must take key, X, Xerr, nsamples as arguments where:
+                key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                X is a 2 dimensional array of data variables, where the order
+                    of variables matches the order of the columns in data_columns
+                Xerr is the corresponding 2 dimensional array of errors
+                nsamples is the number of samples to draw from the error distribution
+            data_error_model must return an array of samples with the shape
+            (X.shape[0], nsamples, X.shape[1]).
+            If data_error_model is not provided, a Gaussian error model is assumed.
+        condition_error_model : Callable, optional
+            A callable that defines the error model for conditional variables.
+            condition_error_model must take key, X, Xerr, nsamples as arguments where:
+                key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                X is a 2 dimensional array of conditional variables, where the order
+                    of variables matches the order of the columns in conditional_columns
+                Xerr is the corresponding 2 dimensional array of errors
+                nsamples is the number of samples to draw from the error distribution
+            condition_error_model must return an array of samples with the shape
+            (X.shape[0], nsamples, X.shape[1]).
+            If condition_error_model is not provided, a Gaussian error model is assumed.
         N : int, default=1
             The number of flows in the ensemble.
         info : Any, optional
@@ -82,6 +106,8 @@ class FlowEnsemble:
                 bijector is not None,
                 conditional_columns is not None,
                 latent is not None,
+                data_error_model is not None,
+                condition_error_model is not None,
                 info is not None,
             )
         ):
@@ -122,6 +148,8 @@ class FlowEnsemble:
                     bijector=bijector,
                     conditional_columns=conditional_columns,
                     latent=latent,
+                    data_error_model=data_error_model,
+                    condition_error_model=condition_error_model,
                     seed=i,
                     info=f"Flow {i}",
                 )
