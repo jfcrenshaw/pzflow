@@ -232,6 +232,7 @@ class FlowEnsemble:
         seed: int = None,
         batch_size: int = None,
         returnEnsemble: bool = False,
+        nan_to_zero: bool = True,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
 
@@ -282,6 +283,8 @@ class FlowEnsemble:
             array of shape (inputs.shape[0], N flows in ensemble, grid.size).
             If False, the posterior is averaged over the flows in the ensemble,
             and returned as an array of shape (inputs.shape[0], grid.size)
+        nan_to_zero : bool, default=True
+            Whether to convert NaN's to zero probability in the final pdfs.
 
         Returns
         -------
@@ -293,14 +296,15 @@ class FlowEnsemble:
         ensemble = np.array(
             [
                 flow.posterior(
-                    inputs,
-                    column,
-                    grid,
-                    marg_rules,
-                    False,
-                    err_samples,
-                    seed,
-                    batch_size,
+                    inputs=inputs,
+                    column=column,
+                    grid=grid,
+                    marg_rules=marg_rules,
+                    err_samples=err_samples,
+                    seed=seed,
+                    batch_size=batch_size,
+                    normalize=False,
+                    nan_to_zero=nan_to_zero,
                 )
                 for flow in self._ensemble.values()
             ]

@@ -365,6 +365,7 @@ class Flow:
         err_samples: int = None,
         seed: int = None,
         batch_size: int = None,
+        nan_to_zero: bool = True,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
 
@@ -396,8 +397,6 @@ class Flow:
             the variable. E.g. {"y": lambda row: np.linspace(0, row["x"], 10)}.
             Note: the callable for a given name must *always* return an array
             of the same length, regardless of the input row.
-        normalize : boolean, default=True
-            Whether to normalize the posterior so that it integrates to 1.
         err_samples : int, default=None
             Number of samples from the error distribution to average over for
             the posterior calculation. If provided, Gaussian errors are assumed,
@@ -410,6 +409,10 @@ class Flow:
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
             is faster, but memory intensive for large data sets.
+        normalize : boolean, default=True
+            Whether to normalize the posterior so that it integrates to 1.
+        nan_to_zero : bool, default=True
+            Whether to convert NaN's to zero probability in the final pdfs.
 
         Returns
         -------
@@ -457,10 +460,11 @@ class Flow:
                 inputs=inputs.iloc[unflagged_idx],
                 column=column,
                 grid=grid,
-                normalize=False,
                 err_samples=err_samples,
                 seed=seed,
                 batch_size=batch_size,
+                normalize=False,
+                nan_to_zero=nan_to_zero,
             )
 
             # save these pdfs in the big array
@@ -514,10 +518,11 @@ class Flow:
                     column=column,
                     grid=grid,
                     marg_rules=marg_rules,
-                    normalize=False,
                     err_samples=err_samples,
                     seed=seed,
                     batch_size=batch_size,
+                    normalize=False,
+                    nan_to_zero=nan_to_zero,
                 )
 
                 # sum over the marginalized dimension
@@ -609,8 +614,9 @@ class Flow:
         if normalize:
             # normalize so they integrate to one
             pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
-        # set NaN's equal to zero probability
-        # pdfs = np.nan_to_num(pdfs, nan=0.0)
+        if nan_to_zero:
+            # set NaN's equal to zero probability
+            pdfs = np.nan_to_num(pdfs, nan=0.0)
         return pdfs
 
     def sample(
