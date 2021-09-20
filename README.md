@@ -12,19 +12,26 @@ If your data consists of continuous variables that can be put into a Pandas Data
 The `Flow` class makes building and training a normalizing flow simple.
 It also allows you to easily sample from the normalizing flow (e.g., for forward modeling or data augmentation), and calculate posteriors over any of your variables.
 
-There are several example notebooks demonstrating how to use pzflow
+There are many example notebooks demonstrating how to use pzflow.
+
+Basic examples:
 1. [Introduction of a basic flow with the two moons data set](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/intro.ipynb)
 2. [A more complex example with galaxy redshifts](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb)
 3. [Building a conditional flow on redshift data](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/conditional_redshift_example.ipynb)
-4. [Using a more complicated joint latent distribution to model data with periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
-5. [Using error convolution during training and posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/error_convolution_demo.ipynb)
+4. [Convolving Gaussian errors during training and posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/error_convolution_demo.ipynb)
+5. [Using a uniform dequantizer to model discrete data]()
 6. [Using `FlowEnsemble` to build a deep ensemble](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/ensemble_demo.ipynb)
 
-If you notice any bugs or have any questions, feel free to reach out!
+Advanced examples:
+1. [Marginalizing over missing columns during posterior calculation]()
+2. [Convolving non-Gaussian erorrs during training and posterior calculation]()
+3. [Building a more complicated latent distribution to model data with a compact domain and periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
+
+If you notice any bugs, have any questions, or would like to request a feature, please [submit an issue](https://github.com/jfcrenshaw/pzflow/issues).
 
 It is important to note that there are two different conventions in the literature for the direction of the bijection in normalizing flows.
 pzflow defines the bijection as the mapping from the data space to the latent space, and the inverse bijection as the mapping from the latent space to the data space.
-This distinction can be important when designing more complicated bijections (e.g., in Example 2 below).
+This distinction can be important when designing more complicated bijections (e.g., in Example 2 above).
 
 ## Citation
 
