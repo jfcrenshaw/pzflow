@@ -33,7 +33,6 @@ x = np.array(
         (NeuralSplineCoupling, (16, 3, 2, 128, 3), np.arange(9).reshape(3, 3)),
         (RollingSplineCoupling, (2,), np.zeros((3, 1))),
         (RollingSplineCoupling, (2, 1, 16, 3, 2, 128, None, 0, True), np.zeros((3, 1))),
-        (UniformDequantizer, (), np.zeros((3, 1))),
     ],
 )
 class TestBijectors:
