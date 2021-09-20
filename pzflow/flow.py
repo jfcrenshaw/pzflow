@@ -454,7 +454,7 @@ class Flow:
 
             # first calculate pdfs for unflagged rows
             unflagged_idx = inputs[
-                (inputs != marg_rules["flag"]).all(axis=1)
+                (inputs[self.data_columns] != marg_rules["flag"]).all(axis=1)
             ].index.tolist()
             unflagged_pdfs = self.posterior(
                 inputs=inputs.iloc[unflagged_idx],
