@@ -36,6 +36,7 @@ class FlowEnsemble:
         latent=None,
         data_error_model: Callable = None,
         condition_error_model: Callable = None,
+        autoscale_conditions: bool = True,
         N: int = 1,
         info: Any = None,
         file: str = None,
@@ -84,6 +85,9 @@ class FlowEnsemble:
             condition_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
             If condition_error_model is not provided, a Gaussian error model is assumed.
+        autoscale_conditions : bool, defautl=True
+            Sets whether or not conditions are automatically standard scaled when
+            passed to a conditional flow. I recommend you leave this as True.
         N : int, default=1
             The number of flows in the ensemble.
         info : Any, optional
@@ -150,6 +154,7 @@ class FlowEnsemble:
                     latent=latent,
                     data_error_model=data_error_model,
                     condition_error_model=condition_error_model,
+                    autoscale_conditions=autoscale_conditions,
                     seed=i,
                     info=f"Flow {i}",
                 )
