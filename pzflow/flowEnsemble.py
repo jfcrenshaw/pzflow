@@ -226,6 +226,7 @@ class FlowEnsemble:
         inputs: pd.DataFrame,
         column: str,
         grid: np.ndarray,
+        marg_rules: dict = None,
         normalize: bool = True,
         err_samples: int = None,
         seed: int = None,
@@ -250,6 +251,18 @@ class FlowEnsemble:
             `inputs` is irrelevant.
         grid : np.ndarray
             Grid on which to calculate the posterior.
+        marg_rules : dict, optional
+            Dictionary with rules for marginalizing over missing variables.
+            The dictionary must contain the key "flag", which gives the flag
+            that indicates a missing value. E.g. if missing values are given
+            the value 99, the dictionary should contain {"flag": 99}.
+            The dictionary must also contain {"name": callable} for any
+            variables that will need to be marginalized over, where name is
+            the name of the variable, and callable is a callable that takes
+            the row of variables nad returns a grid over which to marginalize
+            the variable. E.g. {"y": lambda row: np.linspace(0, row["x"], 10)}.
+            Note: the callable for a given name must *always* return an array
+            of the same length, regardless of the input row.
         normalize : boolean, default=True
             Whether to normalize the posterior so that it integrates to 1.
         err_samples : int, default=None
@@ -280,7 +293,14 @@ class FlowEnsemble:
         ensemble = np.array(
             [
                 flow.posterior(
-                    inputs, column, grid, False, err_samples, seed, batch_size
+                    inputs,
+                    column,
+                    grid,
+                    marg_rules,
+                    False,
+                    err_samples,
+                    seed,
+                    batch_size,
                 )
                 for flow in self._ensemble.values()
             ]
