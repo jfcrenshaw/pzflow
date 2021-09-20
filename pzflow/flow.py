@@ -38,6 +38,7 @@ class Flow:
         latent=None,
         data_error_model: Callable = None,
         condition_error_model: Callable = None,
+        autoscale_conditions: bool = True,
         seed: int = 0,
         info: Any = None,
         file: str = None,
@@ -87,6 +88,9 @@ class Flow:
             condition_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
             If condition_error_model is not provided, a Gaussian error model is assumed.
+        autoscale_conditions : bool, defautl=True
+            Sets whether or not conditions are automatically standard scaled when
+            passed to a conditional flow. I recommend you leave this as True.
         seed : int, default=0
             The random seed for initial parameters
         info : Any, optional
@@ -174,6 +178,10 @@ class Flow:
             self._condition_means = save_dict["condition_means"]
             self._condition_stds = save_dict["condition_stds"]
 
+            # set whether or not to automatically standard scale any
+            # conditions passed to the normalizing flow
+            self._autoscale_conditions = save_dict["autoscale_conditions"]
+
         # if no file is provided, use provided parameters
         else:
             self.data_columns = tuple(data_columns)
@@ -188,6 +196,10 @@ class Flow:
                 self.conditional_columns = tuple(conditional_columns)
                 self._condition_means = np.zeros(len(self.conditional_columns))
                 self._condition_stds = np.ones(len(self.conditional_columns))
+
+            # set whether or not to automatically standard scale any
+            # conditions passed to the normalizing flow
+            self._autoscale_conditions = autoscale_conditions
 
             # set up the latent distribution
             if latent is None:
@@ -558,6 +570,7 @@ class Flow:
             "condition_stds",
             "data_error_model",
             "condition_error_model",
+            "autoscale_conditions",
             "info",
             "latent_info",
             "bijector_info",
@@ -667,14 +680,16 @@ class Flow:
         # get list of data columns
         columns = list(self.data_columns)
 
-        # if this is a conditional flow, save the means and stds of the conditional columns
-        if self.conditional_columns is not None:
+        # if this is a conditional flow, and autoscale_conditions == True
+        # save the means and stds of the conditional columns
+        if self.conditional_columns is not None and self._autoscale_conditions:
             self._condition_means = np.array(
                 inputs[list(self.conditional_columns)].values.mean(axis=0)
             )
-            self._condition_stds = np.array(
+            condition_stds = np.array(
                 inputs[list(self.conditional_columns)].values.std(axis=0)
             )
+            self._condition_stds = np.where(condition_stds != 0, condition_stds, 1)
 
         # define a function to return batches
         if convolve_errs:
