@@ -3,6 +3,7 @@ from typing import Callable, Sequence, Tuple, Union
 
 import jax.numpy as np
 from jax import ops, random
+from pzflow.distributions import Uniform
 
 # define a type alias for Jax Pytrees
 Pytree = Union[tuple, list]
@@ -573,6 +574,32 @@ def StandardScaler(
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * stds + means
             log_det = np.log(np.prod(stds)) * np.ones(inputs.shape[0])
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
+def UniformDequantizer() -> Tuple[InitFunction, Bijector_Info]:
+
+    bijector_info = ("Dequantizer", ())
+    dq_dist = Uniform((0, 1))
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            u = dq_dist.sample((), inputs.shape[0], seed=None)
+            outputs = inputs + u
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = np.floor(inputs)
+            log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
