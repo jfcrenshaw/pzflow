@@ -93,3 +93,17 @@ class TestBijectors:
 def test_bad_inputs(bijector, args):
     with pytest.raises(ValueError):
         bijector(*args)
+
+
+def test_uniform_dequantizer_returns_correct_shape():
+    init_fun, bijector_info = UniformDequantizer()
+    params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
+
+    conditions = np.zeros((3, 1))
+    fwd_outputs, fwd_log_det = forward_fun(params, x, conditions=conditions)
+    assert fwd_outputs.shape == x.shape
+    assert fwd_log_det.shape == x.shape[:1]
+
+    inv_outputs, inv_log_det = inverse_fun(params, x, conditions=conditions)
+    assert inv_outputs.shape == x.shape
+    assert inv_log_det.shape == x.shape[:1]

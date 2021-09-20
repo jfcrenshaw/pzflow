@@ -1,9 +1,8 @@
 from typing import Callable, Tuple
 
 import jax.numpy as np
-import numpy as onp
 from jax import random
-from jax.experimental.stax import Dense, Relu, serial, LeakyRelu
+from jax.experimental.stax import Dense, LeakyRelu, serial
 
 from pzflow import bijectors
 

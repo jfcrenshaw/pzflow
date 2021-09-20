@@ -5,7 +5,7 @@ import dill as pickle
 import jax.numpy as np
 import numpy as onp
 import pandas as pd
-from jax import grad, jit, ops, random, vmap
+from jax import grad, jit, ops, random
 from jax.experimental.optimizers import Optimizer, adam
 
 from pzflow import distributions
