@@ -38,6 +38,7 @@ def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
         Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
         Flow(("redshift", "y"), Reverse(), latent=Tdist(2)),
         Flow(("redshift", "y"), Reverse(), latent=Uniform((-3, 3), (-3, 3))),
+        Flow(("redshift", "y"), Reverse(), latent=CentBeta(2)),
     ],
 )
 def test_returns_correct_shape(flow):
@@ -68,6 +69,29 @@ def test_returns_correct_shape(flow):
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
     assert len(flow.train(x, epochs=11, verbose=True, convolve_errs=True)) == 12
+
+
+def test_posterior_with_marginalization():
+
+    flow = Flow(("a", "b", "c", "d"), Reverse())
+
+    # test posteriors with marginalization
+    x = pd.DataFrame(np.arange(16).reshape(-1, 4), columns=("a", "b", "c", "d"))
+    grid = np.arange(0, 2.1, 0.12)
+
+    marg_rules = {
+        "flag": 99,
+        "b": lambda row: np.linspace(0, 1, 2),
+        "c": lambda row: np.linspace(1, 2, 3),
+    }
+
+    x["b"] = 99 * np.ones(x.shape[0])
+    pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
+    assert pdfs.shape == (x.shape[0], grid.size)
+
+    x["c"] = 99 * np.ones(x.shape[0])
+    pdfs = flow.posterior(x, column="a", grid=grid)  # , marg_rules=marg_rules)
+    assert pdfs.shape == (x.shape[0], grid.size)
 
 
 @pytest.mark.parametrize(

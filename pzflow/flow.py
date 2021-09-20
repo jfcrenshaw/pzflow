@@ -344,7 +344,7 @@ class Flow:
             assert isinstance(
                 err_samples, int
             ), "err_samples must be a positive integer."
-            assert err_samples > 0, "nsamples must be a positive integer."
+            assert err_samples > 0, "err_samples must be a positive integer."
             # get Gaussian samples
             seed = onp.random.randint(1e18) if seed is None else seed
             key = random.PRNGKey(seed)
@@ -360,10 +360,12 @@ class Flow:
         inputs: pd.DataFrame,
         column: str,
         grid: np.ndarray,
+        marg_rules: dict = None,
         normalize: bool = True,
         err_samples: int = None,
         seed: int = None,
         batch_size: int = None,
+        nan_to_zero: bool = True,
     ) -> np.ndarray:
         """Calculates posterior distributions for the provided column.
 
@@ -383,8 +385,18 @@ class Flow:
             `inputs` is irrelevant.
         grid : np.ndarray
             Grid on which to calculate the posterior.
-        normalize : boolean, default=True
-            Whether to normalize the posterior so that it integrates to 1.
+        marg_rules : dict, optional
+            Dictionary with rules for marginalizing over missing variables.
+            The dictionary must contain the key "flag", which gives the flag
+            that indicates a missing value. E.g. if missing values are given
+            the value 99, the dictionary should contain {"flag": 99}.
+            The dictionary must also contain {"name": callable} for any
+            variables that will need to be marginalized over, where name is
+            the name of the variable, and callable is a callable that takes
+            the row of variables nad returns a grid over which to marginalize
+            the variable. E.g. {"y": lambda row: np.linspace(0, row["x"], 10)}.
+            Note: the callable for a given name must *always* return an array
+            of the same length, regardless of the input row.
         err_samples : int, default=None
             Number of samples from the error distribution to average over for
             the posterior calculation. If provided, Gaussian errors are assumed,
@@ -397,6 +409,10 @@ class Flow:
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
             is faster, but memory intensive for large data sets.
+        normalize : boolean, default=True
+            Whether to normalize the posterior so that it integrates to 1.
+        nan_to_zero : bool, default=True
+            Whether to convert NaN's to zero probability in the final pdfs.
 
         Returns
         -------
@@ -412,10 +428,19 @@ class Flow:
         nrows = inputs.shape[0]
         batch_size = nrows if batch_size is None else batch_size
 
+        # pull out the relevant columns
+        if self.conditional_columns is None:
+            inputs = inputs[columns]
+        else:
+            inputs = inputs[columns + list(self.conditional_columns)]
+        inputs.reset_index(drop=True, inplace=True)
+
         if err_samples is not None:
             # validate nsamples
-            assert isinstance(err_samples, int), "nsamples must be a positive integer."
-            assert err_samples > 0, "nsamples must be a positive integer."
+            assert isinstance(
+                err_samples, int
+            ), "err_samples must be a positive integer."
+            assert err_samples > 0, "err_samples must be a positive integer."
             # set the seed
             seed = onp.random.randint(1e18) if seed is None else seed
             key = random.PRNGKey(seed)
@@ -423,76 +448,175 @@ class Flow:
         # empty array to hold pdfs
         pdfs = np.zeros((nrows, len(grid)))
 
-        # loop through batches
-        for batch_idx in range(0, nrows, batch_size):
+        # if marginalization rules were passed, we will loop over the rules
+        # and repeatedly call this method
+        if marg_rules is not None:
 
-            # get the data batch
-            # and, if this is a conditional flow, the correpsonding conditions
-            batch = inputs.iloc[batch_idx : batch_idx + batch_size]
-
-            # if not drawing samples, just grab batch and conditions
-            if err_samples is None:
-                conditions = self._get_conditions(batch)
-                batch = np.array(batch[columns].values)
-            # if only drawing condition samples...
-            elif len(self.data_columns) == 1:
-                conditions = self._get_err_samples(
-                    key, batch, err_samples, type="conditions"
-                )
-                batch = np.repeat(batch[columns].values, err_samples, axis=0)
-            # if drawing data and condition samples...
-            else:
-                conditions = self._get_err_samples(
-                    key, batch, err_samples, type="conditions"
-                )
-                batch = self._get_err_samples(
-                    key, batch, err_samples, skip=column, type="data"
-                )
-
-            # make a new copy of each row for each value of the column
-            # for which we are calculating the posterior
-            batch = np.hstack(
-                (
-                    np.repeat(
-                        batch[:, :idx],
-                        len(grid),
-                        axis=0,
-                    ),
-                    np.tile(grid, len(batch))[:, None],
-                    np.repeat(
-                        batch[:, idx:],
-                        len(grid),
-                        axis=0,
-                    ),
-                )
+            # first calculate pdfs for unflagged rows
+            unflagged_idx = inputs[
+                (inputs[columns] != marg_rules["flag"]).all(axis=1)
+            ].index.tolist()
+            unflagged_pdfs = self.posterior(
+                inputs=inputs.iloc[unflagged_idx],
+                column=column,
+                grid=grid,
+                err_samples=err_samples,
+                seed=seed,
+                batch_size=batch_size,
+                normalize=False,
+                nan_to_zero=nan_to_zero,
             )
 
-            # make similar copies of the conditions
-            conditions = np.repeat(conditions, len(grid), axis=0)
-
-            # calculate probability densities
-            log_prob = self._log_prob(self._params, batch, conditions).reshape(
-                (-1, len(grid))
-            )
-            prob = np.exp(log_prob)
-            # if we were Gaussian sampling, average over the samples
-            if err_samples is not None:
-                prob = prob.reshape(-1, err_samples, len(grid))
-                prob = prob.mean(axis=1)
-            # add the pdfs to the bigger list
+            # save these pdfs in the big array
             pdfs = ops.index_update(
                 pdfs,
-                ops.index[batch_idx : batch_idx + batch_size, :],
-                prob,
+                ops.index[unflagged_idx, :],
+                unflagged_pdfs,
                 indices_are_sorted=True,
                 unique_indices=True,
             )
 
+            # we will keep track of all the rows we've already calculated
+            # posteriors for
+            already_done = unflagged_idx
+
+            # now we will loop over the rules in marg_rules
+            for name, rule in marg_rules.items():
+
+                # ignore the flag, because that's not a column in the data
+                if name == "flag":
+                    continue
+
+                # get the list of new rows for which we need to calculate posteriors
+                flagged_idx = inputs[inputs[name] == marg_rules["flag"]].index.tolist()
+                flagged_idx = list(set(flagged_idx).difference(already_done))
+
+                # if flagged_idx is empty, move on!
+                if len(flagged_idx) == 0:
+                    continue
+
+                # get the marginalization grid for each row
+                marg_grids = (
+                    inputs.iloc[flagged_idx]
+                    .apply(rule, axis=1, result_type="expand")
+                    .values
+                )
+
+                # make a new data frame with the marginalization grids replacing
+                # the values of the flag in the column
+                marg_inputs = pd.DataFrame(
+                    np.repeat(
+                        inputs.iloc[flagged_idx].values, marg_grids.shape[1], axis=0
+                    ),
+                    columns=inputs.columns,
+                )
+                marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
+
+                # calculate posteriors for these
+                marg_pdfs = self.posterior(
+                    inputs=marg_inputs,
+                    column=column,
+                    grid=grid,
+                    marg_rules=marg_rules,
+                    err_samples=err_samples,
+                    seed=seed,
+                    batch_size=batch_size,
+                    normalize=False,
+                    nan_to_zero=nan_to_zero,
+                )
+
+                # sum over the marginalized dimension
+                marg_pdfs = marg_pdfs.reshape(
+                    len(flagged_idx), marg_grids.shape[1], grid.size
+                )
+                marg_pdfs = marg_pdfs.sum(axis=1)
+
+                # save the new pdfs in the big array
+                pdfs = ops.index_update(
+                    pdfs,
+                    ops.index[flagged_idx, :],
+                    marg_pdfs,
+                    indices_are_sorted=True,
+                    unique_indices=True,
+                )
+
+                # add these flagged indices to the list of rows already done
+                already_done += flagged_idx
+
+        # now for the main posterior calculation loop
+        else:
+
+            # loop through batches
+            for batch_idx in range(0, nrows, batch_size):
+
+                # get the data batch
+                # and, if this is a conditional flow, the correpsonding conditions
+                batch = inputs.iloc[batch_idx : batch_idx + batch_size]
+
+                # if not drawing samples, just grab batch and conditions
+                if err_samples is None:
+                    conditions = self._get_conditions(batch)
+                    batch = np.array(batch[columns].values)
+                # if only drawing condition samples...
+                elif len(self.data_columns) == 1:
+                    conditions = self._get_err_samples(
+                        key, batch, err_samples, type="conditions"
+                    )
+                    batch = np.repeat(batch[columns].values, err_samples, axis=0)
+                # if drawing data and condition samples...
+                else:
+                    conditions = self._get_err_samples(
+                        key, batch, err_samples, type="conditions"
+                    )
+                    batch = self._get_err_samples(
+                        key, batch, err_samples, skip=column, type="data"
+                    )
+
+                # make a new copy of each row for each value of the column
+                # for which we are calculating the posterior
+                batch = np.hstack(
+                    (
+                        np.repeat(
+                            batch[:, :idx],
+                            len(grid),
+                            axis=0,
+                        ),
+                        np.tile(grid, len(batch))[:, None],
+                        np.repeat(
+                            batch[:, idx:],
+                            len(grid),
+                            axis=0,
+                        ),
+                    )
+                )
+
+                # make similar copies of the conditions
+                conditions = np.repeat(conditions, len(grid), axis=0)
+
+                # calculate probability densities
+                log_prob = self._log_prob(self._params, batch, conditions).reshape(
+                    (-1, len(grid))
+                )
+                prob = np.exp(log_prob)
+                # if we were Gaussian sampling, average over the samples
+                if err_samples is not None:
+                    prob = prob.reshape(-1, err_samples, len(grid))
+                    prob = prob.mean(axis=1)
+                # add the pdfs to the bigger list
+                pdfs = ops.index_update(
+                    pdfs,
+                    ops.index[batch_idx : batch_idx + batch_size, :],
+                    prob,
+                    indices_are_sorted=True,
+                    unique_indices=True,
+                )
+
         if normalize:
             # normalize so they integrate to one
             pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
-        # set NaN's equal to zero probability
-        pdfs = np.nan_to_num(pdfs, nan=0.0)
+        if nan_to_zero:
+            # set NaN's equal to zero probability
+            pdfs = np.nan_to_num(pdfs, nan=0.0)
         return pdfs
 
     def sample(
