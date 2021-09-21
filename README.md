@@ -23,7 +23,7 @@ Basic examples:
 6. [Using `FlowEnsemble` to build a deep ensemble](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/ensemble_demo.ipynb)
 
 Advanced examples:
-1. [Marginalizing over missing columns during posterior calculation]()
+1. [Marginalizing over missing columns during posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/marginalization.ipynb)
 2. [Convolving non-Gaussian erorrs during training and posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/nongaussian_errors.ipynb)
 3. [Building a more complicated latent distribution to model data with a compact domain and periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
 
