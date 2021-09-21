@@ -18,13 +18,13 @@ Basic examples:
 1. [Introduction of a basic flow with the two moons data set](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/intro.ipynb)
 2. [A more complex example with galaxy redshifts](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/redshift_example.ipynb)
 3. [Building a conditional flow on redshift data](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/conditional_redshift_example.ipynb)
-4. [Convolving Gaussian errors during training and posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/error_convolution_demo.ipynb)
-5. [Using a uniform dequantizer to model discrete data]()
+4. [Convolving Gaussian errors during training and posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/gaussian_errors.ipynb)
+5. [Using a uniform dequantizer to model discrete data](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/dequantization.ipynb)
 6. [Using `FlowEnsemble` to build a deep ensemble](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/ensemble_demo.ipynb)
 
 Advanced examples:
 1. [Marginalizing over missing columns during posterior calculation]()
-2. [Convolving non-Gaussian erorrs during training and posterior calculation]()
+2. [Convolving non-Gaussian erorrs during training and posterior calculation](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/nongaussian_errors.ipynb)
 3. [Building a more complicated latent distribution to model data with a compact domain and periodic topology](https://colab.research.google.com/github/jfcrenshaw/pzflow/blob/main/examples/spherical_flow_example.ipynb)
 
 If you notice any bugs, have any questions, or would like to request a feature, please [submit an issue](https://github.com/jfcrenshaw/pzflow/issues).

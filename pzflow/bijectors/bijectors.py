@@ -3,7 +3,6 @@ from typing import Callable, Sequence, Tuple, Union
 
 import jax.numpy as np
 from jax import ops, random
-from pzflow.distributions import Uniform
 
 # define a type alias for Jax Pytrees
 Pytree = Union[tuple, list]
@@ -641,23 +640,58 @@ def StandardScaler(
 
 
 @Bijector
-def UniformDequantizer() -> Tuple[InitFunction, Bijector_Info]:
+def UniformDequantizer(column_idx: int = None) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that dequantizes discrete variables with uniform noise.
 
-    bijector_info = ("Dequantizer", ())
-    dq_dist = Uniform((0, 1))
+    Dequantizers are necessary for modeling discrete values with a flow.
+    Note that this isn't technically a bijector.
+
+    Parameters
+    ----------
+    column_idx : int
+        An index or iterable of indices corresponding to the column(s) with
+        discrete values.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the UniformDequantizer Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    bijector_info = ("UniformDequantizer", (column_idx,))
+
+    if column_idx is None:
+        idx = ops.index[:, :]
+    else:
+        idx = ops.index[:, column_idx]
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            u = dq_dist.sample((), inputs.shape[0], seed=None)
-            outputs = inputs + u
+            u = random.uniform(random.PRNGKey(0), shape=inputs[idx].shape)
+            outputs = ops.index_update(
+                inputs.astype(float),
+                idx,
+                inputs[idx].astype(float) + u,
+                indices_are_sorted=True,
+                unique_indices=True,
+            )
             log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = np.floor(inputs)
+            outputs = ops.index_update(
+                inputs,
+                idx,
+                np.floor(inputs[idx]),
+                indices_are_sorted=True,
+                unique_indices=True,
+            )
             log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 

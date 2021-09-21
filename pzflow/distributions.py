@@ -7,7 +7,7 @@ from jax import random
 from jax.scipy.special import gammaln
 from jax.scipy.stats import beta, multivariate_normal
 
-Pytree = Union[tuple, list]
+from pzflow.bijectors import Pytree
 
 epsilon = sys.float_info.epsilon
 
