@@ -428,12 +428,8 @@ class Flow:
         nrows = inputs.shape[0]
         batch_size = nrows if batch_size is None else batch_size
 
-        # pull out the relevant columns
-        if self.conditional_columns is None:
-            inputs = inputs[columns]
-        else:
-            inputs = inputs[columns + list(self.conditional_columns)]
-        inputs.reset_index(drop=True, inplace=True)
+        # make sure indices run 0 -> nrows
+        inputs = inputs.reset_index(drop=True)
 
         if err_samples is not None:
             # validate nsamples
