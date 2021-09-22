@@ -1,9 +1,8 @@
 from typing import Callable, Tuple
 
 import jax.numpy as np
-import numpy as onp
 from jax import random
-from jax.experimental.stax import Dense, Relu, serial, LeakyRelu
+from jax.experimental.stax import Dense, LeakyRelu, serial
 
 from pzflow import bijectors
 
@@ -47,6 +46,18 @@ def DenseReluNetwork(
         Dense(out_dim),
     )
     return init_fun, forward_fun
+
+
+def gaussian_error_model(
+    key, X: np.ndarray, Xerr: np.ndarray, nsamples: int
+) -> np.ndarray:
+    """
+    Default Gaussian error model were X are the means and Xerr are the stds.
+    """
+
+    eps = random.normal(key, shape=(X.shape[0], nsamples, X.shape[1]))
+
+    return X[:, None, :] + eps * Xerr[:, None, :]
 
 
 def sub_diag_indices(inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

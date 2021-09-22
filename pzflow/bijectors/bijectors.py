@@ -496,6 +496,65 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
 
 
 @Bijector
+def ShiftBounds(
+    min: float, max: float, B: float = 5
+) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector shifts the bounds of inputs so the lie in the range (-B, B).
+
+    Parameters
+    ----------
+    min : float
+        The minimum of the input range.
+    min : float
+        The maximum of the input range.
+    B : float, default=5
+        The extent of the output bounds, which will be (-B, B).
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the ShiftBounds Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    min = np.atleast_1d(min)
+    max = np.atleast_1d(max)
+    if len(min) != len(max):
+        raise ValueError(
+            "Lengths of min and max do not match. "
+            + "Please provide either a single min and max, "
+            + "or a min and max for each dimension."
+        )
+    if (min > max).any():
+        raise ValueError("All mins must be less than maxes.")
+
+    bijector_info = ("ShiftBounds", (min, max, B))
+
+    mean = (max + min) / 2
+    half_range = (max - min) / 2
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            outputs = B * (inputs - mean) / half_range
+            log_det = np.log(np.prod(B / half_range)) * np.ones(inputs.shape[0])
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = inputs * half_range / B + mean
+            log_det = np.log(np.prod(half_range / B)) * np.ones(inputs.shape[0])
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
 def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that randomly permutes inputs.
 
@@ -573,6 +632,67 @@ def StandardScaler(
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * stds + means
             log_det = np.log(np.prod(stds)) * np.ones(inputs.shape[0])
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
+def UniformDequantizer(column_idx: int = None) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that dequantizes discrete variables with uniform noise.
+
+    Dequantizers are necessary for modeling discrete values with a flow.
+    Note that this isn't technically a bijector.
+
+    Parameters
+    ----------
+    column_idx : int
+        An index or iterable of indices corresponding to the column(s) with
+        discrete values.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the UniformDequantizer Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    bijector_info = ("UniformDequantizer", (column_idx,))
+
+    if column_idx is None:
+        idx = ops.index[:, :]
+    else:
+        idx = ops.index[:, column_idx]
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            u = random.uniform(random.PRNGKey(0), shape=inputs[idx].shape)
+            outputs = ops.index_update(
+                inputs.astype(float),
+                idx,
+                inputs[idx].astype(float) + u,
+                indices_are_sorted=True,
+                unique_indices=True,
+            )
+            log_det = np.zeros(inputs.shape[0])
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = ops.index_update(
+                inputs,
+                idx,
+                np.floor(inputs[idx]),
+                indices_are_sorted=True,
+                unique_indices=True,
+            )
+            log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun

@@ -38,6 +38,7 @@ def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
         Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
         Flow(("redshift", "y"), Reverse(), latent=Tdist(2)),
         Flow(("redshift", "y"), Reverse(), latent=Uniform((-3, 3), (-3, 3))),
+        Flow(("redshift", "y"), Reverse(), latent=CentBeta(2)),
     ],
 )
 def test_returns_correct_shape(flow):
@@ -67,7 +68,30 @@ def test_returns_correct_shape(flow):
     assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
-    assert len(flow.train(x, epochs=11, verbose=True, sample_errs=True)) == 12
+    assert len(flow.train(x, epochs=11, verbose=True, convolve_errs=True)) == 12
+
+
+def test_posterior_with_marginalization():
+
+    flow = Flow(("a", "b", "c", "d"), Reverse())
+
+    # test posteriors with marginalization
+    x = pd.DataFrame(np.arange(16).reshape(-1, 4), columns=("a", "b", "c", "d"))
+    grid = np.arange(0, 2.1, 0.12)
+
+    marg_rules = {
+        "flag": 99,
+        "b": lambda row: np.linspace(0, 1, 2),
+        "c": lambda row: np.linspace(1, 2, 3),
+    }
+
+    x["b"] = 99 * np.ones(x.shape[0])
+    pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
+    assert pdfs.shape == (x.shape[0], grid.size)
+
+    x["c"] = 99 * np.ones(x.shape[0])
+    pdfs = flow.posterior(x, column="a", grid=grid)  # , marg_rules=marg_rules)
+    assert pdfs.shape == (x.shape[0], grid.size)
 
 
 @pytest.mark.parametrize(
@@ -179,38 +203,39 @@ def test_returns_correct_shape(flow):
 )
 def test_error_convolution(flow, x, x_with_err):
 
-    assert flow.log_prob(x, nsamples=10).shape == (x.shape[0],)
+    assert flow.log_prob(x, err_samples=10).shape == (x.shape[0],)
     assert np.allclose(
-        flow.log_prob(x, nsamples=10, seed=0),
+        flow.log_prob(x, err_samples=10, seed=0),
         flow.log_prob(x),
     )
     assert ~np.allclose(
-        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err, err_samples=10, seed=0),
         flow.log_prob(x_with_err),
     )
     assert np.allclose(
-        flow.log_prob(x_with_err, nsamples=10, seed=0),
-        flow.log_prob(x_with_err, nsamples=10, seed=0),
+        flow.log_prob(x_with_err, err_samples=10, seed=0),
+        flow.log_prob(x_with_err, err_samples=10, seed=0),
     )
     assert ~np.allclose(
-        flow.log_prob(x_with_err, nsamples=10, seed=0),
-        flow.log_prob(x_with_err, nsamples=10, seed=1),
+        flow.log_prob(x_with_err, err_samples=10, seed=0),
+        flow.log_prob(x_with_err, err_samples=10, seed=1),
     )
     assert ~np.allclose(
-        flow.log_prob(x_with_err, nsamples=10),
-        flow.log_prob(x_with_err, nsamples=10),
+        flow.log_prob(x_with_err, err_samples=10),
+        flow.log_prob(x_with_err, err_samples=10),
     )
 
     grid = np.arange(0, 2.1, 0.12)
-    pdfs = flow.posterior(x, column="y", grid=grid, nsamples=10)
+    pdfs = flow.posterior(x, column="y", grid=grid, err_samples=10)
     assert pdfs.shape == (x.shape[0], grid.size)
     assert np.allclose(
-        flow.posterior(x, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x, column="y", grid=grid, err_samples=10, seed=0),
         flow.posterior(x, column="y", grid=grid),
+        rtol=1e-4,
     )
     assert np.allclose(
-        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
-        flow.posterior(x_with_err, column="y", grid=grid, nsamples=10, seed=0),
+        flow.posterior(x_with_err, column="y", grid=grid, err_samples=10, seed=0),
+        flow.posterior(x_with_err, column="y", grid=grid, err_samples=10, seed=0),
     )
 
 
@@ -249,10 +274,10 @@ def test_load_flow(tmp_path):
     columns = ("x", "y")
     flow = Flow(columns, Reverse(), info=["random", 42])
 
-    file = tmp_path / "test-flow"
+    file = tmp_path / "test-flow.pzflow.pkl"
     flow.save(str(file))
 
-    file = tmp_path / "test-flow.pkl"
+    file = tmp_path / "test-flow.pzflow.pkl"
     flow = Flow(file=str(file))
 
     x = np.array([[1, 2], [3, 4]])
@@ -333,12 +358,12 @@ def test_train_no_errs_same():
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=columns)
 
-    losses1 = flow.train(x, sample_errs=True)
-    losses2 = flow.train(x, sample_errs=False)
+    losses1 = flow.train(x, convolve_errs=True)
+    losses2 = flow.train(x, convolve_errs=False)
     assert np.allclose(losses1, losses2)
 
 
-def test_get_samples():
+def test_get_err_samples():
 
     rng = random.PRNGKey(0)
 
@@ -347,25 +372,50 @@ def test_get_samples():
     flow = Flow(columns, Reverse())
     xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
     x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
-    samples = flow._get_samples(rng, x, 10)
+    samples = flow._get_err_samples(rng, x, 10)
     assert samples.shape == (20, 2)
 
     # test skip
     xarray = np.array([[1.0, 2.0, 0, 0]])
     x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
-    samples = flow._get_samples(rng, x, 10, skip="y")
+    samples = flow._get_err_samples(rng, x, 10, skip="y")
     assert np.allclose(samples, np.ones((10, 1)))
-    samples = flow._get_samples(rng, x, 10, skip="x")
+    samples = flow._get_err_samples(rng, x, 10, skip="x")
     assert np.allclose(samples, 2 * np.ones((10, 1)))
 
     # check Gaussian conditional samples
     flow = Flow(("x"), Reverse(), conditional_columns=("y"))
-    samples = flow._get_samples(rng, x, 10, type="conditions")
+    samples = flow._get_err_samples(rng, x, 10, type="conditions")
     assert np.allclose(samples, 2 * np.ones((10, 1)))
 
     # check incorrect type
     with pytest.raises(ValueError):
-        flow._get_samples(rng, x, 10, type="wrong")
+        flow._get_err_samples(rng, x, 10, type="wrong")
+
+    # check constant shift data samples
+    columns = ("x", "y")
+    shift_err_model = lambda key, X, Xerr, nsamples: np.repeat(
+        X + Xerr, nsamples, axis=0
+    ).reshape(X.shape[0], nsamples, X.shape[1])
+    flow = Flow(columns, Reverse(), data_error_model=shift_err_model)
+    xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
+    x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
+    samples = flow._get_err_samples(rng, x, 10)
+    assert samples.shape == (20, 2)
+    assert np.allclose(
+        samples,
+        shift_err_model(None, xarray[:, :2], xarray[:, 2:], 10).reshape(20, 2),
+    )
+
+    # check constant shift conditional samples
+    flow = Flow(
+        ("x"),
+        Reverse(),
+        conditional_columns=("y"),
+        condition_error_model=shift_err_model,
+    )
+    samples = flow._get_err_samples(rng, x, 10, type="conditions")
+    assert np.allclose(samples, np.repeat(np.array([[2.2], [4.4]]), 10, axis=0))
 
 
 def test_train_w_conditions():

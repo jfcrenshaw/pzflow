@@ -33,6 +33,8 @@ x = np.array(
         (NeuralSplineCoupling, (16, 3, 2, 128, 3), np.arange(9).reshape(3, 3)),
         (RollingSplineCoupling, (2,), np.zeros((3, 1))),
         (RollingSplineCoupling, (2, 1, 16, 3, 2, 128, None, 0, True), np.zeros((3, 1))),
+        (ShiftBounds, (-0.5, 0.9, 5), np.zeros((3, 1))),
+        (ShiftBounds, (-1 * np.ones(7), 1.1 * np.ones(7), 3), np.zeros((3, 1))),
     ],
 )
 class TestBijectors:
@@ -88,8 +90,25 @@ class TestBijectors:
             RollingSplineCoupling,
             (2, 1, 16, 3, 2, 128, None, 0, "fake"),
         ),
+        (ShiftBounds, (4, 2, 1)),
+        (ShiftBounds, (np.array([0, 1]), 2, 1)),
     ],
 )
 def test_bad_inputs(bijector, args):
     with pytest.raises(ValueError):
         bijector(*args)
+
+
+@pytest.mark.parametrize("column_idx", [(None), ([1, 3, 5])])
+def test_uniform_dequantizer_returns_correct_shape(column_idx):
+    init_fun, bijector_info = UniformDequantizer(column_idx)
+    params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
+
+    conditions = np.zeros((3, 1))
+    fwd_outputs, fwd_log_det = forward_fun(params, x, conditions=conditions)
+    assert fwd_outputs.shape == x.shape
+    assert fwd_log_det.shape == x.shape[:1]
+
+    inv_outputs, inv_log_det = inverse_fun(params, x, conditions=conditions)
+    assert inv_outputs.shape == x.shape
+    assert inv_log_det.shape == x.shape[:1]

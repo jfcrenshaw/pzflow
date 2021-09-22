@@ -1,9 +1,11 @@
 import os
+
 import pandas as pd
+
 from pzflow import Flow
 
 
-def two_moons_data() -> pd.DataFrame:
+def get_twomoons_data() -> pd.DataFrame:
     """Return DataFrame with two moons example data.
 
     Two moons data originally from scikit-learn,
@@ -15,7 +17,7 @@ def two_moons_data() -> pd.DataFrame:
     return data
 
 
-def galaxy_data() -> pd.DataFrame:
+def get_galaxy_data() -> pd.DataFrame:
     """Return DataFrame with example galaxy data.
 
     100,000 galaxies from the Buzzard simulation [1], with redshifts
@@ -33,7 +35,7 @@ def galaxy_data() -> pd.DataFrame:
     return data
 
 
-def city_data() -> pd.DataFrame:
+def get_city_data() -> pd.DataFrame:
     """Return DataFrame with example city data.
 
     The countries, names, population, and coordinates of 47,966 cities.
@@ -91,7 +93,7 @@ def city_data() -> pd.DataFrame:
     return data
 
 
-def example_flow() -> Flow:
+def get_example_flow() -> Flow:
     """Return a normalizing flow that was trained on galaxy data.
 
     This flow was trained in the `redshift_example.ipynb` Jupyter notebook,
