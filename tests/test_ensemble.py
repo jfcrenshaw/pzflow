@@ -114,8 +114,8 @@ def test_train():
     loss_dict = flowEns.train(data, epochs=4, batch_size=50, verbose=True)
     losses0 = flow0.train(data, epochs=4, batch_size=50)
     losses1 = flow1.train(data, epochs=4, batch_size=50)
-    assert np.allclose(loss_dict["Flow 0"], losses0)
-    assert np.allclose(loss_dict["Flow 1"], losses1)
+    assert np.allclose(np.array(loss_dict["Flow 0"]), np.array(losses0))
+    assert np.allclose(np.array(loss_dict["Flow 1"]), np.array(losses1))
 
 
 def test_load_ensemble(tmp_path):

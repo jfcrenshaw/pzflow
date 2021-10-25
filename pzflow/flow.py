@@ -452,13 +452,13 @@ class Flow:
             if onp.isnan(marg_rules["flag"]):
 
                 def check_flags(data):
-                    return np.isnan(data)
+                    return onp.isnan(data)
 
             # else we use np.isclose to check for flags
             else:
 
                 def check_flags(data):
-                    return np.isclose(data, marg_rules["flag"])
+                    return onp.isclose(data, marg_rules["flag"])
 
             # first calculate pdfs for unflagged rows
             unflagged_idx = inputs[
@@ -584,17 +584,9 @@ class Flow:
                 # for which we are calculating the posterior
                 batch = np.hstack(
                     (
-                        np.repeat(
-                            batch[:, :idx],
-                            len(grid),
-                            axis=0,
-                        ),
+                        np.repeat(batch[:, :idx], len(grid), axis=0,),
                         np.tile(grid, len(batch))[:, None],
-                        np.repeat(
-                            batch[:, idx:],
-                            len(grid),
-                            axis=0,
-                        ),
+                        np.repeat(batch[:, idx:], len(grid), axis=0,),
                     )
                 )
 
@@ -873,21 +865,12 @@ class Flow:
                     type="conditions",
                 )
 
-                opt_state = step(
-                    next(itercount),
-                    opt_state,
-                    batch,
-                    batch_conditions,
-                )
+                opt_state = step(next(itercount), opt_state, batch, batch_conditions,)
 
             # save end-of-epoch training loss
             params = get_params(opt_state)
             losses.append(
-                loss_fn(
-                    params,
-                    np.array(X[columns].values),
-                    self._get_conditions(X),
-                )
+                loss_fn(params, np.array(X[columns].values), self._get_conditions(X),)
             )
 
             if verbose and (
