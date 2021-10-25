@@ -72,7 +72,8 @@ def test_returns_correct_shape(flow):
     assert len(flow.train(x, epochs=11, verbose=True, convolve_errs=True)) == 12
 
 
-def test_posterior_with_marginalization():
+@pytest.mark.parametrize("flag", [99, onp.nan,])
+def test_posterior_with_marginalization(flag):
 
     flow = Flow(("a", "b", "c", "d"), Reverse())
 
@@ -81,17 +82,17 @@ def test_posterior_with_marginalization():
     grid = np.arange(0, 2.1, 0.12)
 
     marg_rules = {
-        "flag": 99,
+        "flag": flag,
         "b": lambda row: np.linspace(0, 1, 2),
         "c": lambda row: np.linspace(1, 2, 3),
     }
 
-    x["b"] = 99 * np.ones(x.shape[0])
+    x["b"] = flag * np.ones(x.shape[0])
     pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
     assert pdfs.shape == (x.shape[0], grid.size)
 
-    x["c"] = 99 * np.ones(x.shape[0])
-    pdfs = flow.posterior(x, column="a", grid=grid)  # , marg_rules=marg_rules)
+    x["c"] = flag * np.ones(x.shape[0])
+    pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
     assert pdfs.shape == (x.shape[0], grid.size)
 
 
