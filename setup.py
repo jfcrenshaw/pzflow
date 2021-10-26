@@ -30,7 +30,7 @@ setup(
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering",
     ],
-    python_requires=">=3.6.0",
+    python_requires=">=3.7.0",
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],
 )

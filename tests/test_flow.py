@@ -1,5 +1,6 @@
 import dill as pickle
 import jax.numpy as np
+import numpy as onp
 import pandas as pd
 import pytest
 from jax import random
@@ -71,7 +72,8 @@ def test_returns_correct_shape(flow):
     assert len(flow.train(x, epochs=11, verbose=True, convolve_errs=True)) == 12
 
 
-def test_posterior_with_marginalization():
+@pytest.mark.parametrize("flag", [99, onp.nan,])
+def test_posterior_with_marginalization(flag):
 
     flow = Flow(("a", "b", "c", "d"), Reverse())
 
@@ -80,17 +82,17 @@ def test_posterior_with_marginalization():
     grid = np.arange(0, 2.1, 0.12)
 
     marg_rules = {
-        "flag": 99,
+        "flag": flag,
         "b": lambda row: np.linspace(0, 1, 2),
         "c": lambda row: np.linspace(1, 2, 3),
     }
 
-    x["b"] = 99 * np.ones(x.shape[0])
+    x["b"] = flag * np.ones(x.shape[0])
     pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
     assert pdfs.shape == (x.shape[0], grid.size)
 
-    x["c"] = 99 * np.ones(x.shape[0])
-    pdfs = flow.posterior(x, column="a", grid=grid)  # , marg_rules=marg_rules)
+    x["c"] = flag * np.ones(x.shape[0])
+    pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
     assert pdfs.shape == (x.shape[0], grid.size)
 
 
@@ -160,14 +162,7 @@ def test_posterior_with_marginalization():
                         [5.0, 6.0, 50, 0.1, 0.2, 5],
                     ]
                 ),
-                columns=(
-                    "redshift",
-                    "y",
-                    "a",
-                    "redshift_err",
-                    "y_err",
-                    "a_err",
-                ),
+                columns=("redshift", "y", "a", "redshift_err", "y_err", "a_err",),
             ),
         ),
         (
@@ -189,14 +184,7 @@ def test_posterior_with_marginalization():
                         [5.0, 50, 60, 0.1, 5, 6],
                     ]
                 ),
-                columns=(
-                    "y",
-                    "a",
-                    "b",
-                    "y_err",
-                    "a_err",
-                    "b_err",
-                ),
+                columns=("y", "a", "b", "y_err", "a_err", "b_err",),
             ),
         ),
     ],
@@ -204,13 +192,9 @@ def test_posterior_with_marginalization():
 def test_error_convolution(flow, x, x_with_err):
 
     assert flow.log_prob(x, err_samples=10).shape == (x.shape[0],)
-    assert np.allclose(
-        flow.log_prob(x, err_samples=10, seed=0),
-        flow.log_prob(x),
-    )
+    assert np.allclose(flow.log_prob(x, err_samples=10, seed=0), flow.log_prob(x),)
     assert ~np.allclose(
-        flow.log_prob(x_with_err, err_samples=10, seed=0),
-        flow.log_prob(x_with_err),
+        flow.log_prob(x_with_err, err_samples=10, seed=0), flow.log_prob(x_with_err),
     )
     assert np.allclose(
         flow.log_prob(x_with_err, err_samples=10, seed=0),
@@ -305,17 +289,12 @@ def test_control_sample_randomness():
     columns = ("x", "y")
     flow = Flow(columns, Reverse())
 
-    assert np.all(~np.isclose(flow.sample(2), flow.sample(2)))
-    assert np.allclose(flow.sample(2, seed=0), flow.sample(2, seed=0))
+    assert onp.all(~onp.isclose(flow.sample(2), flow.sample(2)))
+    assert onp.allclose(flow.sample(2, seed=0), flow.sample(2, seed=0))
 
 
 @pytest.mark.parametrize(
-    "epochs,loss_fn,",
-    [
-        (-1, None),
-        (2.4, None),
-        ("a", None),
-    ],
+    "epochs,loss_fn,", [(-1, None), (2.4, None), ("a", None),],
 )
 def test_train_bad_inputs(epochs, loss_fn):
     columns = ("redshift", "y")
@@ -326,9 +305,7 @@ def test_train_bad_inputs(epochs, loss_fn):
 
     with pytest.raises(ValueError):
         flow.train(
-            x,
-            epochs=epochs,
-            loss_fn=loss_fn,
+            x, epochs=epochs, loss_fn=loss_fn,
         )
 
 
@@ -360,7 +337,7 @@ def test_train_no_errs_same():
 
     losses1 = flow.train(x, convolve_errs=True)
     losses2 = flow.train(x, convolve_errs=False)
-    assert np.allclose(losses1, losses2)
+    assert np.allclose(np.array(losses1), np.array(losses2))
 
 
 def test_get_err_samples():
@@ -403,8 +380,7 @@ def test_get_err_samples():
     samples = flow._get_err_samples(rng, x, 10)
     assert samples.shape == (20, 2)
     assert np.allclose(
-        samples,
-        shift_err_model(None, xarray[:, :2], xarray[:, 2:], 10).reshape(20, 2),
+        samples, shift_err_model(None, xarray[:, :2], xarray[:, 2:], 10).reshape(20, 2),
     )
 
     # check constant shift conditional samples

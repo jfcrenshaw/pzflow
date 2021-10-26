@@ -88,7 +88,7 @@ class Flow:
             condition_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
             If condition_error_model is not provided, a Gaussian error model is assumed.
-        autoscale_conditions : bool, defautl=True
+        autoscale_conditions : bool, default=True
             Sets whether or not conditions are automatically standard scaled when
             passed to a conditional flow. I recommend you leave this as True.
         seed : int, default=0
@@ -448,9 +448,21 @@ class Flow:
         # and repeatedly call this method
         if marg_rules is not None:
 
+            # if the flag is NaN, we must use np.isnan to check for flags
+            if onp.isnan(marg_rules["flag"]):
+
+                def check_flags(data):
+                    return onp.isnan(data)
+
+            # else we use np.isclose to check for flags
+            else:
+
+                def check_flags(data):
+                    return onp.isclose(data, marg_rules["flag"])
+
             # first calculate pdfs for unflagged rows
             unflagged_idx = inputs[
-                (inputs[columns] != marg_rules["flag"]).all(axis=1)
+                ~check_flags(inputs[columns]).any(axis=1)
             ].index.tolist()
             unflagged_pdfs = self.posterior(
                 inputs=inputs.iloc[unflagged_idx],
@@ -484,7 +496,7 @@ class Flow:
                     continue
 
                 # get the list of new rows for which we need to calculate posteriors
-                flagged_idx = inputs[inputs[name] == marg_rules["flag"]].index.tolist()
+                flagged_idx = inputs[check_flags(inputs[name])].index.tolist()
                 flagged_idx = list(set(flagged_idx).difference(already_done))
 
                 # if flagged_idx is empty, move on!
@@ -572,17 +584,9 @@ class Flow:
                 # for which we are calculating the posterior
                 batch = np.hstack(
                     (
-                        np.repeat(
-                            batch[:, :idx],
-                            len(grid),
-                            axis=0,
-                        ),
+                        np.repeat(batch[:, :idx], len(grid), axis=0,),
                         np.tile(grid, len(batch))[:, None],
-                        np.repeat(
-                            batch[:, idx:],
-                            len(grid),
-                            axis=0,
-                        ),
+                        np.repeat(batch[:, idx:], len(grid), axis=0,),
                     )
                 )
 
@@ -861,21 +865,12 @@ class Flow:
                     type="conditions",
                 )
 
-                opt_state = step(
-                    next(itercount),
-                    opt_state,
-                    batch,
-                    batch_conditions,
-                )
+                opt_state = step(next(itercount), opt_state, batch, batch_conditions,)
 
             # save end-of-epoch training loss
             params = get_params(opt_state)
             losses.append(
-                loss_fn(
-                    params,
-                    np.array(X[columns].values),
-                    self._get_conditions(X),
-                )
+                loss_fn(params, np.array(X[columns].values), self._get_conditions(X),)
             )
 
             if verbose and (
