@@ -12,7 +12,7 @@ def get_twomoons_data() -> pd.DataFrame:
     i.e., `sklearn.datasets.make_moons`.
     """
     this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "data/two-moons-data.pkl")
+    data_path = os.path.join(this_dir, "two-moons-data.pkl")
     data = pd.read_pickle(data_path)
     return data
 
@@ -30,7 +30,7 @@ def get_galaxy_data() -> pd.DataFrame:
     https://arxiv.org/abs/1901.02401
     """
     this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "data/galaxy-data.pkl")
+    data_path = os.path.join(this_dir, "galaxy-data.pkl")
     data = pd.read_pickle(data_path)
     return data
 
@@ -88,7 +88,7 @@ def get_city_data() -> pd.DataFrame:
         DATABASE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     """
     this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "data/city-data.pkl")
+    data_path = os.path.join(this_dir, "city-data.pkl")
     data = pd.read_pickle(data_path)
     return data
 
@@ -101,6 +101,6 @@ def get_example_flow() -> Flow:
     For more info: `print(example_flow().info)`.
     """
     this_dir, _ = os.path.split(__file__)
-    flow_path = os.path.join(this_dir, "data/example-flow.pkl")
+    flow_path = os.path.join(this_dir, "example-flow.pkl")
     flow = Flow(file=flow_path)
     return flow

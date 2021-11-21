@@ -520,6 +520,9 @@ class Flow:
                 )
                 marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
 
+                # remove the error column if it's present
+                marg_inputs.drop(f"{name}_err", axis=1, inplace=True, errors="ignore")
+
                 # calculate posteriors for these
                 marg_pdfs = self.posterior(
                     inputs=marg_inputs,
