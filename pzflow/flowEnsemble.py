@@ -337,8 +337,6 @@ class FlowEnsemble:
     ) -> pd.DataFrame:
         """Returns samples from the ensemble.
 
-        # UPDATE THIS DOCSTRING TO REFLECT THE NEW METHOD FOR CONDITIONAL SAMPLING
-
         Parameters
         ----------
         nsamples : int, default=1
