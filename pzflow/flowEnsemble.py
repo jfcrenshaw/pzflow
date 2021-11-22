@@ -337,8 +337,6 @@ class FlowEnsemble:
     ) -> pd.DataFrame:
         """Returns samples from the ensemble.
 
-        # UPDATE THIS DOCSTRING TO REFLECT THE NEW METHOD FOR CONDITIONAL SAMPLING
-
         Parameters
         ----------
         nsamples : int, default=1
@@ -387,67 +385,58 @@ class FlowEnsemble:
                 )
             # if this is a conditional flow, it's a little more complicated...
             else:
-                # if nsamples > 1, we duplicate the rows of the conditions,
-                # and then call the sample method again with nsamples = 1
+                # if nsamples > 1, we duplicate the rows of the conditions
                 if nsamples > 1:
-                    new_conditions = pd.concat([conditions] * nsamples)
-                    return self.sample(
-                        nsamples=1,
-                        conditions=new_conditions,
-                        save_conditions=save_conditions,
-                        seed=seed,
+                    conditions = pd.concat([conditions] * nsamples)
+
+                # now the main sampling algorithm
+                seed = onp.random.randint(1e18) if seed is None else seed
+                # if we are drawing more samples than the number of flows in
+                # the ensemble, then we will shuffle the conditions and randomly
+                # assign them to one of the constituent flows
+                if conditions.shape[0] > len(self._ensemble):
+                    # shuffle the conditions
+                    conditions_shuffled = conditions.sample(
+                        frac=1.0, random_state=int(seed / 1e9)
                     )
-                # if nsamples = 1, we can proceed with the main sampling algorithm
-                else:
-                    seed = onp.random.randint(1e18) if seed is None else seed
-                    # if we are drawing more samples than the number of flows in
-                    # the ensemble, then we will shuffle the conditions and randomly
-                    # assign them to one of the constituent flows
-                    if conditions.shape[0] > len(self._ensemble):
-                        # shuffle the conditions
-                        conditions_shuffled = conditions.sample(
-                            frac=1.0, random_state=int(seed / 1e9)
+                    # split conditions into ~equal sized chunks
+                    chunks = onp.array_split(conditions_shuffled, len(self._ensemble))
+                    # shuffle the chunks
+                    chunks = [
+                        chunks[i]
+                        for i in random.permutation(
+                            random.PRNGKey(seed), np.arange(len(chunks))
                         )
-                        # split conditions into ~equal sized chunks
-                        chunks = onp.array_split(
-                            conditions_shuffled, len(self._ensemble)
-                        )
-                        # shuffle the chunks
-                        chunks = [
-                            chunks[i]
-                            for i in random.permutation(
-                                random.PRNGKey(seed), np.arange(len(chunks))
+                    ]
+                    # sample from each flow, and return all the samples
+                    return pd.concat(
+                        [
+                            flow.sample(1, chunk, save_conditions, seed).set_index(
+                                chunk.index
                             )
+                            for flow, chunk in zip(self._ensemble.values(), chunks)
                         ]
-                        # sample from each flow, and return all the samples
-                        return pd.concat(
-                            [
-                                flow.sample(1, chunk, save_conditions, seed)
-                                for flow, chunk in zip(self._ensemble.values(), chunks)
-                            ],
-                            ignore_index=True,
-                        )
-                    # however, if there are more flows in the ensemble than samples
-                    # being drawn, then we will randomly select flows for each condition
-                    else:
-                        rng = onp.random.default_rng(seed)
-                        # randomly select a flow to sample from for each condition
-                        flows = rng.choice(
-                            list(self._ensemble.values()),
-                            size=conditions.shape[0],
-                            replace=True,
-                        )
-                        # sample from each flow and return all the samples together
-                        seeds = rng.integers(1e18, size=conditions.shape[0])
-                        return pd.concat(
-                            [
-                                flow.sample(
-                                    1, conditions[i : i + 1], save_conditions, new_seed
-                                )
-                                for i, (flow, new_seed) in enumerate(zip(flows, seeds))
-                            ],
-                            ignore_index=True,
-                        )
+                    ).sort_index()
+                # however, if there are more flows in the ensemble than samples
+                # being drawn, then we will randomly select flows for each condition
+                else:
+                    rng = onp.random.default_rng(seed)
+                    # randomly select a flow to sample from for each condition
+                    flows = rng.choice(
+                        list(self._ensemble.values()),
+                        size=conditions.shape[0],
+                        replace=True,
+                    )
+                    # sample from each flow and return all the samples together
+                    seeds = rng.integers(1e18, size=conditions.shape[0])
+                    return pd.concat(
+                        [
+                            flow.sample(
+                                1, conditions[i : i + 1], save_conditions, new_seed
+                            )
+                            for i, (flow, new_seed) in enumerate(zip(flows, seeds))
+                        ],
+                    ).set_index(conditions.index)
 
     def save(self, file: str):
         """Saves the ensemble to a file.

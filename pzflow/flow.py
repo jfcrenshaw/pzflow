@@ -234,7 +234,7 @@ class Flow:
         # if this a conditional flow, return an array of the conditions
         else:
             columns = list(self.conditional_columns)
-            conditions = np.array(inputs[columns].values)
+            conditions = np.array(inputs[columns].to_numpy())
             conditions = (conditions - self._condition_means) / self._condition_stds
         return conditions
 
@@ -275,7 +275,7 @@ class Flow:
 
         # pull out relevant columns
         err_columns = [col + "_err" for col in columns]
-        X, Xerr = np.array(X[columns].values), np.array(X[err_columns].values)
+        X, Xerr = np.array(X[columns].to_numpy()), np.array(X[err_columns].to_numpy())
 
         # generate samples
         Xsamples = error_model(key, X, Xerr, err_samples)
@@ -333,7 +333,7 @@ class Flow:
         if err_samples is None:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
-            X = np.array(inputs[columns].values)
+            X = np.array(inputs[columns].to_numpy())
             # get conditions
             conditions = self._get_conditions(inputs)
             # calculate log_prob
@@ -507,14 +507,14 @@ class Flow:
                 marg_grids = (
                     inputs.iloc[flagged_idx]
                     .apply(rule, axis=1, result_type="expand")
-                    .values
+                    .to_numpy()
                 )
 
                 # make a new data frame with the marginalization grids replacing
                 # the values of the flag in the column
                 marg_inputs = pd.DataFrame(
                     np.repeat(
-                        inputs.iloc[flagged_idx].values, marg_grids.shape[1], axis=0
+                        inputs.iloc[flagged_idx].to_numpy(), marg_grids.shape[1], axis=0
                     ),
                     columns=inputs.columns,
                 )
@@ -567,13 +567,13 @@ class Flow:
                 # if not drawing samples, just grab batch and conditions
                 if err_samples is None:
                     conditions = self._get_conditions(batch)
-                    batch = np.array(batch[columns].values)
+                    batch = np.array(batch[columns].to_numpy())
                 # if only drawing condition samples...
                 elif len(self.data_columns) == 1:
                     conditions = self._get_err_samples(
                         key, batch, err_samples, type="conditions"
                     )
-                    batch = np.repeat(batch[columns].values, err_samples, axis=0)
+                    batch = np.repeat(batch[columns].to_numpy(), err_samples, axis=0)
                 # if drawing data and condition samples...
                 else:
                     conditions = self._get_err_samples(
@@ -587,9 +587,17 @@ class Flow:
                 # for which we are calculating the posterior
                 batch = np.hstack(
                     (
-                        np.repeat(batch[:, :idx], len(grid), axis=0,),
+                        np.repeat(
+                            batch[:, :idx],
+                            len(grid),
+                            axis=0,
+                        ),
                         np.tile(grid, len(batch))[:, None],
-                        np.repeat(batch[:, idx:], len(grid), axis=0,),
+                        np.repeat(
+                            batch[:, idx:],
+                            len(grid),
+                            axis=0,
+                        ),
                     )
                 )
 
@@ -664,25 +672,30 @@ class Flow:
             conditions = np.zeros((nsamples, 1))
         # otherwise get conditions and make `nsamples` copies of each
         else:
+            conditions_idx = list(conditions.index)
             conditions = self._get_conditions(conditions)
+            conditions_idx = onp.repeat(conditions_idx, nsamples)
             conditions = np.repeat(conditions, nsamples, axis=0)
 
         # draw from latent distribution
         u = self.latent.sample(self._params[0], conditions.shape[0], seed)
         # take the inverse back to the data distribution
         x = self._inverse(self._params[1], u, conditions=conditions)[0]
-        # if not conditional, or save_conditions is False, this is all we need
-        if self.conditional_columns is None or save_conditions is False:
+        # if not conditional, this is all we need
+        if self.conditional_columns is None:
             x = pd.DataFrame(x, columns=self.data_columns)
-        # but if conditional and save_conditions is True,
-        # save conditions with samples
+        # but if conditional
         else:
-            # unscale the conditons
-            conditions = conditions * self._condition_stds + self._condition_means
-            x = pd.DataFrame(
-                np.hstack((x, conditions)),
-                columns=self.data_columns + self.conditional_columns,
-            )
+            if save_conditions:
+                # unscale the conditions
+                conditions = conditions * self._condition_stds + self._condition_means
+                x = pd.DataFrame(
+                    np.hstack((x, conditions)),
+                    columns=self.data_columns + self.conditional_columns,
+                ).set_index(conditions_idx)
+            else:
+                # reindex according to the conditions
+                x = pd.DataFrame(x, columns=self.data_columns).set_index(conditions_idx)
 
         # return the samples!
         return x
@@ -811,10 +824,10 @@ class Flow:
         # save the means and stds of the conditional columns
         if self.conditional_columns is not None and self._autoscale_conditions:
             self._condition_means = np.array(
-                inputs[list(self.conditional_columns)].values.mean(axis=0)
+                inputs[list(self.conditional_columns)].to_numpy().mean(axis=0)
             )
             condition_stds = np.array(
-                inputs[list(self.conditional_columns)].values.std(axis=0)
+                inputs[list(self.conditional_columns)].to_numpy().std(axis=0)
             )
             self._condition_stds = np.where(condition_stds != 0, condition_stds, 1)
 
@@ -830,7 +843,7 @@ class Flow:
                 if type == "conditions":
                     return self._get_conditions(x)
                 else:
-                    return np.array(x[columns].values)
+                    return np.array(x[columns].to_numpy())
 
         # get random seed for training loop
         key = random.PRNGKey(seed)
@@ -839,7 +852,7 @@ class Flow:
             print(f"Training {epochs} epochs \nLoss:")
 
         # save the initial loss
-        X = np.array(inputs[columns].values)
+        X = np.array(inputs[columns].to_numpy())
         C = self._get_conditions(inputs)
         losses = [loss_fn(self._params, X, C)]
         if verbose:
@@ -868,12 +881,21 @@ class Flow:
                     type="conditions",
                 )
 
-                opt_state = step(next(itercount), opt_state, batch, batch_conditions,)
+                opt_state = step(
+                    next(itercount),
+                    opt_state,
+                    batch,
+                    batch_conditions,
+                )
 
             # save end-of-epoch training loss
             params = get_params(opt_state)
             losses.append(
-                loss_fn(params, np.array(X[columns].values), self._get_conditions(X),)
+                loss_fn(
+                    params,
+                    np.array(X[columns].to_numpy()),
+                    self._get_conditions(X),
+                )
             )
 
             if verbose and (
