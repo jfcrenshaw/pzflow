@@ -683,19 +683,21 @@ class Flow:
         x = self._inverse(self._params[1], u, conditions=conditions)[0]
         # if not conditional, this is all we need
         if self.conditional_columns is None:
-            x = pd.DataFrame(x, columns=self.data_columns)
+            x = pd.DataFrame(onp.array(x), columns=self.data_columns)
         # but if conditional
         else:
             if save_conditions:
                 # unscale the conditions
                 conditions = conditions * self._condition_stds + self._condition_means
                 x = pd.DataFrame(
-                    np.hstack((x, conditions)),
+                    onp.array(np.hstack((x, conditions))),
                     columns=self.data_columns + self.conditional_columns,
                 ).set_index(conditions_idx)
             else:
                 # reindex according to the conditions
-                x = pd.DataFrame(x, columns=self.data_columns).set_index(conditions_idx)
+                x = pd.DataFrame(onp.array(x), columns=self.data_columns).set_index(
+                    conditions_idx
+                )
 
         # return the samples!
         return x
