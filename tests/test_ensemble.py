@@ -1,5 +1,6 @@
 import dill as pickle
 import jax.numpy as np
+import numpy as onp
 import pandas as pd
 import pytest
 from jax import random
@@ -10,7 +11,7 @@ flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
 flow0 = Flow(("x", "y"), RollingSplineCoupling(nlayers=2), seed=0)
 flow1 = Flow(("x", "y"), RollingSplineCoupling(nlayers=2), seed=1)
 
-xarray = np.arange(6).reshape(3, 2) / 10
+xarray = onp.arange(6).reshape(3, 2) / 10
 x = pd.DataFrame(xarray, columns=("x", "y"))
 
 
@@ -84,22 +85,22 @@ def test_conditional_sample():
     )
 
     # test with nsamples = 1, fewer samples than flows
-    conditions = pd.DataFrame(np.arange(2).reshape(-1, 2), columns=("a", "b"))
+    conditions = pd.DataFrame(onp.arange(2).reshape(-1, 2), columns=("a", "b"))
     samples = cEns.sample(nsamples=1, conditions=conditions, save_conditions=False)
     assert samples.shape == (1, 2)
 
     # test with nsamples = 1, more samples than flows
-    conditions = pd.DataFrame(np.arange(10).reshape(-1, 2), columns=("a", "b"))
+    conditions = pd.DataFrame(onp.arange(10).reshape(-1, 2), columns=("a", "b"))
     samples = cEns.sample(nsamples=1, conditions=conditions, save_conditions=False)
     assert samples.shape == (5, 2)
 
     # test with nsamples = 2, more samples than flows
-    conditions = pd.DataFrame(np.arange(10).reshape(-1, 2), columns=("a", "b"))
+    conditions = pd.DataFrame(onp.arange(10).reshape(-1, 2), columns=("a", "b"))
     samples = cEns.sample(nsamples=2, conditions=conditions, save_conditions=False)
     assert samples.shape == (10, 2)
 
     # test with returnEnsemble=True
-    conditions = pd.DataFrame(np.arange(10).reshape(-1, 2), columns=("a", "b"))
+    conditions = pd.DataFrame(onp.arange(10).reshape(-1, 2), columns=("a", "b"))
     samples = cEns.sample(
         nsamples=1, conditions=conditions, save_conditions=False, returnEnsemble=True
     )
@@ -109,7 +110,7 @@ def test_conditional_sample():
 def test_train():
 
     data = random.normal(random.PRNGKey(0), shape=(100, 2))
-    data = pd.DataFrame(data, columns=("x", "y"))
+    data = pd.DataFrame(onp.array(data), columns=("x", "y"))
 
     loss_dict = flowEns.train(data, epochs=4, batch_size=50, verbose=True)
     losses0 = flow0.train(data, epochs=4, batch_size=50)
