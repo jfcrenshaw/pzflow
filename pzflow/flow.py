@@ -513,7 +513,7 @@ class Flow:
                 # make a new data frame with the marginalization grids replacing
                 # the values of the flag in the column
                 marg_inputs = pd.DataFrame(
-                    np.repeat(
+                    onp.repeat(
                         inputs.iloc[flagged_idx].to_numpy(), marg_grids.shape[1], axis=0
                     ),
                     columns=inputs.columns,

@@ -43,7 +43,7 @@ def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
     ],
 )
 def test_returns_correct_shape(flow):
-    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    xarray = onp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
     conditions = flow._get_conditions(x)
@@ -72,26 +72,32 @@ def test_returns_correct_shape(flow):
     assert len(flow.train(x, epochs=11, verbose=True, convolve_errs=True)) == 12
 
 
-@pytest.mark.parametrize("flag", [99, onp.nan,])
+@pytest.mark.parametrize(
+    "flag",
+    [
+        99,
+        onp.nan,
+    ],
+)
 def test_posterior_with_marginalization(flag):
 
     flow = Flow(("a", "b", "c", "d"), Reverse())
 
     # test posteriors with marginalization
-    x = pd.DataFrame(np.arange(16).reshape(-1, 4), columns=("a", "b", "c", "d"))
-    grid = np.arange(0, 2.1, 0.12)
+    x = pd.DataFrame(onp.arange(16).reshape(-1, 4), columns=("a", "b", "c", "d"))
+    grid = onp.arange(0, 2.1, 0.12)
 
     marg_rules = {
         "flag": flag,
-        "b": lambda row: np.linspace(0, 1, 2),
-        "c": lambda row: np.linspace(1, 2, 3),
+        "b": lambda row: onp.linspace(0, 1, 2),
+        "c": lambda row: onp.linspace(1, 2, 3),
     }
 
-    x["b"] = flag * np.ones(x.shape[0])
+    x["b"] = flag * onp.ones(x.shape[0])
     pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
     assert pdfs.shape == (x.shape[0], grid.size)
 
-    x["c"] = flag * np.ones(x.shape[0])
+    x["c"] = flag * onp.ones(x.shape[0])
     pdfs = flow.posterior(x, column="a", grid=grid, marg_rules=marg_rules)
     assert pdfs.shape == (x.shape[0], grid.size)
 
@@ -102,11 +108,11 @@ def test_posterior_with_marginalization(flag):
         (
             Flow(("redshift", "y"), RollingSplineCoupling(2), latent=Normal(2)),
             pd.DataFrame(
-                np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
+                onp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
                 columns=("redshift", "y"),
             ),
             pd.DataFrame(
-                np.array(
+                onp.array(
                     [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.2, 0.3], [5.0, 6.0, 0.1, 0.2]]
                 ),
                 columns=("redshift", "y", "redshift_err", "y_err"),
@@ -120,11 +126,11 @@ def test_posterior_with_marginalization(flag):
                 conditional_columns=("a", "b"),
             ),
             pd.DataFrame(
-                np.array([[1.0, 2.0, 10, 20], [3.0, 4.0, 30, 40], [5.0, 6.0, 50, 60]]),
+                onp.array([[1.0, 2.0, 10, 20], [3.0, 4.0, 30, 40], [5.0, 6.0, 50, 60]]),
                 columns=("redshift", "y", "a", "b"),
             ),
             pd.DataFrame(
-                np.array(
+                onp.array(
                     [
                         [1.0, 2.0, 10, 20, 0.1, 0.2, 1, 2],
                         [3.0, 4.0, 30, 40, 0.2, 0.3, 3, 4],
@@ -151,18 +157,25 @@ def test_posterior_with_marginalization(flag):
                 conditional_columns=("a",),
             ),
             pd.DataFrame(
-                np.array([[1.0, 2.0, 10], [3.0, 4.0, 30], [5.0, 6.0, 50]]),
+                onp.array([[1.0, 2.0, 10], [3.0, 4.0, 30], [5.0, 6.0, 50]]),
                 columns=("redshift", "y", "a"),
             ),
             pd.DataFrame(
-                np.array(
+                onp.array(
                     [
                         [1.0, 2.0, 10, 0.1, 0.2, 1],
                         [3.0, 4.0, 30, 0.2, 0.3, 3],
                         [5.0, 6.0, 50, 0.1, 0.2, 5],
                     ]
                 ),
-                columns=("redshift", "y", "a", "redshift_err", "y_err", "a_err",),
+                columns=(
+                    "redshift",
+                    "y",
+                    "a",
+                    "redshift_err",
+                    "y_err",
+                    "a_err",
+                ),
             ),
         ),
         (
@@ -173,18 +186,25 @@ def test_posterior_with_marginalization(flag):
                 conditional_columns=("a", "b"),
             ),
             pd.DataFrame(
-                np.array([[1.0, 10, 20], [3.0, 30, 40], [5.0, 50, 60]]),
+                onp.array([[1.0, 10, 20], [3.0, 30, 40], [5.0, 50, 60]]),
                 columns=("y", "a", "b"),
             ),
             pd.DataFrame(
-                np.array(
+                onp.array(
                     [
                         [1.0, 10, 20, 0.1, 1, 2],
                         [3.0, 30, 40, 0.2, 3, 4],
                         [5.0, 50, 60, 0.1, 5, 6],
                     ]
                 ),
-                columns=("y", "a", "b", "y_err", "a_err", "b_err",),
+                columns=(
+                    "y",
+                    "a",
+                    "b",
+                    "y_err",
+                    "a_err",
+                    "b_err",
+                ),
             ),
         ),
     ],
@@ -192,9 +212,13 @@ def test_posterior_with_marginalization(flag):
 def test_error_convolution(flow, x, x_with_err):
 
     assert flow.log_prob(x, err_samples=10).shape == (x.shape[0],)
-    assert np.allclose(flow.log_prob(x, err_samples=10, seed=0), flow.log_prob(x),)
+    assert np.allclose(
+        flow.log_prob(x, err_samples=10, seed=0),
+        flow.log_prob(x),
+    )
     assert ~np.allclose(
-        flow.log_prob(x_with_err, err_samples=10, seed=0), flow.log_prob(x_with_err),
+        flow.log_prob(x_with_err, err_samples=10, seed=0),
+        flow.log_prob(x_with_err),
     )
     assert np.allclose(
         flow.log_prob(x_with_err, err_samples=10, seed=0),
@@ -227,7 +251,7 @@ def test_posterior_batch():
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
-    xarray = np.array([[1, 2], [3, 4], [5, 6]])
+    xarray = onp.array([[1, 2], [3, 4], [5, 6]])
     x = pd.DataFrame(xarray, columns=columns)
 
     grid = np.arange(0, 2.1, 0.12)
@@ -294,25 +318,32 @@ def test_control_sample_randomness():
 
 
 @pytest.mark.parametrize(
-    "epochs,loss_fn,", [(-1, None), (2.4, None), ("a", None),],
+    "epochs,loss_fn,",
+    [
+        (-1, None),
+        (2.4, None),
+        ("a", None),
+    ],
 )
 def test_train_bad_inputs(epochs, loss_fn):
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
-    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    xarray = onp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=columns)
 
     with pytest.raises(ValueError):
         flow.train(
-            x, epochs=epochs, loss_fn=loss_fn,
+            x,
+            epochs=epochs,
+            loss_fn=loss_fn,
         )
 
 
 def test_conditional_sample():
 
     flow = Flow(("x", "y"), Reverse(), conditional_columns=("a", "b"))
-    x = np.arange(12).reshape(-1, 4)
+    x = onp.arange(12).reshape(-1, 4)
     x = pd.DataFrame(x, columns=("x", "y", "a", "b"))
 
     conditions = flow._get_conditions(x)
@@ -332,7 +363,7 @@ def test_train_no_errs_same():
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
-    xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    xarray = onp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=columns)
 
     losses1 = flow.train(x, convolve_errs=True)
@@ -347,13 +378,13 @@ def test_get_err_samples():
     # check Gaussian data samples
     columns = ("x", "y")
     flow = Flow(columns, Reverse())
-    xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
+    xarray = onp.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
     x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
     samples = flow._get_err_samples(rng, x, 10)
     assert samples.shape == (20, 2)
 
     # test skip
-    xarray = np.array([[1.0, 2.0, 0, 0]])
+    xarray = onp.array([[1.0, 2.0, 0, 0]])
     x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
     samples = flow._get_err_samples(rng, x, 10, skip="y")
     assert np.allclose(samples, np.ones((10, 1)))
@@ -375,12 +406,13 @@ def test_get_err_samples():
         X + Xerr, nsamples, axis=0
     ).reshape(X.shape[0], nsamples, X.shape[1])
     flow = Flow(columns, Reverse(), data_error_model=shift_err_model)
-    xarray = np.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
+    xarray = onp.array([[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4]])
     x = pd.DataFrame(xarray, columns=("x", "y", "x_err", "y_err"))
     samples = flow._get_err_samples(rng, x, 10)
     assert samples.shape == (20, 2)
     assert np.allclose(
-        samples, shift_err_model(None, xarray[:, :2], xarray[:, 2:], 10).reshape(20, 2),
+        samples,
+        shift_err_model(None, xarray[:, :2], xarray[:, 2:], 10).reshape(20, 2),
     )
 
     # check constant shift conditional samples
@@ -396,7 +428,7 @@ def test_get_err_samples():
 
 def test_train_w_conditions():
 
-    xarray = np.array(
+    xarray = onp.array(
         [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4], [5.0, 6.0, 0.5, 0.6]]
     )
     x = pd.DataFrame(xarray, columns=("redshift", "y", "a", "b"))
