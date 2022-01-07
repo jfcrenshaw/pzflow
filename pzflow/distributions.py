@@ -76,7 +76,6 @@ class CentBeta:
                 for i in range(self.input_dim)
             ]
         ).sum(axis=1)
-        print(log_prob.shape)
 
         return log_prob
 
