@@ -99,9 +99,8 @@ def test_bad_inputs(bijector, args):
         bijector(*args)
 
 
-@pytest.mark.parametrize("column_idx", [(None), ([1, 3, 5])])
-def test_uniform_dequantizer_returns_correct_shape(column_idx):
-    init_fun, bijector_info = UniformDequantizer(column_idx)
+def test_uniform_dequantizer_returns_correct_shape():
+    init_fun, bijector_info = UniformDequantizer([1, 3, 4])
     params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
     conditions = np.zeros((3, 1))

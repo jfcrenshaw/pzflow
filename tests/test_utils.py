@@ -1,5 +1,5 @@
 import jax.numpy as np
-from jax import random, ops
+from jax import random
 from pzflow.bijectors import *
 from pzflow.utils import *
 import pytest
@@ -37,7 +37,7 @@ def test_sub_diag_indices_correct():
     x = np.array([[[0, 0], [0, 0]], [[1, 1], [1, 1]], [[2, 2], [2, 2]]])
     y = np.array([[[1, 0], [0, 1]], [[2, 1], [1, 2]], [[3, 2], [2, 3]]])
     idx = sub_diag_indices(x)
-    x = ops.index_update(x, idx, x[idx] + 1)
+    x = x.at[idx].set(x[idx] + 1)
 
     assert np.allclose(x, y)
 

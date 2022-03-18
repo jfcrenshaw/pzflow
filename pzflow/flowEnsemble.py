@@ -5,7 +5,7 @@ import jax.numpy as np
 import numpy as onp
 import pandas as pd
 from jax import random
-from jax.experimental.optimizers import Optimizer
+from jax.example_libraries.optimizers import Optimizer
 
 from pzflow import Flow
 from pzflow.bijectors import Bijector_Info, InitFunction
