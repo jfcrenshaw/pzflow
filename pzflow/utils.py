@@ -2,7 +2,7 @@ from typing import Callable, Tuple
 
 import jax.numpy as np
 from jax import random
-from jax.experimental.stax import Dense, LeakyRelu, serial
+from jax.example_libraries.stax import Dense, LeakyRelu, serial
 
 from pzflow import bijectors
 

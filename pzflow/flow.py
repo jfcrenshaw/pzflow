@@ -6,7 +6,7 @@ import jax.numpy as np
 import numpy as onp
 import pandas as pd
 from jax import grad, jit, ops, random
-from jax.experimental.optimizers import Optimizer, adam
+from jax.example_libraries.optimizers import Optimizer, adam
 
 from pzflow import distributions
 from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
@@ -246,7 +246,7 @@ class Flow:
         type: str = "data",
         skip: str = None,
     ) -> np.ndarray:
-        """Draw error samples for each row of inputs. """
+        """Draw error samples for each row of inputs."""
 
         X = inputs.copy()
 
@@ -476,9 +476,7 @@ class Flow:
             )
 
             # save these pdfs in the big array
-            pdfs = ops.index_update(
-                pdfs,
-                ops.index[unflagged_idx, :],
+            pdfs = pdfs.at[unflagged_idx, :].set(
                 unflagged_pdfs,
                 indices_are_sorted=True,
                 unique_indices=True,
@@ -543,9 +541,7 @@ class Flow:
                 marg_pdfs = marg_pdfs.sum(axis=1)
 
                 # save the new pdfs in the big array
-                pdfs = ops.index_update(
-                    pdfs,
-                    ops.index[flagged_idx, :],
+                pdfs = pdfs.at[flagged_idx, :].set(
                     marg_pdfs,
                     indices_are_sorted=True,
                     unique_indices=True,
@@ -614,9 +610,7 @@ class Flow:
                     prob = prob.reshape(-1, err_samples, len(grid))
                     prob = prob.mean(axis=1)
                 # add the pdfs to the bigger list
-                pdfs = ops.index_update(
-                    pdfs,
-                    ops.index[batch_idx : batch_idx + batch_size, :],
+                pdfs = pdfs.at[batch_idx : batch_idx + batch_size, :].set(
                     prob,
                     indices_are_sorted=True,
                     unique_indices=True,

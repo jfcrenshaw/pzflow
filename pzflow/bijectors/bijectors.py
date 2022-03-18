@@ -2,7 +2,7 @@ from functools import update_wrapper
 from typing import Callable, Sequence, Tuple, Union
 
 import jax.numpy as np
-from jax import ops, random
+from jax import random
 
 # define a type alias for Jax Pytrees
 Pytree = Union[tuple, list]
@@ -254,9 +254,7 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
         else:
 
             def mag0(outputs):
-                return ops.index_update(
-                    outputs,
-                    ops.index[:, mag0_idx],
+                return outputs.at[:, mag0_idx].set(
                     outputs[:, mag0_idx] + outputs[:, new_ref],
                     indices_are_sorted=True,
                     unique_indices=True,
@@ -291,9 +289,7 @@ def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_I
             # calculate mag[0]
             outputs = mag0(outputs)
             # mag[i] = mag[0] - (mag[0] - mag[i])
-            outputs = ops.index_update(
-                outputs,
-                ops.index[:, mag0_idx + 1 :],
+            outputs = outputs.at[:, mag0_idx + 1 :].set(
                 outputs[:, mag0_idx, None] - outputs[:, mag0_idx + 1 :],
                 indices_are_sorted=True,
                 unique_indices=True,
@@ -351,22 +347,18 @@ def InvSoftplus(
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            outputs = ops.index_update(
-                inputs,
-                ops.index[:, idx],
+            outputs = inputs.at[:, idx].set(
                 np.log(-1 + np.exp(k * inputs[:, idx])) / k,
             )
-            log_det = np.log(1 + np.exp(-k * outputs[ops.index[:, idx]])).sum(axis=1)
+            log_det = np.log(1 + np.exp(-k * outputs[:, idx])).sum(axis=1)
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = ops.index_update(
-                inputs,
-                ops.index[:, idx],
+            outputs = inputs.at[:, idx].set(
                 np.log(1 + np.exp(k * inputs[:, idx])) / k,
             )
-            log_det = -np.log(1 + np.exp(-k * inputs[ops.index[:, idx]])).sum(axis=1)
+            log_det = -np.log(1 + np.exp(-k * inputs[:, idx])).sum(axis=1)
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -640,7 +632,7 @@ def StandardScaler(
 
 
 @Bijector
-def UniformDequantizer(column_idx: int = None) -> Tuple[InitFunction, Bijector_Info]:
+def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that dequantizes discrete variables with uniform noise.
 
     Dequantizers are necessary for modeling discrete values with a flow.
@@ -662,36 +654,21 @@ def UniformDequantizer(column_idx: int = None) -> Tuple[InitFunction, Bijector_I
     """
 
     bijector_info = ("UniformDequantizer", (column_idx,))
-
-    if column_idx is None:
-        idx = ops.index[:, :]
-    else:
-        idx = ops.index[:, column_idx]
+    column_idx = np.array(column_idx)
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            u = random.uniform(random.PRNGKey(0), shape=inputs[idx].shape)
-            outputs = ops.index_update(
-                inputs.astype(float),
-                idx,
-                inputs[idx].astype(float) + u,
-                indices_are_sorted=True,
-                unique_indices=True,
-            )
+            u = random.uniform(random.PRNGKey(0), shape=inputs[:, column_idx].shape)
+            outputs = inputs.astype(float)
+            outputs.at[:, column_idx].set(outputs[:, column_idx] + u)
             log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = ops.index_update(
-                inputs,
-                idx,
-                np.floor(inputs[idx]),
-                indices_are_sorted=True,
-                unique_indices=True,
-            )
+            outputs = inputs.at[:, column_idx].set(np.floor(inputs[:, column_idx]))
             log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 
