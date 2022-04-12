@@ -21,7 +21,7 @@ setup(
     url="http://github.com/jfcrenshaw/pzflow",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["dill", "jax", "jaxlib", "pandas>=1.1"],
+    install_requires=["dill", "jax", "jaxlib", "pandas>=1.1", "tqdm"],
     extras_require=extras,
     classifiers=[
         "Programming Language :: Python :: 3",

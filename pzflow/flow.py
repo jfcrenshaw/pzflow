@@ -12,6 +12,7 @@ from pzflow import distributions
 from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
 from pzflow.utils import build_bijector_from_info, gaussian_error_model
 
+from tqdm import tqdm
 
 class Flow:
     """A normalizing flow that models tabular data.
@@ -755,6 +756,7 @@ class Flow:
         convolve_errs: bool = False,
         seed: int = 0,
         verbose: bool = False,
+        patience = None
     ) -> list:
         """Trains the normalizing flow on the provided inputs.
 
@@ -783,7 +785,9 @@ class Flow:
             error sampling.
         verbose : bool, default=False
             If true, print the training loss every 5% of epochs.
-
+        patience : int, should be smaller than the number of epochs. It is
+            a factor controlling early-stopping. The training will stop
+            after the loss doesn't decrease for this number of epochs.
         Returns
         -------
         list
@@ -856,7 +860,10 @@ class Flow:
 
         # loop through training
         itercount = itertools.count()
-        for epoch in range(epochs):
+        
+        best_loss = np.inf
+        early_stopping_counter = 0
+        for epoch in tqdm(range(epochs)):
             # new permutation of batches
             permute_key, sample_key, key = random.split(key, num=3)
             idx = random.permutation(permute_key, inputs.shape[0])
@@ -898,8 +905,24 @@ class Flow:
                 epoch % max(int(0.05 * epochs), 1) == 0 or (epoch + 1) == epochs
             ):
                 print(f"({epoch+1}) {losses[-1]:.4f}")
+                
+            # early stopping condition
+            
+            if losses[-1] < best_loss:
+                best_loss = losses[-1]
+                early_stopping_counter = 0
+            else:
+                early_stopping_counter += 1
+                
+            if patience is not None:
+                if early_stopping_counter >= patience:
+                    print("Early stopping criteria is met. Training stops at the "
+                         +str(epoch)+'th epoch.')
+                    break
 
+                
         # update the flow parameters with the final training state
         self._params = get_params(opt_state)
 
         return losses
+
