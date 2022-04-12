@@ -868,6 +868,7 @@ class Flow:
         itercount = itertools.count()
         
         best_loss = np.inf
+        early_stopping_counter = 0
         for epoch in tqdm(range(epochs)):
             # new permutation of batches
             permute_key, sample_key, key = random.split(key, num=3)
