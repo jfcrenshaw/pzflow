@@ -68,11 +68,11 @@ jobs:
       # ----------------------------------------------
       #                 run linters
       # ----------------------------------------------
-      - name: Run linters
-        run: |
-          poetry run flake8 .
-          poetry run black . --check
-          poetry run isort .
+      #- name: Run linters
+      #  run: |
+      #    poetry run flake8 .
+      #    poetry run black . --check
+      #    poetry run isort .
 
       # ----------------------------------------------
       #                 run tests
