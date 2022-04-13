@@ -70,9 +70,9 @@ jobs:
       # ----------------------------------------------
       - name: Run linters
         run: |
-          flake8 .
-          black . --check
-          isort .
+          poetry run flake8 .
+          poetry run black . --check
+          poetry run isort .
 
       # ----------------------------------------------
       #                 run tests
