@@ -7,12 +7,12 @@ import numpy as onp
 import pandas as pd
 from jax import grad, jit, ops, random
 from jax.example_libraries.optimizers import Optimizer, adam
+from tqdm import tqdm
 
 from pzflow import distributions
 from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
 from pzflow.utils import build_bijector_from_info, gaussian_error_model
 
-from tqdm import tqdm
 
 class Flow:
     """A normalizing flow that models tabular data.
@@ -23,12 +23,12 @@ class Flow:
         List of DataFrame columns that the flow expects/produces.
     conditional_columns : tuple
         List of DataFrame columns on which the flow is conditioned.
+    latent : distributions.LatentDist
+        The latent distribution of the normalizing flow.
+        Has it's own sample and log_prob methods.
     info : Any
         Object containing any kind of info included with the flow.
         Often describes the data the flow is trained on.
-    latent
-        The latent distribution of the normalizing flow.
-        Has it's own sample and log_prob methods.
     """
 
     def __init__(
@@ -36,7 +36,7 @@ class Flow:
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
         conditional_columns: Sequence[str] = None,
-        latent=None,
+        latent: distributions.LatentDist = None,
         data_error_model: Callable = None,
         condition_error_model: Callable = None,
         autoscale_conditions: bool = True,
@@ -227,7 +227,7 @@ class Flow:
             self._params = (self.latent._params, bijector_params)
 
     def _get_conditions(self, inputs: pd.DataFrame) -> np.ndarray:
-        """Return an array of the bijector conditions."""
+        ### Return an array of the bijector conditions.
 
         # if this isn't a conditional flow, just return empty conditions
         if self.conditional_columns is None:
@@ -247,7 +247,7 @@ class Flow:
         type: str = "data",
         skip: str = None,
     ) -> np.ndarray:
-        """Draw error samples for each row of inputs."""
+        ### Draw error samples for each row of inputs.
 
         X = inputs.copy()
 
@@ -296,7 +296,8 @@ class Flow:
     def _log_prob(
         self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
     ) -> np.ndarray:
-        """Log prob for arrays."""
+        ### Log prob for arrays.
+
         # calculate log_prob
         u, log_det = self._forward(params[1], inputs, conditions=conditions)
         log_prob = self.latent.log_prob(params[0], u) + log_det
@@ -698,7 +699,7 @@ class Flow:
         return x
 
     def _save_dict(self):
-        """Returns the dictionary of all flow params to be saved."""
+        ### Returns the dictionary of all flow params to be saved.
         save_dict = {"class": self.__class__.__name__}
         keys = [
             "data_columns",

@@ -1,4 +1,5 @@
 import sys
+from abc import ABC, abstractmethod
 
 import jax.numpy as np
 import numpy as onp
@@ -10,12 +11,24 @@ from pzflow.bijectors import Pytree
 
 epsilon = sys.float_info.epsilon
 
+class LatentDist(ABC):
+    """Base class for latent distributions."""
+    info = ("LatentDist", ())
+
+    @abstractmethod
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+        """Calculate log-probability of the inputs."""
+
+    @abstractmethod
+    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+        """Sample from the distribution."""
+
 
 def _mahalanobis_and_logdet(x, cov):
-    """Calculate mahalanobis distance and log_det of cov.
-    Uses scipy method, explained here:
-    http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
-    """
+    # Calculate mahalanobis distance and log_det of cov.
+    # Uses scipy method, explained here:
+    # http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
+    
     vals, vecs = np.linalg.eigh(cov)
     U = vecs * np.sqrt(1 / vals[..., None])
     maha = np.square(U @ x[..., None]).reshape(x.shape[0], -1).sum(axis=1)
@@ -23,7 +36,7 @@ def _mahalanobis_and_logdet(x, cov):
     return maha, log_det
 
 
-class CentBeta:
+class CentBeta(LatentDist):
     """A centered Beta distribution.
 
     This distribution is just a regular Beta distribution, scaled and shifted
@@ -113,7 +126,7 @@ class CentBeta:
         return 2 * self.B * (samples - 0.5)
 
 
-class Normal:
+class Normal(LatentDist):
     """A multivariate Gaussian distribution with mean zero and unit variance."""
 
     def __init__(self, input_dim: int):
@@ -178,7 +191,7 @@ class Normal:
         )
 
 
-class Tdist:
+class Tdist(LatentDist):
     """A multivariate T distribution with mean zero and unit scale matrix."""
 
     def __init__(self, input_dim: int):
@@ -257,7 +270,7 @@ class Tdist:
         return samples
 
 
-class Uniform:
+class Uniform(LatentDist):
     """A multivariate uniform distribution."""
 
     def __init__(self, *ranges):
@@ -347,7 +360,7 @@ class Uniform:
         return np.array(samples)
 
 
-class Joint:
+class Joint(LatentDist):
     """A joint distribution built from other distributions."""
 
     def __init__(self, *inputs):

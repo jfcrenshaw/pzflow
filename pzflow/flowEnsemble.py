@@ -7,7 +7,7 @@ import pandas as pd
 from jax import random
 from jax.example_libraries.optimizers import Optimizer
 
-from pzflow import Flow
+from pzflow import Flow, distributions
 from pzflow.bijectors import Bijector_Info, InitFunction
 
 
@@ -20,12 +20,12 @@ class FlowEnsemble:
         List of DataFrame columns that the flows expect/produce.
     conditional_columns : tuple
         List of DataFrame columns on which the flows are conditioned.
+    latent: distributions.LatentDist
+        The latent distribution of the normalizing flows.
+        Has it's own sample and log_prob methods.
     info : Any
         Object containing any kind of info included with the ensemble.
         Often Reverse the data the flows are trained on.
-    latent
-        The latent distribution of the normalizing flows.
-        Has it's own sample and log_prob methods.
     """
 
     def __init__(
@@ -33,7 +33,7 @@ class FlowEnsemble:
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
         conditional_columns: Sequence[str] = None,
-        latent=None,
+        latent: distributions.LatentDist = None,
         data_error_model: Callable = None,
         condition_error_model: Callable = None,
         autoscale_conditions: bool = True,

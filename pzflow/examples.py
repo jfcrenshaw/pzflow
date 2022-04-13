@@ -1,8 +1,14 @@
+"""Functions that return example data and a example flow trained on
+galaxy data. To see these examples in action, see the tutorial notebooks.
+"""
+
 import os
 
 import pandas as pd
 
 from pzflow import Flow
+
+EXAMPLE_FILE_DIR = "example_files"
 
 
 def get_twomoons_data() -> pd.DataFrame:
@@ -12,7 +18,7 @@ def get_twomoons_data() -> pd.DataFrame:
     i.e., `sklearn.datasets.make_moons`.
     """
     this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "two-moons-data.pkl")
+    data_path = os.path.join(this_dir, f"{EXAMPLE_FILE_DIR}/two-moons-data.pkl")
     data = pd.read_pickle(data_path)
     return data
 
@@ -30,7 +36,7 @@ def get_galaxy_data() -> pd.DataFrame:
     https://arxiv.org/abs/1901.02401
     """
     this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "galaxy-data.pkl")
+    data_path = os.path.join(this_dir, f"{EXAMPLE_FILE_DIR}/galaxy-data.pkl")
     data = pd.read_pickle(data_path)
     return data
 
@@ -88,7 +94,7 @@ def get_city_data() -> pd.DataFrame:
         DATABASE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     """
     this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "city-data.pkl")
+    data_path = os.path.join(this_dir, f"{EXAMPLE_FILE_DIR}/city-data.pkl")
     data = pd.read_pickle(data_path)
     return data
 
@@ -101,6 +107,6 @@ def get_example_flow() -> Flow:
     For more info: `print(example_flow().info)`.
     """
     this_dir, _ = os.path.split(__file__)
-    flow_path = os.path.join(this_dir, "example-flow.pkl")
+    flow_path = os.path.join(this_dir, f"{EXAMPLE_FILE_DIR}/example-flow.pkl")
     flow = Flow(file=flow_path)
     return flow
