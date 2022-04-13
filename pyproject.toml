@@ -1,3 +1,56 @@
+[tool.poetry]
+name = "pzflow"
+version = "2.1.0"
+description = "Probabilistic modeling of tabular data with normalizing flows."
+authors = ["John Franklin Crenshaw <jfcrenshaw@gmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+jax = "^0.3.5"
+jaxlib = "^0.3.5"
+pandas = ">=1.1"
+dill = "^0.3.4"
+tqdm = "^4.64.0"
+
+[tool.poetry.dev-dependencies]
+pre-commit = "^2.16.0"
+black = "^21.12b0"
+mypy = "^0.931"
+isort = "^5.10.1"
+flake8 = "^4.0.1"
+flake8-broken-line = "^0.4.0"
+flake8-bugbear = "^22.1.11"
+flake8-builtins = "^1.5.3"
+flake8-comprehensions = "^3.8.0"
+flake8-docstrings = "^1.6.0"
+flake8-eradicate = "^1.2.0"
+flake8-isort = "^4.1.1"
+flake8-markdown = "^0.3.0"
+flake8-print = "^4.0.0"
+flake8-pytest-style = "^1.6.0"
+flake8-simplify = "^0.14.5"
+flake8-tidy-imports = "^4.6.0"
+jupyterlab-flake8 = "^0.7.1"
+pandas-vet = "^0.2.2"
+pep8-naming = "^0.12.1"
+pytest = "^7.1.1"
+pytest-cov = "^3.0.0"
+pytest-xdist = "^2.5.0"
+
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length=79
+
+[tool.isort]
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+line_length = 79
+
+[tool.pyright]
+reportGeneralTypeIssues = false
