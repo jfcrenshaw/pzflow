@@ -1,5 +1,5 @@
 # This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+# inspired by examples here: https://github.com/snok/install-poetry
 
 name: build
 
@@ -11,26 +11,79 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # ----------------------------------------------
+    #  test linux and mac; several python versions
+    # ----------------------------------------------
     strategy:
+      fail-fast: true
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: [3.7, 3.8, 3.9]
+    runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v2
+      # ----------------------------------------------
+      #       check out repo and set up python
+      # ----------------------------------------------
+      - name: Check out repo
+        uses: actions/checkout@v2
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
+
+      # ----------------------------------------------
+      #         install and configure poetry
+      # ----------------------------------------------
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
+
+      # ----------------------------------------------
+      #        load cached venv if cache exists
+      # ----------------------------------------------
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v2
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      # ----------------------------------------------
+      #  install dependencies if cache does not exist
+      # ----------------------------------------------
       - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      # ----------------------------------------------
+      #       install root project, if required
+      # ----------------------------------------------
+      - name: Install library
+        run: poetry install --no-interaction
+
+      # ----------------------------------------------
+      #                 run linters
+      # ----------------------------------------------
+      - name: Run linters
         run: |
-          python -m pip install --upgrade pip
-          pip install .
-          pip install pylint flake8 pytest pytest-cov
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          flake8 .
+          black . --check
+          isort .
+
+      # ----------------------------------------------
+      #                 run tests
+      # ----------------------------------------------
       - name: Test with pytest
         run: |
-          python -m pytest --cov=./pzflow --cov-report=xml
+          poetry run pytest --cov=./pzflow --cov-report=xml -n 10
+
+      # ----------------------------------------------
+      #          upload coverage to Codecov
+      # ----------------------------------------------
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:
@@ -39,13 +92,3 @@ jobs:
           env_vars: OS,PYTHON
           name: codecov-umbrella
           fail_ci_if_error: true
-      - name: Lint with pylint
-        run: |
-          # stop the build if there are Pylint errors
-          pylint --disable=all --extension-pkg-whitelist=numpy --init-hook='import sys; sys.setrecursionlimit(8 * sys.getrecursionlimit())' pzflow
-      - name: Lint with flake8
-        run: |
-          # stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
