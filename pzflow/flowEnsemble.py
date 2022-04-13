@@ -49,21 +49,21 @@ class FlowEnsemble:
 
         Parameters
         ----------
-        data_columns : Sequence[str], optional
+        data_columns : Sequence[str]; optional
             Tuple, list, or other container of column names.
             These are the columns the flows expect/produce in DataFrames.
-        bijector : Bijector Call, optional
+        bijector : Bijector Call; optional
             A Bijector call that consists of the bijector InitFunction that
             initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
-        conditional_columns : Sequence[str], optional
+        conditional_columns : Sequence[str]; optional
             Names of columns on which to condition the normalizing flows.
-        latent : distribution, optional
+        latent : distribution; optional
             The latent distribution for the normalizing flows. Can be any of
             the distributions from pzflow.distributions. If not provided,
             a normal distribution is used with the number of dimensions
             inferred.
-        data_error_model : Callable, optional
+        data_error_model : Callable; optional
             A callable that defines the error model for data variables.
             data_error_model must take key, X, Xerr, nsamples as arguments where:
                 key is a jax rng key, e.g. jax.random.PRNGKey(0)
@@ -74,7 +74,7 @@ class FlowEnsemble:
             data_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
             If data_error_model is not provided, a Gaussian error model is assumed.
-        condition_error_model : Callable, optional
+        condition_error_model : Callable; optional
             A callable that defines the error model for conditional variables.
             condition_error_model must take key, X, Xerr, nsamples as arguments where:
                 key is a jax rng key, e.g. jax.random.PRNGKey(0)
@@ -85,21 +85,23 @@ class FlowEnsemble:
             condition_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
             If condition_error_model is not provided, a Gaussian error model is assumed.
-        autoscale_conditions : bool, defautl=True
+        autoscale_conditions : bool; defautl=True
             Sets whether or not conditions are automatically standard scaled when
             passed to a conditional flow. I recommend you leave this as True.
-        N : int, default=1
+        N : int; default=1
             The number of flows in the ensemble.
-        info : Any, optional
+        info : Any; optional
             An object to attach to the info attribute.
-        file : str, optional
+        file : str; optional
             Path to file from which to load a pretrained flow ensemble.
             If a file is provided, all other parameters must be None.
         """
 
         # validate parameters
         if data_columns is None and bijector is None and file is None:
-            raise ValueError("You must provide data_columns and bijector OR file.")
+            raise ValueError(
+                "You must provide data_columns and bijector OR file."
+            )
         if data_columns is not None and bijector is None:
             raise ValueError("Please also provide a bijector.")
         if data_columns is None and bijector is not None:
@@ -181,15 +183,15 @@ class FlowEnsemble:
             Every column in self.data_columns must be present.
             If self.conditional_columns is not None, those must be present
             as well. If other columns are present, they are ignored.
-        err_samples : int, default=None
+        err_samples : int; default=None
             Number of samples from the error distribution to average over for
             the log_prob calculation. If provided, Gaussian errors are assumed,
             and method will look for error columns in `inputs`. Error columns
             must end in `_err`. E.g. the error column for the variable `u` must
             be `u_err`. Zero error assumed for any missing error columns.
-        seed : int, default=None
+        seed : int; default=None
             Random seed for drawing the samples with Gaussian errors.
-        returnEnsemble : bool, default=False
+        returnEnsemble : bool; default=False
             If True, returns log_prob for each flow in the ensemble as an
             array of shape (inputs.shape[0], N flows in ensemble).
             If False, the prob is averaged over the flows in the ensemble,
@@ -252,7 +254,7 @@ class FlowEnsemble:
             `inputs` is irrelevant.
         grid : np.ndarray
             Grid on which to calculate the posterior.
-        marg_rules : dict, optional
+        marg_rules : dict; optional
             Dictionary with rules for marginalizing over missing variables.
             The dictionary must contain the key "flag", which gives the flag
             that indicates a missing value. E.g. if missing values are given
@@ -264,26 +266,26 @@ class FlowEnsemble:
             the variable. E.g. {"y": lambda row: np.linspace(0, row["x"], 10)}.
             Note: the callable for a given name must *always* return an array
             of the same length, regardless of the input row.
-        normalize : boolean, default=True
+        normalize : boolean; default=True
             Whether to normalize the posterior so that it integrates to 1.
-        err_samples : int, default=None
+        err_samples : int; default=None
             Number of samples from the error distribution to average over for
             the posterior calculation. If provided, Gaussian errors are assumed,
             and method will look for error columns in `inputs`. Error columns
             must end in `_err`. E.g. the error column for the variable `u` must
             be `u_err`. Zero error assumed for any missing error columns.
-        seed : int, default=None
+        seed : int; default=None
             Random seed for drawing the samples with Gaussian errors.
-        batch_size : int, default=None
+        batch_size : int; default=None
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
             is faster, but memory intensive for large data sets.
-        returnEnsemble : bool, default=False
+        returnEnsemble : bool; default=False
             If True, returns posterior for each flow in the ensemble as an
             array of shape (inputs.shape[0], N flows in ensemble, grid.size).
             If False, the posterior is averaged over the flows in the ensemble,
             and returned as an array of shape (inputs.shape[0], grid.size)
-        nan_to_zero : bool, default=True
+        nan_to_zero : bool; default=True
             Whether to convert NaN's to zero probability in the final pdfs.
 
         Returns
@@ -317,7 +319,9 @@ class FlowEnsemble:
             # return the ensemble of posteriors
             if normalize:
                 ensemble = ensemble.reshape(-1, grid.size)
-                ensemble = ensemble / np.trapz(y=ensemble, x=grid).reshape(-1, 1)
+                ensemble = ensemble / np.trapz(y=ensemble, x=grid).reshape(
+                    -1, 1
+                )
                 ensemble = ensemble.reshape(inputs.shape[0], -1, grid.size)
             return ensemble
         else:
@@ -339,18 +343,18 @@ class FlowEnsemble:
 
         Parameters
         ----------
-        nsamples : int, default=1
+        nsamples : int; default=1
             The number of samples to be returned, either overall or per flow
             in the ensemble (see returnEnsemble below).
-        conditions : pd.DataFrame, optional
+        conditions : pd.DataFrame; optional
             If this is a conditional flow, you must pass conditions for
             each sample. nsamples will be drawn for each row in conditions.
-        save_conditions : bool, default=True
+        save_conditions : bool; default=True
             If true, conditions will be saved in the DataFrame of samples
             that is returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
-        returnEnsemble : bool, default=False
+        returnEnsemble : bool; default=False
             If True, nsamples is drawn from each flow in the ensemble.
             If False, nsamples are drawn uniformly from the flows in the ensemble.
 
@@ -400,7 +404,9 @@ class FlowEnsemble:
                         frac=1.0, random_state=int(seed / 1e9)
                     )
                     # split conditions into ~equal sized chunks
-                    chunks = onp.array_split(conditions_shuffled, len(self._ensemble))
+                    chunks = onp.array_split(
+                        conditions_shuffled, len(self._ensemble)
+                    )
                     # shuffle the chunks
                     chunks = [
                         chunks[i]
@@ -411,10 +417,12 @@ class FlowEnsemble:
                     # sample from each flow, and return all the samples
                     return pd.concat(
                         [
-                            flow.sample(1, chunk, save_conditions, seed).set_index(
-                                chunk.index
+                            flow.sample(
+                                1, chunk, save_conditions, seed
+                            ).set_index(chunk.index)
+                            for flow, chunk in zip(
+                                self._ensemble.values(), chunks
                             )
-                            for flow, chunk in zip(self._ensemble.values(), chunks)
                         ]
                     ).sort_index()
                 # however, if there are more flows in the ensemble than samples
@@ -432,9 +440,14 @@ class FlowEnsemble:
                     return pd.concat(
                         [
                             flow.sample(
-                                1, conditions[i : i + 1], save_conditions, new_seed
+                                1,
+                                conditions[i : i + 1],
+                                save_conditions,
+                                new_seed,
                             )
-                            for i, (flow, new_seed) in enumerate(zip(flows, seeds))
+                            for i, (flow, new_seed) in enumerate(
+                                zip(flows, seeds)
+                            )
                         ],
                     ).set_index(conditions.index)
 
@@ -461,7 +474,8 @@ class FlowEnsemble:
             "info": self.info,
             "class": self.__class__.__name__,
             "ensemble": {
-                name: flow._save_dict() for name, flow in self._ensemble.items()
+                name: flow._save_dict()
+                for name, flow in self._ensemble.items()
             },
         }
 
@@ -486,25 +500,25 @@ class FlowEnsemble:
         inputs : pd.DataFrame
             Data on which to train the normalizing flows.
             Must have columns matching self.data_columns.
-        epochs : int, default=50
+        epochs : int; default=50
             Number of epochs to train.
-        batch_size : int, default=1024
+        batch_size : int; default=1024
             Batch size for training.
         optimizer : jax Optimizer, default=adam(step_size=1e-3)
             An optimizer from jax.experimental.optimizers.
-        loss_fn : Callable, optional
+        loss_fn : Callable; optional
             A function to calculate the loss: loss = loss_fn(params, x).
             If not provided, will be -mean(log_prob).
-        convolve_errs : bool, default=False
+        convolve_errs : bool; default=False
             Whether to draw new data from the error distributions during
             each epoch of training. Assumes errors are Gaussian, and method
             will look for error columns in `inputs`. Error columns must end
             in `_err`. E.g. the error column for the variable `u` must be
             `u_err`. Zero error assumed for any missing error columns.
-        seed : int, default=0
+        seed : int; default=0
             A random seed to control the batching and the (optional)
             error sampling.
-        verbose : bool, default=False
+        verbose : bool; default=False
             If true, print the training loss every 5% of epochs.
 
         Returns

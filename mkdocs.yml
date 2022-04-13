@@ -26,8 +26,8 @@ theme:
     accent: deep orange
   icon:
     logo: material/star-face
-features:
-  - navigation.indexes
+  features:
+    - navigation.indexes
 plugins:
   - search
   - mkdocs-jupyter:

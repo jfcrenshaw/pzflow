@@ -59,6 +59,7 @@ def gaussian_error_model(
 
     return X[:, None, :] + eps * Xerr[:, None, :]
 
+
 def RationalQuadraticSpline(
     inputs: np.ndarray,
     W: np.ndarray,
@@ -85,10 +86,10 @@ def RationalQuadraticSpline(
     B : float
         Range of the splines.
         Outside of (-B,B), the transformation is just the identity.
-    inverse : bool, default=False
+    inverse : bool; default=False
         If True, perform the inverse transformation.
         Otherwise perform the forward transformation.
-    periodic : bool, default=False
+    periodic : bool; default=False
         Whether to make this a periodic, Circular Spline [2].
 
     Returns
@@ -169,7 +170,7 @@ def RationalQuadraticSpline(
         )
         c = -input_sk * (masked_inputs - input_yk)
 
-        relx = 2 * c / (-b - np.sqrt(b ** 2 - 4 * a * c))
+        relx = 2 * c / (-b - np.sqrt(b**2 - 4 * a * c))
         outputs = relx * input_wk + input_xk
         # if not periodic, replace out-of-bounds values with original values
         if not periodic:
@@ -178,11 +179,13 @@ def RationalQuadraticSpline(
         # [1] Appendix A.2
         # calculate the log determinant
         dnum = (
-            input_dkp1 * relx ** 2
+            input_dkp1 * relx**2
             + 2 * input_sk * relx * (1 - relx)
             + input_dk * (1 - relx) ** 2
         )
-        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
+        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
+            1 - relx
+        )
         log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
         # if not periodic, replace log_det for out-of-bounds values = 0
         if not periodic:
@@ -195,8 +198,10 @@ def RationalQuadraticSpline(
         # [1] Appendix A.1
         # calculate spline
         relx = (masked_inputs - input_xk) / input_wk
-        num = input_hk * (input_sk * relx ** 2 + input_dk * relx * (1 - relx))
-        den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
+        num = input_hk * (input_sk * relx**2 + input_dk * relx * (1 - relx))
+        den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
+            1 - relx
+        )
         outputs = input_yk + num / den
         # if not periodic, replace out-of-bounds values with original values
         if not periodic:
@@ -205,11 +210,13 @@ def RationalQuadraticSpline(
         # [1] Appendix A.2
         # calculate the log determinant
         dnum = (
-            input_dkp1 * relx ** 2
+            input_dkp1 * relx**2
             + 2 * input_sk * relx * (1 - relx)
             + input_dk * (1 - relx) ** 2
         )
-        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
+        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
+            1 - relx
+        )
         log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
         # if not periodic, replace log_det for out-of-bounds values = 0
         if not periodic:
@@ -219,7 +226,9 @@ def RationalQuadraticSpline(
         return outputs, log_det
 
 
-def sub_diag_indices(inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def sub_diag_indices(
+    inputs: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return indices for diagonal of 2D blocks in 3D array"""
     if inputs.ndim != 3:
         raise ValueError("Input must be a 3D array.")

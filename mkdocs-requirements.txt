@@ -12,3 +12,6 @@ jaxlib
 pandas
 dill
 tqdm
+flake8
+mypy
+black

@@ -5,7 +5,7 @@ import dill as pickle
 import jax.numpy as np
 import numpy as onp
 import pandas as pd
-from jax import grad, jit, ops, random
+from jax import grad, jit, random
 from jax.example_libraries.optimizers import Optimizer, adam
 from tqdm import tqdm
 
@@ -48,55 +48,56 @@ class Flow:
         """Instantiate a normalizing flow.
 
         Note that while all of the init parameters are technically optional,
-        you must provide either data_columns and bijector OR file.
+        you must provide either (data_columns and bijector) OR file.
         In addition, if a file is provided, all other parameters must be None.
 
         Parameters
         ----------
-        data_columns : Sequence[str], optional
+        data_columns : Sequence[str]; optional
             Tuple, list, or other container of column names.
             These are the columns the flow expects/produces in DataFrames.
-        bijector : Bijector Call, optional
+        bijector : Bijector Call; optional
             A Bijector call that consists of the bijector InitFunction that
             initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
-        conditional_columns : Sequence[str], optional
+        conditional_columns : Sequence[str]; optional
             Names of columns on which to condition the normalizing flow.
-        latent : distribution, optional
+        latent : distribution; optional
             The latent distribution for the normalizing flow. Can be any of
             the distributions from pzflow.distributions. If not provided,
             a normal distribution is used with the number of dimensions
             inferred.
-        data_error_model : Callable, optional
+        data_error_model : Callable; optional
             A callable that defines the error model for data variables.
-            data_error_model must take key, X, Xerr, nsamples as arguments where:
-                key is a jax rng key, e.g. jax.random.PRNGKey(0)
-                X is a 2 dimensional array of data variables, where the order
-                    of variables matches the order of the columns in data_columns
-                Xerr is the corresponding 2 dimensional array of errors
-                nsamples is the number of samples to draw from the error distribution
+            data_error_model must take key, X, Xerr, nsamples as arguments:
+                - key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                - X is 2D array of data variables, where the order of variables
+                    matches the order of the columns in data_columns
+                - Xerr is the corresponding 2D array of errors
+                - nsamples is number of samples to draw from error distribution
             data_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
-            If data_error_model is not provided, a Gaussian error model is assumed.
-        condition_error_model : Callable, optional
+            If data_error_model is not provided, Gaussian error model assumed.
+        condition_error_model : Callable; optional
             A callable that defines the error model for conditional variables.
-            condition_error_model must take key, X, Xerr, nsamples as arguments where:
-                key is a jax rng key, e.g. jax.random.PRNGKey(0)
-                X is a 2 dimensional array of conditional variables, where the order
-                    of variables matches the order of the columns in conditional_columns
-                Xerr is the corresponding 2 dimensional array of errors
-                nsamples is the number of samples to draw from the error distribution
-            condition_error_model must return an array of samples with the shape
+            condition_error_model must take key, X, Xerr, nsamples, where:
+                - key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                - X is 2D array of conditional variables, where the order of
+                    variables matches order of columns in conditional_columns
+                - Xerr is the corresponding 2D array of errors
+                - nsamples is number of samples to draw from error distribution
+            condition_error_model must return array of samples with shape
             (X.shape[0], nsamples, X.shape[1]).
-            If condition_error_model is not provided, a Gaussian error model is assumed.
-        autoscale_conditions : bool, default=True
-            Sets whether or not conditions are automatically standard scaled when
-            passed to a conditional flow. I recommend you leave this as True.
-        seed : int, default=0
+            If condition_error_model is not provided, Gaussian error model
+            assumed.
+        autoscale_conditions : bool; default=True
+            Sets whether or not conditions are automatically standard scaled
+            when passed to a conditional flow. I recommend you leave as True.
+        seed : int; default=0
             The random seed for initial parameters
-        info : Any, optional
+        info : Any; optional
             An object to attach to the info attribute.
-        file : str, optional
+        file : str; optional
             Path to file from which to load a pretrained flow.
             If a file is provided, all other parameters must be None.
         """
@@ -108,7 +109,9 @@ class Flow:
             and file is None
             and _dictionary is None
         ):
-            raise ValueError("You must provide data_columns and bijector OR file.")
+            raise ValueError(
+                "You must provide data_columns and bijector OR file."
+            )
         if data_columns is not None and bijector is None:
             raise ValueError("Please also provide a bijector.")
         if data_columns is None and bijector is not None:
@@ -227,7 +230,7 @@ class Flow:
             self._params = (self.latent._params, bijector_params)
 
     def _get_conditions(self, inputs: pd.DataFrame) -> np.ndarray:
-        ### Return an array of the bijector conditions.
+        # Return an array of the bijector conditions.
 
         # if this isn't a conditional flow, just return empty conditions
         if self.conditional_columns is None:
@@ -236,7 +239,9 @@ class Flow:
         else:
             columns = list(self.conditional_columns)
             conditions = np.array(inputs[columns].to_numpy())
-            conditions = (conditions - self._condition_means) / self._condition_stds
+            conditions = (
+                conditions - self._condition_means
+            ) / self._condition_stds
         return conditions
 
     def _get_err_samples(
@@ -247,7 +252,7 @@ class Flow:
         type: str = "data",
         skip: str = None,
     ) -> np.ndarray:
-        ### Draw error samples for each row of inputs.
+        # Draw error samples for each row of inputs.
 
         X = inputs.copy()
 
@@ -276,7 +281,9 @@ class Flow:
 
         # pull out relevant columns
         err_columns = [col + "_err" for col in columns]
-        X, Xerr = np.array(X[columns].to_numpy()), np.array(X[err_columns].to_numpy())
+        X, Xerr = np.array(X[columns].to_numpy()), np.array(
+            X[err_columns].to_numpy()
+        )
 
         # generate samples
         Xsamples = error_model(key, X, Xerr, err_samples)
@@ -289,14 +296,16 @@ class Flow:
 
         # if these are samples of conditions, standard scale them!
         if type == "conditions":
-            Xsamples = (Xsamples - self._condition_means) / self._condition_stds
+            Xsamples = (
+                Xsamples - self._condition_means
+            ) / self._condition_stds
 
         return Xsamples
 
     def _log_prob(
         self, params: Pytree, inputs: np.ndarray, conditions: np.ndarray
     ) -> np.ndarray:
-        ### Log prob for arrays.
+        # Log prob for arrays.
 
         # calculate log_prob
         u, log_det = self._forward(params[1], inputs, conditions=conditions)
@@ -317,13 +326,13 @@ class Flow:
             Every column in self.data_columns must be present.
             If self.conditional_columns is not None, those must be present
             as well. If other columns are present, they are ignored.
-        err_samples : int, default=None
+        err_samples : int; default=None
             Number of samples from the error distribution to average over for
             the log_prob calculation. If provided, Gaussian errors are assumed,
             and method will look for error columns in `inputs`. Error columns
             must end in `_err`. E.g. the error column for the variable `u` must
             be `u_err`. Zero error assumed for any missing error columns.
-        seed : int, default=None
+        seed : int; default=None
             Random seed for drawing the samples with Gaussian errors.
 
         Returns
@@ -351,7 +360,9 @@ class Flow:
             seed = onp.random.randint(1e18) if seed is None else seed
             key = random.PRNGKey(seed)
             X = self._get_err_samples(key, inputs, err_samples, type="data")
-            C = self._get_err_samples(key, inputs, err_samples, type="conditions")
+            C = self._get_err_samples(
+                key, inputs, err_samples, type="conditions"
+            )
             # calculate log_probs
             log_probs = self._log_prob(self._params, X, C)
             probs = np.exp(log_probs.reshape(-1, err_samples))
@@ -387,7 +398,7 @@ class Flow:
             `inputs` is irrelevant.
         grid : np.ndarray
             Grid on which to calculate the posterior.
-        marg_rules : dict, optional
+        marg_rules : dict; optional
             Dictionary with rules for marginalizing over missing variables.
             The dictionary must contain the key "flag", which gives the flag
             that indicates a missing value. E.g. if missing values are given
@@ -399,21 +410,21 @@ class Flow:
             the variable. E.g. {"y": lambda row: np.linspace(0, row["x"], 10)}.
             Note: the callable for a given name must *always* return an array
             of the same length, regardless of the input row.
-        err_samples : int, default=None
+        err_samples : int; default=None
             Number of samples from the error distribution to average over for
             the posterior calculation. If provided, Gaussian errors are assumed,
             and method will look for error columns in `inputs`. Error columns
             must end in `_err`. E.g. the error column for the variable `u` must
             be `u_err`. Zero error assumed for any missing error columns.
-        seed : int, default=None
+        seed : int; default=None
             Random seed for drawing the samples with Gaussian errors.
-        batch_size : int, default=None
+        batch_size : int; default=None
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
             is faster, but memory intensive for large data sets.
-        normalize : boolean, default=True
+        normalize : boolean; default=True
             Whether to normalize the posterior so that it integrates to 1.
-        nan_to_zero : bool, default=True
+        nan_to_zero : bool; default=True
             Whether to convert NaN's to zero probability in the final pdfs.
 
         Returns
@@ -514,14 +525,18 @@ class Flow:
                 # the values of the flag in the column
                 marg_inputs = pd.DataFrame(
                     onp.repeat(
-                        inputs.iloc[flagged_idx].to_numpy(), marg_grids.shape[1], axis=0
+                        inputs.iloc[flagged_idx].to_numpy(),
+                        marg_grids.shape[1],
+                        axis=0,
                     ),
                     columns=inputs.columns,
                 )
                 marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
 
                 # remove the error column if it's present
-                marg_inputs.drop(f"{name}_err", axis=1, inplace=True, errors="ignore")
+                marg_inputs.drop(
+                    f"{name}_err", axis=1, inplace=True, errors="ignore"
+                )
 
                 # calculate posteriors for these
                 marg_pdfs = self.posterior(
@@ -571,7 +586,9 @@ class Flow:
                     conditions = self._get_err_samples(
                         key, batch, err_samples, type="conditions"
                     )
-                    batch = np.repeat(batch[columns].to_numpy(), err_samples, axis=0)
+                    batch = np.repeat(
+                        batch[columns].to_numpy(), err_samples, axis=0
+                    )
                 # if drawing data and condition samples...
                 else:
                     conditions = self._get_err_samples(
@@ -603,9 +620,9 @@ class Flow:
                 conditions = np.repeat(conditions, len(grid), axis=0)
 
                 # calculate probability densities
-                log_prob = self._log_prob(self._params, batch, conditions).reshape(
-                    (-1, len(grid))
-                )
+                log_prob = self._log_prob(
+                    self._params, batch, conditions
+                ).reshape((-1, len(grid)))
                 prob = np.exp(log_prob)
                 # if we were Gaussian sampling, average over the samples
                 if err_samples is not None:
@@ -637,15 +654,15 @@ class Flow:
 
         Parameters
         ----------
-        nsamples : int, default=1
+        nsamples : int; default=1
             The number of samples to be returned.
-        conditions : pd.DataFrame, optional
+        conditions : pd.DataFrame; optional
             If this is a conditional flow, you must pass conditions for
             each sample. nsamples will be drawn for each row in conditions.
-        save_conditions : bool, default=True
+        save_conditions : bool; default=True
             If true, conditions will be saved in the DataFrame of samples
             that is returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -655,7 +672,9 @@ class Flow:
         """
 
         # validate nsamples
-        assert isinstance(nsamples, int), "nsamples must be a positive integer."
+        assert isinstance(
+            nsamples, int
+        ), "nsamples must be a positive integer."
         assert nsamples > 0, "nsamples must be a positive integer."
 
         if self.conditional_columns is not None and conditions is None:
@@ -684,16 +703,18 @@ class Flow:
         else:
             if save_conditions:
                 # unscale the conditions
-                conditions = conditions * self._condition_stds + self._condition_means
+                conditions = (
+                    conditions * self._condition_stds + self._condition_means
+                )
                 x = pd.DataFrame(
                     onp.array(np.hstack((x, conditions))),
                     columns=self.data_columns + self.conditional_columns,
                 ).set_index(conditions_idx)
             else:
                 # reindex according to the conditions
-                x = pd.DataFrame(onp.array(x), columns=self.data_columns).set_index(
-                    conditions_idx
-                )
+                x = pd.DataFrame(
+                    onp.array(x), columns=self.data_columns
+                ).set_index(conditions_idx)
 
         # return the samples!
         return x
@@ -755,9 +776,9 @@ class Flow:
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
         convolve_errs: bool = False,
+        patience=None,
         seed: int = 0,
         verbose: bool = False,
-        patience = None
     ) -> list:
         """Trains the normalizing flow on the provided inputs.
 
@@ -765,30 +786,33 @@ class Flow:
         ----------
         inputs : pd.DataFrame
             Data on which to train the normalizing flow.
-            Must have columns matching self.data_columns.
-        epochs : int, default=50
+            Must have columns matching `self.data_columns`.
+        epochs : int; default=50
             Number of epochs to train.
-        batch_size : int, default=1024
+        batch_size : int; default=1024
             Batch size for training.
-        optimizer : jax Optimizer, default=adam(step_size=1e-3)
-            An optimizer from jax.experimental.optimizers.
-        loss_fn : Callable, optional
-            A function to calculate the loss: loss = loss_fn(params, x).
-            If not provided, will be -mean(log_prob).
-        convolve_errs : bool, default=False
+        optimizer : jax Optimizer
+            An optimizer from `jax.example_libraries.optimizers`.
+            default = adam(step_size=1e-3)
+        loss_fn : Callable; optional
+            A function to calculate the loss: `loss = loss_fn(params, x)`.
+            If not provided, will be `-mean(log_prob)`.
+        convolve_errs : bool; default=False
             Whether to draw new data from the error distributions during
-            each epoch of training. Assumes errors are Gaussian, and method
-            will look for error columns in `inputs`. Error columns must end
-            in `_err`. E.g. the error column for the variable `u` must be
-            `u_err`. Zero error assumed for any missing error columns.
-        seed : int, default=0
+            each epoch of training. Method will look for error columns in
+            `inputs`. Error columns must end in `_err`. E.g. the error column
+            for the variable `u` must be `u_err`. Zero error assumed for
+            any missing error columns. The error distribution is set during
+            flow instantiation.
+        patience : int
+            Factor that controls early stopping. Training will stop if the
+            loss doesn't decrease for this number of epochs.
+        seed : int; default=0
             A random seed to control the batching and the (optional)
             error sampling.
-        verbose : bool, default=False
+        verbose : bool; default=False
             If true, print the training loss every 5% of epochs.
-        patience : int, should be smaller than the number of epochs. It is
-            a factor controlling early-stopping. The training will stop
-            after the loss doesn't decrease for this number of epochs.
+
         Returns
         -------
         list
@@ -830,7 +854,9 @@ class Flow:
             condition_stds = np.array(
                 inputs[list(self.conditional_columns)].to_numpy().std(axis=0)
             )
-            self._condition_stds = np.where(condition_stds != 0, condition_stds, 1)
+            self._condition_stds = np.where(
+                condition_stds != 0, condition_stds, 1
+            )
 
         # define a function to return batches
         if convolve_errs:
@@ -861,7 +887,7 @@ class Flow:
 
         # loop through training
         itercount = itertools.count()
-        
+
         best_loss = np.inf
         early_stopping_counter = 0
         for epoch in tqdm(range(epochs)):
@@ -877,7 +903,9 @@ class Flow:
                 # Gaussian sample of the batch. Else just returns batch as a
                 # jax array
                 batch = get_batch(
-                    sample_key, X.iloc[batch_idx : batch_idx + batch_size], type="data"
+                    sample_key,
+                    X.iloc[batch_idx : batch_idx + batch_size],
+                    type="data",
                 )
                 batch_conditions = get_batch(
                     sample_key,
@@ -902,28 +930,29 @@ class Flow:
                 )
             )
 
+            # if verbose, print current loss
             if verbose and (
-                epoch % max(int(0.05 * epochs), 1) == 0 or (epoch + 1) == epochs
+                epoch % max(int(0.05 * epochs), 1) == 0
+                or (epoch + 1) == epochs
             ):
                 print(f"({epoch+1}) {losses[-1]:.4f}")
-                
+
             # early stopping condition
-            
             if losses[-1] < best_loss:
                 best_loss = losses[-1]
                 early_stopping_counter = 0
             else:
                 early_stopping_counter += 1
-                
+
             if patience is not None:
                 if early_stopping_counter >= patience:
-                    print("Early stopping criteria is met. Training stops at the "
-                         +str(epoch)+'th epoch.')
+                    print(
+                        "Early stopping criterion is met.",
+                        f"Training stopping after epoch {epoch}.",
+                    )
                     break
 
-                
         # update the flow parameters with the final training state
         self._params = get_params(opt_state)
 
         return losses
-

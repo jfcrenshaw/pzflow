@@ -11,8 +11,10 @@ from pzflow.bijectors import Pytree
 
 epsilon = sys.float_info.epsilon
 
+
 class LatentDist(ABC):
     """Base class for latent distributions."""
+
     info = ("LatentDist", ())
 
     @abstractmethod
@@ -20,7 +22,9 @@ class LatentDist(ABC):
         """Calculate log-probability of the inputs."""
 
     @abstractmethod
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Sample from the distribution."""
 
 
@@ -28,7 +32,7 @@ def _mahalanobis_and_logdet(x, cov):
     # Calculate mahalanobis distance and log_det of cov.
     # Uses scipy method, explained here:
     # http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
-    
+
     vals, vecs = np.linalg.eigh(cov)
     U = vecs * np.sqrt(1 / vals[..., None])
     maha = np.square(U @ x[..., None]).reshape(x.shape[0], -1).sum(axis=1)
@@ -51,7 +55,7 @@ class CentBeta(LatentDist):
         ----------
         input_dim : int
             The dimension of the distribution.
-        B : float, default=5
+        B : float; default=5
             The distribution has support (-B, B) along each dimension.
         """
         self.input_dim = input_dim
@@ -92,7 +96,9 @@ class CentBeta(LatentDist):
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -102,7 +108,7 @@ class CentBeta(LatentDist):
             for the Nth dimension.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -164,7 +170,9 @@ class Normal(LatentDist):
             cov=np.identity(self.input_dim),
         )
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -174,7 +182,7 @@ class Normal(LatentDist):
             This parameter is present to ensure a consistent interface.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -237,7 +245,9 @@ class Tdist(LatentDist):
 
         return A - B - C - D + E
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -246,7 +256,7 @@ class Tdist(LatentDist):
             The degrees of freedom (nu) of the t-distribution.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -322,7 +332,9 @@ class Uniform(LatentDist):
 
         # which inputs are inside the support of the distribution
         mask = (
-            ((inputs >= self.mins) & (inputs <= self.maxes)).astype(float).prod(axis=-1)
+            ((inputs >= self.mins) & (inputs <= self.maxes))
+            .astype(float)
+            .prod(axis=-1)
         )
 
         # calculate log_prob
@@ -332,7 +344,9 @@ class Uniform(LatentDist):
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -342,7 +356,7 @@ class Uniform(LatentDist):
             This parameter is present to ensure a consistent interface.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -361,14 +375,21 @@ class Uniform(LatentDist):
 
 
 class Joint(LatentDist):
-    """A joint distribution built from other distributions."""
+    """A joint distribution built from other distributions.
 
-    def __init__(self, *inputs):
+    Note that each of the other distributions already have support for
+    multiple dimensions. This is only useful if you want to combine
+    different distributions for different dimensions, e.g. if your first
+    dimension has a Uniform latent space and the second dimension has a
+    CentBeta latent space.
+    """
+
+    def __init__(self, *inputs: LatentDist | tuple):
         """
         Parameters
         ----------
-        inputs
-            A list of distributions, or a Joint info object.
+        inputs: LatentDist or tuple
+            The latent distributions to join together.
         """
 
         # if Joint info provided, use that for setup
@@ -381,12 +402,17 @@ class Joint(LatentDist):
         # save info
         self._params = [dist._params for dist in self.dists]
         self.input_dim = sum([dist.input_dim for dist in self.dists])
-        self.info = ("Joint", ("Joint info", [dist.info for dist in self.dists]))
+        self.info = (
+            "Joint",
+            ("Joint info", [dist.info for dist in self.dists]),
+        )
 
         # save the indices at which inputs will be split for log_prob
         # they must be concretely saved ahead-of-time so that jax trace
         # works properly when jitting
-        self._splits = np.cumsum(np.array([dist.input_dim for dist in self.dists]))[:-1]
+        self._splits = np.cumsum(
+            np.array([dist.input_dim for dist in self.dists])
+        )[:-1]
 
     def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Calculates log probability density of inputs.
@@ -418,7 +444,9 @@ class Joint(LatentDist):
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -427,7 +455,7 @@ class Joint(LatentDist):
             Parameters for the distributions.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -437,7 +465,9 @@ class Joint(LatentDist):
         """
 
         seed = onp.random.randint(1e18) if seed is None else seed
-        seeds = random.randint(random.PRNGKey(seed), (len(self.dists),), 0, int(1e9))
+        seeds = random.randint(
+            random.PRNGKey(seed), (len(self.dists),), 0, int(1e9)
+        )
         samples = np.hstack(
             [
                 self.dists[i]
