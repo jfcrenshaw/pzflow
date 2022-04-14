@@ -4,6 +4,7 @@ import numpy as onp
 import pandas as pd
 import pytest
 from jax import random
+
 from pzflow import Flow
 from pzflow.bijectors import Reverse, RollingSplineCoupling
 from pzflow.distributions import *
@@ -48,11 +49,15 @@ def test_returns_correct_shape(flow):
 
     conditions = flow._get_conditions(x)
 
-    xfwd, xfwd_log_det = flow._forward(flow._params, xarray, conditions=conditions)
+    xfwd, xfwd_log_det = flow._forward(
+        flow._params, xarray, conditions=conditions
+    )
     assert xfwd.shape == x.shape
     assert xfwd_log_det.shape == (x.shape[0],)
 
-    xinv, xinv_log_det = flow._inverse(flow._params, xarray, conditions=conditions)
+    xinv, xinv_log_det = flow._inverse(
+        flow._params, xarray, conditions=conditions
+    )
     assert xinv.shape == x.shape
     assert xinv_log_det.shape == (x.shape[0],)
 
@@ -65,11 +70,15 @@ def test_returns_correct_shape(flow):
     assert pdfs.shape == (x.shape[0], grid.size)
     pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid)
     assert pdfs.shape == (x.shape[0], grid.size)
-    pdfs = flow.posterior(x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2)
+    pdfs = flow.posterior(
+        x.iloc[:, 1:], column="redshift", grid=grid, batch_size=2
+    )
     assert pdfs.shape == (x.shape[0], grid.size)
 
     assert len(flow.train(x, epochs=11, verbose=True)) == 12
-    assert len(flow.train(x, epochs=11, verbose=True, convolve_errs=True)) == 12
+    assert (
+        len(flow.train(x, epochs=11, verbose=True, convolve_errs=True)) == 12
+    )
 
 
 @pytest.mark.parametrize(
@@ -84,7 +93,9 @@ def test_posterior_with_marginalization(flag):
     flow = Flow(("a", "b", "c", "d"), Reverse())
 
     # test posteriors with marginalization
-    x = pd.DataFrame(onp.arange(16).reshape(-1, 4), columns=("a", "b", "c", "d"))
+    x = pd.DataFrame(
+        onp.arange(16).reshape(-1, 4), columns=("a", "b", "c", "d")
+    )
     grid = onp.arange(0, 2.1, 0.12)
 
     marg_rules = {
@@ -106,14 +117,20 @@ def test_posterior_with_marginalization(flag):
     "flow,x,x_with_err",
     [
         (
-            Flow(("redshift", "y"), RollingSplineCoupling(2), latent=Normal(2)),
+            Flow(
+                ("redshift", "y"), RollingSplineCoupling(2), latent=Normal(2)
+            ),
             pd.DataFrame(
                 onp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
                 columns=("redshift", "y"),
             ),
             pd.DataFrame(
                 onp.array(
-                    [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.2, 0.3], [5.0, 6.0, 0.1, 0.2]]
+                    [
+                        [1.0, 2.0, 0.1, 0.2],
+                        [3.0, 4.0, 0.2, 0.3],
+                        [5.0, 6.0, 0.1, 0.2],
+                    ]
                 ),
                 columns=("redshift", "y", "redshift_err", "y_err"),
             ),
@@ -126,7 +143,13 @@ def test_posterior_with_marginalization(flag):
                 conditional_columns=("a", "b"),
             ),
             pd.DataFrame(
-                onp.array([[1.0, 2.0, 10, 20], [3.0, 4.0, 30, 40], [5.0, 6.0, 50, 60]]),
+                onp.array(
+                    [
+                        [1.0, 2.0, 10, 20],
+                        [3.0, 4.0, 30, 40],
+                        [5.0, 6.0, 50, 60],
+                    ]
+                ),
                 columns=("redshift", "y", "a", "b"),
             ),
             pd.DataFrame(
@@ -242,8 +265,12 @@ def test_error_convolution(flow, x, x_with_err):
         rtol=1e-4,
     )
     assert np.allclose(
-        flow.posterior(x_with_err, column="y", grid=grid, err_samples=10, seed=0),
-        flow.posterior(x_with_err, column="y", grid=grid, err_samples=10, seed=0),
+        flow.posterior(
+            x_with_err, column="y", grid=grid, err_samples=10, seed=0
+        ),
+        flow.posterior(
+            x_with_err, column="y", grid=grid, err_samples=10, seed=0
+        ),
     )
 
 
@@ -423,7 +450,9 @@ def test_get_err_samples():
         condition_error_model=shift_err_model,
     )
     samples = flow._get_err_samples(rng, x, 10, type="conditions")
-    assert np.allclose(samples, np.repeat(np.array([[2.2], [4.4]]), 10, axis=0))
+    assert np.allclose(
+        samples, np.repeat(np.array([[2.2], [4.4]]), 10, axis=0)
+    )
 
 
 def test_train_w_conditions():
@@ -434,7 +463,10 @@ def test_train_w_conditions():
     x = pd.DataFrame(xarray, columns=("redshift", "y", "a", "b"))
 
     flow = Flow(
-        ("redshift", "y"), Reverse(), latent=Normal(2), conditional_columns=("a", "b")
+        ("redshift", "y"),
+        Reverse(),
+        latent=Normal(2),
+        conditional_columns=("a", "b"),
     )
     assert len(flow.train(x, epochs=11)) == 12
 
@@ -443,3 +475,15 @@ def test_train_w_conditions():
     print(xarray[:, 2:].std(axis=0))
     assert np.allclose(flow._condition_means, xarray[:, 2:].mean(axis=0))
     assert np.allclose(flow._condition_stds, xarray[:, 2:].std(axis=0))
+
+
+def test_patience():
+
+    columns = ("redshift", "y")
+    flow = Flow(columns, Reverse())
+
+    xarray = onp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    x = pd.DataFrame(xarray, columns=columns)
+
+    losses = flow.train(x, patience=2)
+    assert len(losses) == 4
