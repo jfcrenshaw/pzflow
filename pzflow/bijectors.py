@@ -3,6 +3,9 @@ from typing import Callable, Sequence, Tuple, Union
 
 import jax.numpy as np
 from jax import random
+from jax.nn import softmax, softplus
+
+from pzflow.utils import DenseReluNetwork, RationalQuadraticSpline
 
 # define a type alias for Jax Pytrees
 Pytree = Union[tuple, list]
@@ -162,7 +165,9 @@ def Chain(
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            return bijector_chain(params[::-1], inverse_funs[::-1], inputs, **kwargs)
+            return bijector_chain(
+                params[::-1], inverse_funs[::-1], inputs, **kwargs
+            )
 
         return all_params, forward_fun, inverse_fun
 
@@ -170,7 +175,9 @@ def Chain(
 
 
 @Bijector
-def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_Info]:
+def ColorTransform(
+    ref_idx: int, mag_idx: int
+) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that calculates photometric colors from magnitudes.
 
     Using ColorTransform restricts and impacts the order of columns in the
@@ -320,7 +327,7 @@ def InvSoftplus(
     column_idx : int
         An index or iterable of indices corresponding to the column(s)
         you wish to be transformed.
-    sharpness : float, default=1
+    sharpness : float; default=1
         The sharpness(es) of the softplus transformation. If more than one
         is provided, the list of sharpnesses must be of the same length as
         column_idx.
@@ -367,6 +374,155 @@ def InvSoftplus(
 
 
 @Bijector
+def NeuralSplineCoupling(
+    K: int = 16,
+    B: float = 5,
+    hidden_layers: int = 2,
+    hidden_dim: int = 128,
+    transformed_dim: int = None,
+    n_conditions: int = 0,
+    periodic: bool = False,
+) -> Tuple[InitFunction, Bijector_Info]:
+    """A coupling layer bijection with rational quadratic splines.
+
+    This Bijector is a Coupling Layer [1,2], and as such only transforms
+    the second half of input dimensions (or the last N dimensions, where
+    N = transformed_dim). In order to transform all of the dimensions,
+    you need multiple Couplings interspersed with Bijectors that change
+    the order of inputs dimensions, e.g., Reverse, Shuffle, Roll, etc.
+
+    NeuralSplineCoupling uses piecewise rational quadratic splines,
+    as developed in [3].
+
+    If periodic=True, then this is a Circular Spline as described in [4].
+
+    Parameters
+    ----------
+    K : int; default=16
+        Number of bins in the spline (the number of knots is K+1).
+    B : float; default=5
+        Range of the splines.
+        If periodic=False, outside of (-B,B), the transformation is just
+        the identity. If periodic=True, the input is mapped into the
+        appropriate location in the range (-B,B).
+    hidden_layers : int; default=2
+        The number of hidden layers in the neural network used to calculate
+        the positions and derivatives of the spline knots.
+    hidden_dim : int; default=128
+        The width of the hidden layers in the neural network used to
+        calculate the positions and derivatives of the spline knots.
+    transformed_dim : int; optional
+        The number of dimensions transformed by the splines.
+        Default is ceiling(input_dim /2).
+    n_conditions : int; default=0
+        The number of variables to condition the bijection on.
+    periodic : bool; default=False
+        Whether to make this a periodic, Circular Spline [4].
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the NeuralSplineCoupling Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+
+    References
+    ----------
+    [1] Laurent Dinh, David Krueger, Yoshua Bengio. NICE: Non-linear
+        Independent Components Estimation. arXiv: 1605.08803, 2015.
+        http://arxiv.org/abs/1605.08803
+    [2] Laurent Dinh, Jascha Sohl-Dickstein, Samy Bengio.
+        Density Estimation Using Real NVP. arXiv: 1605.08803, 2017.
+        http://arxiv.org/abs/1605.08803
+    [3] Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios.
+        Neural Spline Flows. arXiv:1906.04032, 2019.
+        https://arxiv.org/abs/1906.04032
+    [4] Rezende, Danilo Jimenez et al.
+        Normalizing Flows on Tori and Spheres. arxiv:2002.02428, 2020
+        http://arxiv.org/abs/2002.02428
+    """
+
+    if not isinstance(periodic, bool):
+        raise ValueError("`periodic` must be True or False.")
+
+    bijector_info = (
+        "NeuralSplineCoupling",
+        (
+            K,
+            B,
+            hidden_layers,
+            hidden_dim,
+            transformed_dim,
+            n_conditions,
+            periodic,
+        ),
+    )
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+
+        if transformed_dim is None:
+            upper_dim = input_dim // 2  # variables that determine NN params
+            lower_dim = (
+                input_dim - upper_dim
+            )  # variables transformed by the NN
+        else:
+            upper_dim = input_dim - transformed_dim
+            lower_dim = transformed_dim
+
+        # create the neural network that will take in the upper dimensions and
+        # will return the spline parameters to transform the lower dimensions
+        network_init_fun, network_apply_fun = DenseReluNetwork(
+            (3 * K - 1 + int(periodic)) * lower_dim, hidden_layers, hidden_dim
+        )
+        _, network_params = network_init_fun(rng, (upper_dim + n_conditions,))
+
+        # calculate spline parameters as a function of the upper variables
+        def spline_params(params, upper, conditions):
+            key = np.hstack((upper, conditions))[:, : upper_dim + n_conditions]
+            outputs = network_apply_fun(params, key)
+            outputs = np.reshape(
+                outputs, [-1, lower_dim, 3 * K - 1 + int(periodic)]
+            )
+            W, H, D = np.split(outputs, [K, 2 * K], axis=2)
+            W = 2 * B * softmax(W)
+            H = 2 * B * softmax(H)
+            D = softplus(D)
+            return W, H, D
+
+        @ForwardFunction
+        def forward_fun(params, inputs, conditions, **kwargs):
+            # lower dimensions are transformed as function of upper dimensions
+            upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
+            # widths, heights, derivatives = function(upper dimensions)
+            W, H, D = spline_params(params, upper, conditions)
+            # transform the lower dimensions with the Rational Quadratic Spline
+            lower, log_det = RationalQuadraticSpline(
+                lower, W, H, D, B, periodic, inverse=False
+            )
+            outputs = np.hstack((upper, lower))
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, conditions, **kwargs):
+            # lower dimensions are transformed as function of upper dimensions
+            upper, lower = inputs[:, :upper_dim], inputs[:, upper_dim:]
+            # widths, heights, derivatives = function(upper dimensions)
+            W, H, D = spline_params(params, upper, conditions)
+            # transform the lower dimensions with the Rational Quadratic Spline
+            lower, log_det = RationalQuadraticSpline(
+                lower, W, H, D, B, periodic, inverse=True
+            )
+            outputs = np.hstack((upper, lower))
+            return outputs, log_det
+
+        return network_params, forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
 def Reverse() -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that reverses the order of inputs.
 
@@ -406,7 +562,7 @@ def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
 
     Parameters
     ----------
-    shift : int, default=1
+    shift : int; default=1
         The number of places to roll.
 
     Returns
@@ -443,6 +599,73 @@ def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
 
 
 @Bijector
+def RollingSplineCoupling(
+    nlayers: int,
+    shift: int = 1,
+    K: int = 16,
+    B: float = 5,
+    hidden_layers: int = 2,
+    hidden_dim: int = 128,
+    transformed_dim: int = None,
+    n_conditions: int = 0,
+    periodic: bool = False,
+) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that alternates NeuralSplineCouplings and Roll bijections.
+
+    Parameters
+    ----------
+    nlayers : int
+        The number of (NeuralSplineCoupling(), Roll()) couplets in the chain.
+    shift : int
+        How far the inputs are shifted on each Roll().
+    K : int; default=16
+        Number of bins in the RollingSplineCoupling.
+    B : float; default=5
+        Range of the splines in the RollingSplineCoupling.
+        If periodic=False, outside of (-B,B), the transformation is just
+        the identity. If periodic=True, the input is mapped into the
+        appropriate location in the range (-B,B).
+    hidden_layers : int; default=2
+        The number of hidden layers in the neural network used to calculate
+        the bins and derivatives in the RollingSplineCoupling.
+    hidden_dim : int; default=128
+        The width of the hidden layers in the neural network used to
+        calculate the bins and derivatives in the RollingSplineCoupling.
+    transformed_dim : int; optional
+        The number of dimensions transformed by the splines.
+        Default is ceiling(input_dim /2).
+    n_conditions : int; default=0
+        The number of variables to condition the bijection on.
+    periodic : bool; default=False
+        Whether to make this a periodic, Circular Spline
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the RollingSplineCoupling Bijector.
+    Bijector_Info
+        Nested tuple of the Bijector name and input parameters. This allows
+        it to be recreated later.
+
+    """
+    return Chain(
+        *(
+            NeuralSplineCoupling(
+                K=K,
+                B=B,
+                hidden_layers=hidden_layers,
+                hidden_dim=hidden_dim,
+                transformed_dim=transformed_dim,
+                n_conditions=n_conditions,
+                periodic=periodic,
+            ),
+            Roll(shift),
+        )
+        * nlayers
+    )
+
+
+@Bijector
 def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that multiplies inputs by a scalar.
 
@@ -473,13 +696,17 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = scale * inputs
-            log_det = np.log(scale ** inputs.shape[-1]) * np.ones(inputs.shape[0])
+            log_det = np.log(scale ** inputs.shape[-1]) * np.ones(
+                inputs.shape[0]
+            )
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = 1 / scale * inputs
-            log_det = -np.log(scale ** inputs.shape[-1]) * np.ones(inputs.shape[0])
+            log_det = -np.log(scale ** inputs.shape[-1]) * np.ones(
+                inputs.shape[0]
+            )
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -499,7 +726,7 @@ def ShiftBounds(
         The minimum of the input range.
     min : float
         The maximum of the input range.
-    B : float, default=5
+    B : float; default=5
         The extent of the output bounds, which will be (-B, B).
 
     Returns
@@ -532,13 +759,17 @@ def ShiftBounds(
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = B * (inputs - mean) / half_range
-            log_det = np.log(np.prod(B / half_range)) * np.ones(inputs.shape[0])
+            log_det = np.log(np.prod(B / half_range)) * np.ones(
+                inputs.shape[0]
+            )
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * half_range / B + mean
-            log_det = np.log(np.prod(half_range / B)) * np.ones(inputs.shape[0])
+            log_det = np.log(np.prod(half_range / B)) * np.ones(
+                inputs.shape[0]
+            )
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -660,7 +891,9 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            u = random.uniform(random.PRNGKey(0), shape=inputs[:, column_idx].shape)
+            u = random.uniform(
+                random.PRNGKey(0), shape=inputs[:, column_idx].shape
+            )
             outputs = inputs.astype(float)
             outputs.at[:, column_idx].set(outputs[:, column_idx] + u)
             log_det = np.zeros(inputs.shape[0])
@@ -668,7 +901,9 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = inputs.at[:, column_idx].set(np.floor(inputs[:, column_idx]))
+            outputs = inputs.at[:, column_idx].set(
+                np.floor(inputs[:, column_idx])
+            )
             log_det = np.zeros(inputs.shape[0])
             return outputs, log_det
 

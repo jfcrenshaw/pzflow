@@ -1,4 +1,6 @@
 import sys
+from abc import ABC, abstractmethod
+from typing import Union
 
 import jax.numpy as np
 import numpy as onp
@@ -11,11 +13,27 @@ from pzflow.bijectors import Pytree
 epsilon = sys.float_info.epsilon
 
 
+class LatentDist(ABC):
+    """Base class for latent distributions."""
+
+    info = ("LatentDist", ())
+
+    @abstractmethod
+    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+        """Calculate log-probability of the inputs."""
+
+    @abstractmethod
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
+        """Sample from the distribution."""
+
+
 def _mahalanobis_and_logdet(x, cov):
-    """Calculate mahalanobis distance and log_det of cov.
-    Uses scipy method, explained here:
-    http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
-    """
+    # Calculate mahalanobis distance and log_det of cov.
+    # Uses scipy method, explained here:
+    # http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
+
     vals, vecs = np.linalg.eigh(cov)
     U = vecs * np.sqrt(1 / vals[..., None])
     maha = np.square(U @ x[..., None]).reshape(x.shape[0], -1).sum(axis=1)
@@ -23,7 +41,7 @@ def _mahalanobis_and_logdet(x, cov):
     return maha, log_det
 
 
-class CentBeta:
+class CentBeta(LatentDist):
     """A centered Beta distribution.
 
     This distribution is just a regular Beta distribution, scaled and shifted
@@ -38,7 +56,7 @@ class CentBeta:
         ----------
         input_dim : int
             The dimension of the distribution.
-        B : float, default=5
+        B : float; default=5
             The distribution has support (-B, B) along each dimension.
         """
         self.input_dim = input_dim
@@ -79,7 +97,9 @@ class CentBeta:
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -89,7 +109,7 @@ class CentBeta:
             for the Nth dimension.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -113,7 +133,7 @@ class CentBeta:
         return 2 * self.B * (samples - 0.5)
 
 
-class Normal:
+class Normal(LatentDist):
     """A multivariate Gaussian distribution with mean zero and unit variance."""
 
     def __init__(self, input_dim: int):
@@ -151,7 +171,9 @@ class Normal:
             cov=np.identity(self.input_dim),
         )
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -161,7 +183,7 @@ class Normal:
             This parameter is present to ensure a consistent interface.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -178,7 +200,7 @@ class Normal:
         )
 
 
-class Tdist:
+class Tdist(LatentDist):
     """A multivariate T distribution with mean zero and unit scale matrix."""
 
     def __init__(self, input_dim: int):
@@ -224,7 +246,9 @@ class Tdist:
 
         return A - B - C - D + E
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -233,7 +257,7 @@ class Tdist:
             The degrees of freedom (nu) of the t-distribution.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -257,7 +281,7 @@ class Tdist:
         return samples
 
 
-class Uniform:
+class Uniform(LatentDist):
     """A multivariate uniform distribution."""
 
     def __init__(self, *ranges):
@@ -309,7 +333,9 @@ class Uniform:
 
         # which inputs are inside the support of the distribution
         mask = (
-            ((inputs >= self.mins) & (inputs <= self.maxes)).astype(float).prod(axis=-1)
+            ((inputs >= self.mins) & (inputs <= self.maxes))
+            .astype(float)
+            .prod(axis=-1)
         )
 
         # calculate log_prob
@@ -319,7 +345,9 @@ class Uniform:
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -329,7 +357,7 @@ class Uniform:
             This parameter is present to ensure a consistent interface.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -347,15 +375,22 @@ class Uniform:
         return np.array(samples)
 
 
-class Joint:
-    """A joint distribution built from other distributions."""
+class Joint(LatentDist):
+    """A joint distribution built from other distributions.
 
-    def __init__(self, *inputs):
+    Note that each of the other distributions already have support for
+    multiple dimensions. This is only useful if you want to combine
+    different distributions for different dimensions, e.g. if your first
+    dimension has a Uniform latent space and the second dimension has a
+    CentBeta latent space.
+    """
+
+    def __init__(self, *inputs: Union[LatentDist, tuple]):
         """
         Parameters
         ----------
-        inputs
-            A list of distributions, or a Joint info object.
+        inputs: LatentDist or tuple
+            The latent distributions to join together.
         """
 
         # if Joint info provided, use that for setup
@@ -368,12 +403,17 @@ class Joint:
         # save info
         self._params = [dist._params for dist in self.dists]
         self.input_dim = sum([dist.input_dim for dist in self.dists])
-        self.info = ("Joint", ("Joint info", [dist.info for dist in self.dists]))
+        self.info = (
+            "Joint",
+            ("Joint info", [dist.info for dist in self.dists]),
+        )
 
         # save the indices at which inputs will be split for log_prob
         # they must be concretely saved ahead-of-time so that jax trace
         # works properly when jitting
-        self._splits = np.cumsum(np.array([dist.input_dim for dist in self.dists]))[:-1]
+        self._splits = np.cumsum(
+            np.array([dist.input_dim for dist in self.dists])
+        )[:-1]
 
     def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
         """Calculates log probability density of inputs.
@@ -405,7 +445,9 @@ class Joint:
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> np.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -414,7 +456,7 @@ class Joint:
             Parameters for the distributions.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
@@ -424,7 +466,9 @@ class Joint:
         """
 
         seed = onp.random.randint(1e18) if seed is None else seed
-        seeds = random.randint(random.PRNGKey(seed), (len(self.dists),), 0, int(1e9))
+        seeds = random.randint(
+            random.PRNGKey(seed), (len(self.dists),), 0, int(1e9)
+        )
         samples = np.hstack(
             [
                 self.dists[i]
