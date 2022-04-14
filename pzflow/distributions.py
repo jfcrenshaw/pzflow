@@ -1,5 +1,6 @@
 import sys
 from abc import ABC, abstractmethod
+from typing import Union
 
 import jax.numpy as np
 import numpy as onp
@@ -384,7 +385,7 @@ class Joint(LatentDist):
     CentBeta latent space.
     """
 
-    def __init__(self, *inputs: LatentDist | tuple):
+    def __init__(self, *inputs: Union[LatentDist, tuple]):
         """
         Parameters
         ----------

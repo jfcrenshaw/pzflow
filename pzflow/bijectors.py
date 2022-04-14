@@ -3,6 +3,7 @@ from typing import Callable, Sequence, Tuple, Union
 
 import jax.numpy as np
 from jax import random
+from jax.nn import softmax, softplus
 
 from pzflow.utils import DenseReluNetwork, RationalQuadraticSpline
 

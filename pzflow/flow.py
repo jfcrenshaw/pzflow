@@ -776,7 +776,7 @@ class Flow:
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
         convolve_errs: bool = False,
-        patience=None,
+        patience: int = None,
         seed: int = 0,
         verbose: bool = False,
     ) -> list:
@@ -804,7 +804,7 @@ class Flow:
             for the variable `u` must be `u_err`. Zero error assumed for
             any missing error columns. The error distribution is set during
             flow instantiation.
-        patience : int
+        patience : int; optional
             Factor that controls early stopping. Training will stop if the
             loss doesn't decrease for this number of epochs.
         seed : int; default=0
@@ -937,20 +937,25 @@ class Flow:
             ):
                 print(f"({epoch+1}) {losses[-1]:.4f}")
 
-            # early stopping condition
-            if losses[-1] < best_loss:
-                best_loss = losses[-1]
-                early_stopping_counter = 0
-            else:
-                early_stopping_counter += 1
-
+            # if patience provided, we need to check for early stopping
             if patience is not None:
-                if early_stopping_counter >= patience:
-                    print(
-                        "Early stopping criterion is met.",
-                        f"Training stopping after epoch {epoch}.",
-                    )
-                    break
+
+                # if this is the best loss, reset the counter
+                if losses[-1] < best_loss:
+                    best_loss = losses[-1]
+                    early_stopping_counter = 0
+
+                # if it's not, increment the counter
+                else:
+                    early_stopping_counter += 1
+
+                    # check if the early stopping criterion is met
+                    if early_stopping_counter >= patience:
+                        print(
+                            "Early stopping criterion is met.",
+                            f"Training stopping after epoch {epoch}.",
+                        )
+                        break
 
         # update the flow parameters with the final training state
         self._params = get_params(opt_state)
