@@ -131,12 +131,10 @@ def test_train():
     data = pd.DataFrame(onp.array(data), columns=("x", "y"))
 
     loss_dict = flowEns.train(data, epochs=4, batch_size=50, verbose=True)
-
-    # I used to make sure loss_dict["Flow 0"] = losses0
-    # but that started failing, not sure why
-    # hopefully I can fix that someday...
-    assert all(~onp.isnan(loss_dict["Flow 0"]))
-    assert all(~onp.isnan(loss_dict["Flow 1"]))
+    losses0 = flow0.train(data, epochs=4, batch_size=50)
+    losses1 = flow1.train(data, epochs=4, batch_size=50)
+    assert np.allclose(np.array(loss_dict["Flow 0"]), np.array(losses0))
+    assert np.allclose(np.array(loss_dict["Flow 1"]), np.array(losses1))
 
 
 def test_load_ensemble(tmp_path):

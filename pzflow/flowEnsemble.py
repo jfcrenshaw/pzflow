@@ -490,6 +490,7 @@ class FlowEnsemble:
         optimizer: Optimizer = None,
         loss_fn: Callable = None,
         convolve_errs: bool = False,
+        patience: int = None,
         seed: int = 0,
         verbose: bool = False,
     ) -> dict:
@@ -511,10 +512,14 @@ class FlowEnsemble:
             If not provided, will be -mean(log_prob).
         convolve_errs : bool; default=False
             Whether to draw new data from the error distributions during
-            each epoch of training. Assumes errors are Gaussian, and method
-            will look for error columns in `inputs`. Error columns must end
-            in `_err`. E.g. the error column for the variable `u` must be
-            `u_err`. Zero error assumed for any missing error columns.
+            each epoch of training. Method will look for error columns in
+            `inputs`. Error columns must end in `_err`. E.g. the error column
+            for the variable `u` must be `u_err`. Zero error assumed for
+            any missing error columns. The error distribution is set during
+            ensemble instantiation.
+        patience : int; optional
+            Factor that controls early stopping. Training will stop if the
+            loss doesn't decrease for this number of epochs.
         seed : int; default=0
             A random seed to control the batching and the (optional)
             error sampling.
@@ -536,14 +541,15 @@ class FlowEnsemble:
                 print(name)
 
             loss_dict[name] = flow.train(
-                inputs,
-                epochs,
-                batch_size,
-                optimizer,
-                loss_fn,
-                convolve_errs,
-                seed,
-                verbose,
+                inputs=inputs,
+                epochs=epochs,
+                batch_size=batch_size,
+                optimizer=optimizer,
+                loss_fn=loss_fn,
+                convolve_errs=convolve_errs,
+                patience=patience,
+                seed=seed,
+                verbose=verbose,
             )
 
         return loss_dict
