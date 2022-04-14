@@ -23,6 +23,12 @@ class FlowEnsemble:
     latent: distributions.LatentDist
         The latent distribution of the normalizing flows.
         Has it's own sample and log_prob methods.
+    data_error_model : Callable
+        The error model for the data variables. See the docstring of
+        __init__ for more details.
+    condition_error_model : Callable
+        The error model for the conditional variables. See the docstring
+        of __init__ for more details.
     info : Any
         Object containing any kind of info included with the ensemble.
         Often Reverse the data the flows are trained on.
@@ -143,7 +149,14 @@ class FlowEnsemble:
             # load the metadata
             self.data_columns = save_dict["data_columns"]
             self.conditional_columns = save_dict["conditional_columns"]
+            self.data_error_model = save_dict["data_error_model"]
+            self.condition_error_model = save_dict["condition_error_model"]
             self.info = save_dict["info"]
+
+            self._latent_info = save_dict["latent_info"]
+            self.latent = getattr(distributions, self._latent_info[0])(
+                *self._latent_info[1]
+            )
 
         # otherwise create a new ensemble from the provided parameters
         else:
@@ -165,6 +178,9 @@ class FlowEnsemble:
             # save the metadata
             self.data_columns = data_columns
             self.conditional_columns = conditional_columns
+            self.latent = self._ensemble["Flow 0"].latent
+            self.data_error_model = data_error_model
+            self.condition_error_model = condition_error_model
             self.info = info
 
     def log_prob(
@@ -471,6 +487,9 @@ class FlowEnsemble:
         save_dict = {
             "data_columns": self.data_columns,
             "conditional_columns": self.conditional_columns,
+            "latent_info": self.latent.info,
+            "data_error_model": self.data_error_model,
+            "condition_error_model": self.condition_error_model,
             "info": self.info,
             "class": self.__class__.__name__,
             "ensemble": {

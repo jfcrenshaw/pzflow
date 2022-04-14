@@ -26,6 +26,12 @@ class Flow:
     latent : distributions.LatentDist
         The latent distribution of the normalizing flow.
         Has it's own sample and log_prob methods.
+    data_error_model : Callable
+        The error model for the data variables. See the docstring of
+        __init__ for more details.
+    condition_error_model : Callable
+        The error model for the conditional variables. See the docstring
+        of __init__ for more details.
     info : Any
         Object containing any kind of info included with the flow.
         Often describes the data the flow is trained on.
