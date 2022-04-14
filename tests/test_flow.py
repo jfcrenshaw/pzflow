@@ -14,7 +14,6 @@ from pzflow.distributions import *
     "data_columns,bijector,info,file,_dictionary",
     [
         (None, None, None, None, None),
-        (("x", "y"), None, None, None, None),
         (None, Reverse(), None, None, None),
         (("x", "y"), None, None, "file", None),
         (None, Reverse(), None, "file", None),

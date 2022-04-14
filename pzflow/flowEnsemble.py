@@ -37,8 +37,8 @@ class FlowEnsemble:
         self,
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
-        conditional_columns: Sequence[str] = None,
         latent: distributions.LatentDist = None,
+        conditional_columns: Sequence[str] = None,
         data_error_model: Callable = None,
         condition_error_model: Callable = None,
         autoscale_conditions: bool = True,
@@ -61,38 +61,46 @@ class FlowEnsemble:
             A Bijector call that consists of the bijector InitFunction that
             initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
-        conditional_columns : Sequence[str]; optional
-            Names of columns on which to condition the normalizing flows.
+            If not provided, the bijector can be set later using
+            flow.set_bijector, or by calling flow.train, in which case the
+            default bijector will be used. The default bijector is
+            ShiftBounds -> RollingSplineCoupling, where the range of shift
+            bounds is learned from the training data, and the dimensions of
+            RollingSplineCoupling is inferred. The default bijector assumes
+            that the latent has support [-5, 5] for every dimension.
         latent : distributions.LatentDist; optional
             The latent distribution for the normalizing flow. Can be any of
             the distributions from pzflow.distributions. If not provided,
             a uniform distribution is used with input_dim = len(data_columns),
             and B=5.
+        conditional_columns : Sequence[str]; optional
+            Names of columns on which to condition the normalizing flows.
         data_error_model : Callable; optional
             A callable that defines the error model for data variables.
-            data_error_model must take key, X, Xerr, nsamples as arguments where:
-                key is a jax rng key, e.g. jax.random.PRNGKey(0)
-                X is a 2 dimensional array of data variables, where the order
-                    of variables matches the order of the columns in data_columns
-                Xerr is the corresponding 2 dimensional array of errors
-                nsamples is the number of samples to draw from the error distribution
+            data_error_model must take key, X, Xerr, nsamples as arguments:
+                - key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                - X is 2D array of data variables, where the order of variables
+                    matches the order of the columns in data_columns
+                - Xerr is the corresponding 2D array of errors
+                - nsamples is number of samples to draw from error distribution
             data_error_model must return an array of samples with the shape
             (X.shape[0], nsamples, X.shape[1]).
-            If data_error_model is not provided, a Gaussian error model is assumed.
+            If data_error_model is not provided, Gaussian error model assumed.
         condition_error_model : Callable; optional
             A callable that defines the error model for conditional variables.
-            condition_error_model must take key, X, Xerr, nsamples as arguments where:
-                key is a jax rng key, e.g. jax.random.PRNGKey(0)
-                X is a 2 dimensional array of conditional variables, where the order
-                    of variables matches the order of the columns in conditional_columns
-                Xerr is the corresponding 2 dimensional array of errors
-                nsamples is the number of samples to draw from the error distribution
-            condition_error_model must return an array of samples with the shape
+            condition_error_model must take key, X, Xerr, nsamples, where:
+                - key is a jax rng key, e.g. jax.random.PRNGKey(0)
+                - X is 2D array of conditional variables, where the order of
+                    variables matches order of columns in conditional_columns
+                - Xerr is the corresponding 2D array of errors
+                - nsamples is number of samples to draw from error distribution
+            condition_error_model must return array of samples with shape
             (X.shape[0], nsamples, X.shape[1]).
-            If condition_error_model is not provided, a Gaussian error model is assumed.
-        autoscale_conditions : bool; defautl=True
-            Sets whether or not conditions are automatically standard scaled when
-            passed to a conditional flow. I recommend you leave this as True.
+            If condition_error_model is not provided, Gaussian error model
+            assumed.
+        autoscale_conditions : bool; default=True
+            Sets whether or not conditions are automatically standard scaled
+            when passed to a conditional flow. I recommend you leave as True.
         N : int; default=1
             The number of flows in the ensemble.
         info : Any; optional
@@ -103,14 +111,8 @@ class FlowEnsemble:
         """
 
         # validate parameters
-        if data_columns is None and bijector is None and file is None:
-            raise ValueError(
-                "You must provide data_columns and bijector OR file."
-            )
-        if data_columns is not None and bijector is None:
-            raise ValueError("Please also provide a bijector.")
-        if data_columns is None and bijector is not None:
-            raise ValueError("Please also provide data_columns.")
+        if data_columns is None and file is None:
+            raise ValueError("You must provide data_columns OR file.")
         if file is not None and any(
             (
                 data_columns is not None,
@@ -552,9 +554,13 @@ class FlowEnsemble:
             in the ensemble.
         """
 
+        # generate random seeds for each flow
+        rng = np.random.default_rng(seed)
+        seeds = rng.integers(1e9, size=len(self._ensemble))
+
         loss_dict = dict()
 
-        for name, flow in self._ensemble.items():
+        for i, (name, flow) in enumerate(self._ensemble.items()):
 
             if verbose:
                 print(name)
@@ -567,7 +573,7 @@ class FlowEnsemble:
                 loss_fn=loss_fn,
                 convolve_errs=convolve_errs,
                 patience=patience,
-                seed=seed,
+                seed=seeds[i],
                 verbose=verbose,
             )
 

@@ -127,8 +127,12 @@ def test_train():
     data = pd.DataFrame(np.array(data), columns=("x", "y"))
 
     loss_dict = flowEns.train(data, epochs=4, batch_size=50, verbose=True)
-    losses0 = flow0.train(data, epochs=4, batch_size=50)
-    losses1 = flow1.train(data, epochs=4, batch_size=50)
+
+    rng = np.random.default_rng(0)
+    seeds = rng.integers(1e9, size=2)
+    losses0 = flow0.train(data, epochs=4, batch_size=50, seed=seeds[0])
+    losses1 = flow1.train(data, epochs=4, batch_size=50, seed=seeds[1])
+
     assert jnp.allclose(jnp.array(loss_dict["Flow 0"]), jnp.array(losses0))
     assert jnp.allclose(jnp.array(loss_dict["Flow 1"]), jnp.array(losses1))
 
@@ -162,7 +166,6 @@ def test_load_ensemble(tmp_path):
     "data_columns,bijector,info,file",
     [
         (None, None, None, None),
-        (("x", "y"), None, None, None),
         (None, Reverse(), None, None),
         (("x", "y"), None, None, "file"),
         (None, Reverse(), None, "file"),

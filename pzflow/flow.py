@@ -10,7 +10,14 @@ from jax import grad, jit, random
 from tqdm import tqdm
 
 from pzflow import distributions
-from pzflow.bijectors import Bijector_Info, InitFunction, Pytree
+from pzflow.bijectors import (
+    Bijector_Info,
+    Chain,
+    InitFunction,
+    Pytree,
+    RollingSplineCoupling,
+    ShiftBounds,
+)
 from pzflow.utils import build_bijector_from_info, gaussian_error_model
 
 
@@ -41,8 +48,8 @@ class Flow:
         self,
         data_columns: Sequence[str] = None,
         bijector: Tuple[InitFunction, Bijector_Info] = None,
-        conditional_columns: Sequence[str] = None,
         latent: distributions.LatentDist = None,
+        conditional_columns: Sequence[str] = None,
         data_error_model: Callable = None,
         condition_error_model: Callable = None,
         autoscale_conditions: bool = True,
@@ -54,7 +61,7 @@ class Flow:
         """Instantiate a normalizing flow.
 
         Note that while all of the init parameters are technically optional,
-        you must provide either (data_columns and bijector) OR file.
+        you must provide either data_columns OR file.
         In addition, if a file is provided, all other parameters must be None.
 
         Parameters
@@ -66,13 +73,20 @@ class Flow:
             A Bijector call that consists of the bijector InitFunction that
             initializes the bijector and the tuple of Bijector Info.
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
-        conditional_columns : Sequence[str]; optional
-            Names of columns on which to condition the normalizing flow.
+            If not provided, the bijector can be set later using
+            flow.set_bijector, or by calling flow.train, in which case the
+            default bijector will be used. The default bijector is
+            ShiftBounds -> RollingSplineCoupling, where the range of shift
+            bounds is learned from the training data, and the dimensions of
+            RollingSplineCoupling is inferred. The default bijector assumes
+            that the latent has support [-5, 5] for every dimension.
         latent : distributions.LatentDist; optional
             The latent distribution for the normalizing flow. Can be any of
             the distributions from pzflow.distributions. If not provided,
             a uniform distribution is used with input_dim = len(data_columns),
             and B=5.
+        conditional_columns : Sequence[str]; optional
+            Names of columns on which to condition the normalizing flow.
         data_error_model : Callable; optional
             A callable that defines the error model for data variables.
             data_error_model must take key, X, Xerr, nsamples as arguments:
@@ -109,19 +123,8 @@ class Flow:
         """
 
         # validate parameters
-        if (
-            data_columns is None
-            and bijector is None
-            and file is None
-            and _dictionary is None
-        ):
-            raise ValueError(
-                "You must provide data_columns and bijector OR file."
-            )
-        if data_columns is not None and bijector is None:
-            raise ValueError("Please also provide a bijector.")
-        if data_columns is None and bijector is not None:
-            raise ValueError("Please also provide data_columns.")
+        if data_columns is None and file is None and _dictionary is None:
+            raise ValueError("You must provide data_columns OR file.")
         if any(
             (
                 data_columns is not None,
@@ -156,8 +159,8 @@ class Flow:
 
             if save_dict["class"] != self.__class__.__name__:
                 raise TypeError(
-                    f"This save file isn't a {self.__class__.__name__}."
-                    + f"It is a {save_dict['class']}"
+                    f"This save file isn't a {self.__class__.__name__}. "
+                    f"It is a {save_dict['class']}"
                 )
 
             # load columns and dimensions
@@ -178,10 +181,11 @@ class Flow:
 
             # load the bijector
             self._bijector_info = save_dict["bijector_info"]
-            init_fun, _ = build_bijector_from_info(self._bijector_info)
-            _, self._forward, self._inverse = init_fun(
-                random.PRNGKey(0), self._input_dim
-            )
+            if self._bijector_info is not None:
+                init_fun, _ = build_bijector_from_info(self._bijector_info)
+                _, self._forward, self._inverse = init_fun(
+                    random.PRNGKey(0), self._input_dim
+                )
             self._params = save_dict["params"]
 
             # load the conditional means and stds
@@ -239,12 +243,81 @@ class Flow:
             else:
                 self.condition_error_model = condition_error_model
 
-            # set up the bijector with random params
-            init_fun, self._bijector_info = bijector
-            bijector_params, self._forward, self._inverse = init_fun(
-                random.PRNGKey(seed), self._input_dim
+            # set up the bijector
+            if bijector is not None:
+                self.set_bijector(bijector, seed=seed)
+            # if no bijector was provided, set bijector_info to None
+            else:
+                self._bijector_info = None
+
+    def _check_bijector(self):
+        if self._bijector_info is None:
+            raise ValueError(
+                "The bijector has not been set up yet! "
+                "You can do this by calling "
+                "flow.set_bijector(bijector, params), "
+                "or by calling train, in which case the default "
+                "bijector will be used."
             )
-            self._params = (self.latent._params, bijector_params)
+
+    def set_bijector(
+        self,
+        bijector: Tuple[InitFunction, Bijector_Info],
+        params: Pytree = None,
+        seed: int = 0,
+    ):
+        """Set the bijector.
+
+        Parameters
+        ----------
+        bijector : Bijector Call
+            A Bijector call that consists of the bijector InitFunction that
+            initializes the bijector and the tuple of Bijector Info.
+            Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
+        params : Pytree; optional
+            A Pytree of bijector parameters. If not provided, the bijector
+            will be initialized with random parameters.
+        seed: int; default=0
+            A random seed for initializing the bijector with random parameters.
+        """
+
+        # set up the bijector
+        init_fun, self._bijector_info = bijector
+        bijector_params, self._forward, self._inverse = init_fun(
+            random.PRNGKey(seed), self._input_dim
+        )
+
+        # check if params were passed
+        bijector_params = params if params is not None else bijector_params
+
+        # save the bijector params along with the latent params
+        self._params = (self.latent._params, bijector_params)
+
+    def _set_default_bijector(self, inputs: pd.DataFrame, seed: int = 0):
+        # Set the default bijector
+        # which is ShiftBounds -> RollingSplineCoupling
+
+        # get the min/max for each data column
+        data = inputs[list(self.data_columns)].to_numpy()
+        mins = data.min(axis=0)
+        maxs = data.max(axis=0)
+
+        # determine how many conditional columns we have
+        n_conditions = (
+            0
+            if self.conditional_columns is None
+            else len(self.conditional_columns)
+        )
+
+        self.set_bijector(
+            Chain(
+                ShiftBounds(mins, maxs, 4.9),
+                RollingSplineCoupling(
+                    len(self.data_columns), n_conditions=n_conditions
+                ),
+            ),
+            seed=seed,
+        )
 
     def _get_conditions(self, inputs: pd.DataFrame) -> jnp.ndarray:
         # Return an array of the bijector conditions.
@@ -358,6 +431,9 @@ class Flow:
             Device array of shape (inputs.shape[0],).
         """
 
+        # check that the bijector exists
+        self._check_bijector()
+
         if err_samples is None:
             # convert data to an array with columns ordered
             columns = list(self.data_columns)
@@ -449,6 +525,9 @@ class Flow:
         jnp.ndarray
             Device array of shape (inputs.shape[0], grid.size).
         """
+
+        # check that the bijector exists
+        self._check_bijector()
 
         # get the index of the provided column, and remove it from the list
         columns = list(self.data_columns)
@@ -688,6 +767,9 @@ class Flow:
             Pandas DataFrame of samples.
         """
 
+        # check that the bijector exists
+        self._check_bijector()
+
         # validate nsamples
         assert isinstance(
             nsamples, int
@@ -826,7 +908,9 @@ class Flow:
             loss doesn't decrease for this number of epochs.
         seed : int; default=0
             A random seed to control the batching and the (optional)
-            error sampling.
+            error sampling and creating the default bijector (the latter
+            only happens if you didn't set up the bijector during Flow
+            instantiation).
         verbose : bool; default=False
             If true, print the training loss every 5% of epochs.
 
@@ -835,6 +919,14 @@ class Flow:
         list
             List of training losses from every epoch.
         """
+
+        # split the seed
+        rng = np.random.default_rng(seed)
+        batch_seed, bijector_seed = rng.integers(1e9, size=2)
+
+        # if the bijector is None, set the default bijector
+        if self._bijector_info is None:
+            self._set_default_bijector(inputs, seed=bijector_seed)
 
         # validate epochs
         if not isinstance(epochs, int) or epochs <= 0:
@@ -895,7 +987,7 @@ class Flow:
                     return jnp.array(x[columns].to_numpy())
 
         # get random seed for training loop
-        key = random.PRNGKey(seed)
+        key = random.PRNGKey(batch_seed)
 
         if verbose:
             print(f"Training {epochs} epochs \nLoss:")
