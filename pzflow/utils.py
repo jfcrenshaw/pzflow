@@ -1,6 +1,6 @@
 from typing import Callable, Tuple
 
-import jax.numpy as np
+import jax.numpy as jnp
 from jax import random
 from jax.example_libraries.stax import Dense, LeakyRelu, serial
 
@@ -49,8 +49,8 @@ def DenseReluNetwork(
 
 
 def gaussian_error_model(
-    key, X: np.ndarray, Xerr: np.ndarray, nsamples: int
-) -> np.ndarray:
+    key, X: jnp.ndarray, Xerr: jnp.ndarray, nsamples: int
+) -> jnp.ndarray:
     """
     Default Gaussian error model were X are the means and Xerr are the stds.
     """
@@ -61,27 +61,27 @@ def gaussian_error_model(
 
 
 def RationalQuadraticSpline(
-    inputs: np.ndarray,
-    W: np.ndarray,
-    H: np.ndarray,
-    D: np.ndarray,
+    inputs: jnp.ndarray,
+    W: jnp.ndarray,
+    H: jnp.ndarray,
+    D: jnp.ndarray,
     B: float,
     periodic: bool = False,
     inverse: bool = False,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Apply rational quadratic spline to inputs and return outputs with log_det.
 
     Applies the piecewise rational quadratic spline developed in [1].
 
     Parameters
     ----------
-    inputs : np.ndarray
+    inputs : jnp.ndarray
         The inputs to be transformed.
-    W : np.ndarray
+    W : jnp.ndarray
         The widths of the spline bins.
-    H : np.ndarray
+    H : jnp.ndarray
         The heights of the spline bins.
-    D : np.ndarray
+    D : jnp.ndarray
         The derivatives of the inner spline knots.
     B : float
         Range of the splines.
@@ -94,9 +94,9 @@ def RationalQuadraticSpline(
 
     Returns
     -------
-    outputs : np.ndarray
+    outputs : jnp.ndarray
         The result of applying the splines to the inputs.
-    log_det : np.ndarray
+    log_det : jnp.ndarray
         The log determinant of the Jacobian at the inputs.
 
     References
@@ -109,24 +109,24 @@ def RationalQuadraticSpline(
         http://arxiv.org/abs/2002.02428
     """
     # knot x-positions
-    xk = np.pad(
-        -B + np.cumsum(W, axis=-1),
+    xk = jnp.pad(
+        -B + jnp.cumsum(W, axis=-1),
         [(0, 0)] * (len(W.shape) - 1) + [(1, 0)],
         mode="constant",
         constant_values=-B,
     )
     # knot y-positions
-    yk = np.pad(
-        -B + np.cumsum(H, axis=-1),
+    yk = jnp.pad(
+        -B + jnp.cumsum(H, axis=-1),
         [(0, 0)] * (len(H.shape) - 1) + [(1, 0)],
         mode="constant",
         constant_values=-B,
     )
     # knot derivatives
     if periodic:
-        dk = np.pad(D, [(0, 0)] * (len(D.shape) - 1) + [(1, 0)], mode="wrap")
+        dk = jnp.pad(D, [(0, 0)] * (len(D.shape) - 1) + [(1, 0)], mode="wrap")
     else:
-        dk = np.pad(
+        dk = jnp.pad(
             D,
             [(0, 0)] * (len(D.shape) - 1) + [(1, 1)],
             mode="constant",
@@ -142,22 +142,22 @@ def RationalQuadraticSpline(
     # with the spline, but for the non-periodic case, we will replace
     # these with their original values at the end
     out_of_bounds = (inputs <= -B) | (inputs >= B)
-    masked_inputs = np.where(out_of_bounds, np.abs(inputs) - B, inputs)
+    masked_inputs = jnp.where(out_of_bounds, jnp.abs(inputs) - B, inputs)
 
     # find bin for each input
     if inverse:
-        idx = np.sum(yk <= masked_inputs[..., None], axis=-1)[..., None] - 1
+        idx = jnp.sum(yk <= masked_inputs[..., None], axis=-1)[..., None] - 1
     else:
-        idx = np.sum(xk <= masked_inputs[..., None], axis=-1)[..., None] - 1
+        idx = jnp.sum(xk <= masked_inputs[..., None], axis=-1)[..., None] - 1
 
     # get kx, ky, kyp1, kd, kdp1, kw, ks for the bin corresponding to each input
-    input_xk = np.take_along_axis(xk, idx, -1)[..., 0]
-    input_yk = np.take_along_axis(yk, idx, -1)[..., 0]
-    input_dk = np.take_along_axis(dk, idx, -1)[..., 0]
-    input_dkp1 = np.take_along_axis(dk, idx + 1, -1)[..., 0]
-    input_wk = np.take_along_axis(W, idx, -1)[..., 0]
-    input_hk = np.take_along_axis(H, idx, -1)[..., 0]
-    input_sk = np.take_along_axis(sk, idx, -1)[..., 0]
+    input_xk = jnp.take_along_axis(xk, idx, -1)[..., 0]
+    input_yk = jnp.take_along_axis(yk, idx, -1)[..., 0]
+    input_dk = jnp.take_along_axis(dk, idx, -1)[..., 0]
+    input_dkp1 = jnp.take_along_axis(dk, idx + 1, -1)[..., 0]
+    input_wk = jnp.take_along_axis(W, idx, -1)[..., 0]
+    input_hk = jnp.take_along_axis(H, idx, -1)[..., 0]
+    input_sk = jnp.take_along_axis(sk, idx, -1)[..., 0]
 
     if inverse:
         # [1] Appendix A.3
@@ -170,11 +170,11 @@ def RationalQuadraticSpline(
         )
         c = -input_sk * (masked_inputs - input_yk)
 
-        relx = 2 * c / (-b - np.sqrt(b**2 - 4 * a * c))
+        relx = 2 * c / (-b - jnp.sqrt(b**2 - 4 * a * c))
         outputs = relx * input_wk + input_xk
         # if not periodic, replace out-of-bounds values with original values
         if not periodic:
-            outputs = np.where(out_of_bounds, inputs, outputs)
+            outputs = jnp.where(out_of_bounds, inputs, outputs)
 
         # [1] Appendix A.2
         # calculate the log determinant
@@ -186,10 +186,10 @@ def RationalQuadraticSpline(
         dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
             1 - relx
         )
-        log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
+        log_det = 2 * jnp.log(input_sk) + jnp.log(dnum) - 2 * jnp.log(dden)
         # if not periodic, replace log_det for out-of-bounds values = 0
         if not periodic:
-            log_det = np.where(out_of_bounds, 0, log_det)
+            log_det = jnp.where(out_of_bounds, 0, log_det)
         log_det = log_det.sum(axis=1)
 
         return outputs, -log_det
@@ -205,7 +205,7 @@ def RationalQuadraticSpline(
         outputs = input_yk + num / den
         # if not periodic, replace out-of-bounds values with original values
         if not periodic:
-            outputs = np.where(out_of_bounds, inputs, outputs)
+            outputs = jnp.where(out_of_bounds, inputs, outputs)
 
         # [1] Appendix A.2
         # calculate the log determinant
@@ -217,26 +217,26 @@ def RationalQuadraticSpline(
         dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
             1 - relx
         )
-        log_det = 2 * np.log(input_sk) + np.log(dnum) - 2 * np.log(dden)
+        log_det = 2 * jnp.log(input_sk) + jnp.log(dnum) - 2 * jnp.log(dden)
         # if not periodic, replace log_det for out-of-bounds values = 0
         if not periodic:
-            log_det = np.where(out_of_bounds, 0, log_det)
+            log_det = jnp.where(out_of_bounds, 0, log_det)
         log_det = log_det.sum(axis=1)
 
         return outputs, log_det
 
 
 def sub_diag_indices(
-    inputs: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    inputs: jnp.ndarray,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return indices for diagonal of 2D blocks in 3D array"""
     if inputs.ndim != 3:
         raise ValueError("Input must be a 3D array.")
     nblocks = inputs.shape[0]
     ndiag = min(inputs.shape[1], inputs.shape[2])
     idx = (
-        np.repeat(np.arange(nblocks), ndiag),
-        np.tile(np.arange(ndiag), nblocks),
-        np.tile(np.arange(ndiag), nblocks),
+        jnp.repeat(jnp.arange(nblocks), ndiag),
+        jnp.tile(jnp.arange(ndiag), nblocks),
+        jnp.tile(jnp.arange(ndiag), nblocks),
     )
     return idx

@@ -1,5 +1,6 @@
+import jax.numpy as jnp
 import pytest
-import jax.numpy as np
+
 from pzflow.distributions import *
 
 
@@ -8,10 +9,10 @@ from pzflow.distributions import *
     [
         (CentBeta, (2, 3), ((0, 1), (2, 3))),
         (Normal, (2,), ()),
-        (Tdist, (2,), np.log(30.0)),
+        (Tdist, (2,), jnp.log(30.0)),
         (Uniform, ((0, 1), (0, 1)), ()),
         (Joint, (Normal(1), Uniform((0, 1))), ((), ())),
-        (Joint, (Normal(1), Tdist(1)), ((), np.log(30.0))),
+        (Joint, (Normal(1), Tdist(1)), ((), jnp.log(30.0))),
         (Joint, (Joint(Normal(1), Uniform((0, 1))).info[1]), ((), ())),
     ],
 )
@@ -34,11 +35,11 @@ class TestDistributions:
         nsamples = 8
         s1 = dist.sample(params, nsamples)
         s2 = dist.sample(params, nsamples)
-        assert ~np.all(np.isclose(s1, s2))
+        assert ~jnp.all(jnp.isclose(s1, s2))
 
         s1 = dist.sample(params, nsamples, seed=0)
         s2 = dist.sample(params, nsamples, seed=0)
-        assert np.allclose(s1, s2)
+        assert jnp.allclose(s1, s2)
 
 
 @pytest.mark.parametrize(

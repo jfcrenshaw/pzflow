@@ -1,7 +1,7 @@
-import jax.numpy as np
+import jax.numpy as jnp
 import pandas as pd
-from pzflow import examples
-from pzflow import Flow
+
+from pzflow import Flow, examples
 
 
 def test_get_twomoons_data():
@@ -30,5 +30,5 @@ def test_get_example_flow():
     samples = flow.sample(2)
     flow.log_prob(samples)
 
-    grid = np.arange(0, 2.5, 0.5)
+    grid = jnp.arange(0, 2.5, 0.5)
     flow.posterior(samples, column="redshift", grid=grid)

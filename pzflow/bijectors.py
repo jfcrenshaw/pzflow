@@ -1,7 +1,7 @@
 from functools import update_wrapper
 from typing import Callable, Sequence, Tuple, Union
 
-import jax.numpy as np
+import jax.numpy as jnp
 from jax import random
 from jax.nn import softmax, softplus
 
@@ -23,14 +23,14 @@ class ForwardFunction:
     params : a Jax pytree
         A pytree of bijector parameters.
         This usually looks like a nested tuple or list of parameters.
-    inputs : np.ndarray
+    inputs : jnp.ndarray
         The data to be transformed by the bijection.
 
     Returns
     -------
-    outputs : np.ndarray
+    outputs : jnp.ndarray
         Result of the forward bijection applied to the inputs.
-    log_det : np.ndarray
+    log_det : jnp.ndarray
         The log determinant of the Jacobian evaluated at the inputs.
     """
 
@@ -38,8 +38,8 @@ class ForwardFunction:
         self._func = func
 
     def __call__(
-        self, params: Pytree, inputs: np.ndarray, **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, params: Pytree, inputs: jnp.ndarray, **kwargs
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         return self._func(params, inputs, **kwargs)
 
 
@@ -54,14 +54,14 @@ class InverseFunction:
     params : a Jax pytree
         A pytree of bijector parameters.
         This usually looks like a nested tuple or list of parameters.
-    inputs : np.ndarray
+    inputs : jnp.ndarray
         The data to be transformed by the bijection.
 
     Returns
     -------
-    outputs : np.ndarray
+    outputs : jnp.ndarray
         Result of the inverse bijection applied to the inputs.
-    log_det : np.ndarray
+    log_det : jnp.ndarray
         The log determinant of the Jacobian evaluated at the inputs.
     """
 
@@ -69,8 +69,8 @@ class InverseFunction:
         self._func = func
 
     def __call__(
-        self, params: Pytree, inputs: np.ndarray, **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, params: Pytree, inputs: jnp.ndarray, **kwargs
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         return self._func(params, inputs, **kwargs)
 
 
@@ -81,7 +81,7 @@ class InitFunction:
 
     Parameters
     ----------
-    rng : np.ndarray
+    rng : jnp.ndarray
         A Random Number Key from jax.random.PRNGKey.
     input_dim : int
         The input dimension of the bijection.
@@ -101,7 +101,7 @@ class InitFunction:
         self._func = func
 
     def __call__(
-        self, rng: np.ndarray, input_dim: int, **kwargs
+        self, rng: jnp.ndarray, input_dim: int, **kwargs
     ) -> Tuple[Pytree, ForwardFunction, InverseFunction]:
         return self._func(rng, input_dim, **kwargs)
 
@@ -153,7 +153,7 @@ def Chain(
             inverse_funs.append(inverse_f)
 
         def bijector_chain(params, bijectors, inputs, **kwargs):
-            log_dets = np.zeros(inputs.shape[0])
+            log_dets = jnp.zeros(inputs.shape[0])
             for bijector, param in zip(bijectors, params):
                 inputs, log_det = bijector(param, inputs, **kwargs)
                 log_dets += log_det
@@ -232,22 +232,22 @@ def ColorTransform(
     bijector_info = ("ColorTransform", (ref_idx, mag_idx))
 
     # convert mag_idx to an array
-    mag_idx = np.array(mag_idx)
+    mag_idx = jnp.array(mag_idx)
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
         # array of all the indices
-        all_idx = np.arange(input_dim)
+        all_idx = jnp.arange(input_dim)
         # indices for columns to stick at the front
-        front_idx = np.setdiff1d(all_idx, mag_idx)
+        front_idx = jnp.setdiff1d(all_idx, mag_idx)
         # the index corresponding to the first magnitude
         mag0_idx = len(front_idx)
 
         # the new column order
-        new_idx = np.concatenate((front_idx, mag_idx))
+        new_idx = jnp.concatenate((front_idx, mag_idx))
         # the new column for the reference magnitude
-        new_ref = np.where(new_idx == ref_idx)[0][0]
+        new_ref = jnp.where(new_idx == ref_idx)[0][0]
 
         # define a convenience function for the forward_fun below
         # if the first magnitude is the reference mag, do nothing
@@ -270,25 +270,25 @@ def ColorTransform(
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             # re-order columns and calculate colors
-            outputs = np.hstack(
+            outputs = jnp.hstack(
                 (
                     inputs[:, front_idx],  # other values
                     inputs[:, ref_idx, None],  # ref mag
-                    -np.diff(inputs[:, mag_idx]),  # colors
+                    -jnp.diff(inputs[:, mag_idx]),  # colors
                 )
             )
             # determinant of Jacobian is zero
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             # convert all colors to be in terms of the first magnitude, mag[0]
-            outputs = np.hstack(
+            outputs = jnp.hstack(
                 (
                     inputs[:, 0:mag0_idx],  # other values unchanged
                     inputs[:, mag0_idx, None],  # reference mag unchanged
-                    np.cumsum(
+                    jnp.cumsum(
                         inputs[:, mag0_idx + 1 :], axis=-1
                     ),  # all colors mag[i-1] - mag[i] --> mag[0] - mag[i]
                 )
@@ -302,9 +302,9 @@ def ColorTransform(
                 unique_indices=True,
             )
             # return to original ordering
-            outputs = outputs[:, np.argsort(new_idx)]
+            outputs = outputs[:, jnp.argsort(new_idx)]
             # determinant of Jacobian is zero
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -341,8 +341,8 @@ def InvSoftplus(
         This allows it to be recreated later.
     """
 
-    idx = np.atleast_1d(column_idx)
-    k = np.atleast_1d(sharpness)
+    idx = jnp.atleast_1d(column_idx)
+    k = jnp.atleast_1d(sharpness)
     if len(idx) != len(k) and len(k) != 1:
         raise ValueError(
             "Please provide either a single sharpness or one for each column index."
@@ -355,17 +355,17 @@ def InvSoftplus(
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = inputs.at[:, idx].set(
-                np.log(-1 + np.exp(k * inputs[:, idx])) / k,
+                jnp.log(-1 + jnp.exp(k * inputs[:, idx])) / k,
             )
-            log_det = np.log(1 + np.exp(-k * outputs[:, idx])).sum(axis=1)
+            log_det = jnp.log(1 + jnp.exp(-k * outputs[:, idx])).sum(axis=1)
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs.at[:, idx].set(
-                np.log(1 + np.exp(k * inputs[:, idx])) / k,
+                jnp.log(1 + jnp.exp(k * inputs[:, idx])) / k,
             )
-            log_det = -np.log(1 + np.exp(-k * inputs[:, idx])).sum(axis=1)
+            log_det = -jnp.log(1 + jnp.exp(-k * inputs[:, idx])).sum(axis=1)
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -480,12 +480,14 @@ def NeuralSplineCoupling(
 
         # calculate spline parameters as a function of the upper variables
         def spline_params(params, upper, conditions):
-            key = np.hstack((upper, conditions))[:, : upper_dim + n_conditions]
+            key = jnp.hstack((upper, conditions))[
+                :, : upper_dim + n_conditions
+            ]
             outputs = network_apply_fun(params, key)
-            outputs = np.reshape(
+            outputs = jnp.reshape(
                 outputs, [-1, lower_dim, 3 * K - 1 + int(periodic)]
             )
-            W, H, D = np.split(outputs, [K, 2 * K], axis=2)
+            W, H, D = jnp.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)
             H = 2 * B * softmax(H)
             D = softplus(D)
@@ -501,7 +503,7 @@ def NeuralSplineCoupling(
             lower, log_det = RationalQuadraticSpline(
                 lower, W, H, D, B, periodic, inverse=False
             )
-            outputs = np.hstack((upper, lower))
+            outputs = jnp.hstack((upper, lower))
             return outputs, log_det
 
         @InverseFunction
@@ -514,7 +516,7 @@ def NeuralSplineCoupling(
             lower, log_det = RationalQuadraticSpline(
                 lower, W, H, D, B, periodic, inverse=True
             )
-            outputs = np.hstack((upper, lower))
+            outputs = jnp.hstack((upper, lower))
             return outputs, log_det
 
         return network_params, forward_fun, inverse_fun
@@ -542,13 +544,13 @@ def Reverse() -> Tuple[InitFunction, Bijector_Info]:
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = inputs[:, ::-1]
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs[:, ::-1]
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -558,7 +560,7 @@ def Reverse() -> Tuple[InitFunction, Bijector_Info]:
 
 @Bijector
 def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that rolls inputs along their last column using np.roll.
+    """Bijector that rolls inputs along their last column using jnp.roll.
 
     Parameters
     ----------
@@ -583,14 +585,14 @@ def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            outputs = np.roll(inputs, shift=shift, axis=-1)
-            log_det = np.zeros(inputs.shape[0])
+            outputs = jnp.roll(inputs, shift=shift, axis=-1)
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = np.roll(inputs, shift=-shift, axis=-1)
-            log_det = np.zeros(inputs.shape[0])
+            outputs = jnp.roll(inputs, shift=-shift, axis=-1)
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -683,8 +685,8 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         This allows it to be recreated later.
     """
 
-    if isinstance(scale, np.ndarray):
-        if scale.dtype != np.float32:
+    if isinstance(scale, jnp.ndarray):
+        if scale.dtype != jnp.float32:
             raise ValueError("scale must be a float or array of floats.")
     elif not isinstance(scale, float):
         raise ValueError("scale must be a float or array of floats.")
@@ -696,7 +698,7 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = scale * inputs
-            log_det = np.log(scale ** inputs.shape[-1]) * np.ones(
+            log_det = jnp.log(scale ** inputs.shape[-1]) * jnp.ones(
                 inputs.shape[0]
             )
             return outputs, log_det
@@ -704,7 +706,7 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = 1 / scale * inputs
-            log_det = -np.log(scale ** inputs.shape[-1]) * np.ones(
+            log_det = -jnp.log(scale ** inputs.shape[-1]) * jnp.ones(
                 inputs.shape[0]
             )
             return outputs, log_det
@@ -738,8 +740,8 @@ def ShiftBounds(
         This allows it to be recreated later.
     """
 
-    min = np.atleast_1d(min)
-    max = np.atleast_1d(max)
+    min = jnp.atleast_1d(min)
+    max = jnp.atleast_1d(max)
     if len(min) != len(max):
         raise ValueError(
             "Lengths of min and max do not match. "
@@ -759,7 +761,7 @@ def ShiftBounds(
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = B * (inputs - mean) / half_range
-            log_det = np.log(np.prod(B / half_range)) * np.ones(
+            log_det = jnp.log(jnp.prod(B / half_range)) * jnp.ones(
                 inputs.shape[0]
             )
             return outputs, log_det
@@ -767,7 +769,7 @@ def ShiftBounds(
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * half_range / B + mean
-            log_det = np.log(np.prod(half_range / B)) * np.ones(
+            log_det = jnp.log(jnp.prod(half_range / B)) * jnp.ones(
                 inputs.shape[0]
             )
             return outputs, log_det
@@ -795,19 +797,19 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
 
-        perm = random.permutation(rng, np.arange(input_dim))
-        inv_perm = np.argsort(perm)
+        perm = random.permutation(rng, jnp.arange(input_dim))
+        inv_perm = jnp.argsort(perm)
 
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = inputs[:, perm]
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs[:, inv_perm]
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -817,7 +819,7 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
 
 @Bijector
 def StandardScaler(
-    means: np.array, stds: np.array
+    means: jnp.array, stds: jnp.array
 ) -> Tuple[InitFunction, Bijector_Info]:
     """Bijector that applies standard scaling to each input.
 
@@ -827,9 +829,9 @@ def StandardScaler(
 
     Parameters
     ----------
-    means : np.ndarray
+    means : jnp.ndarray
         The mean of each column.
-    stds : np.ndarray
+    stds : jnp.ndarray
         The standard deviation of each column.
 
     Returns
@@ -848,13 +850,13 @@ def StandardScaler(
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = (inputs - means) / stds
-            log_det = np.log(1 / np.prod(stds)) * np.ones(inputs.shape[0])
+            log_det = jnp.log(1 / jnp.prod(stds)) * jnp.ones(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * stds + means
-            log_det = np.log(np.prod(stds)) * np.ones(inputs.shape[0])
+            log_det = jnp.log(jnp.prod(stds)) * jnp.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -885,7 +887,7 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     """
 
     bijector_info = ("UniformDequantizer", (column_idx,))
-    column_idx = np.array(column_idx)
+    column_idx = jnp.array(column_idx)
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
@@ -896,15 +898,15 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
             )
             outputs = inputs.astype(float)
             outputs.at[:, column_idx].set(outputs[:, column_idx] + u)
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs.at[:, column_idx].set(
-                np.floor(inputs[:, column_idx])
+                jnp.floor(inputs[:, column_idx])
             )
-            log_det = np.zeros(inputs.shape[0])
+            log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun

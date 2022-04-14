@@ -1,8 +1,8 @@
 from typing import Any, Callable, Sequence, Tuple
 
 import dill as pickle
-import jax.numpy as np
-import numpy as onp
+import jax.numpy as jnp
+import numpy as np
 import pandas as pd
 from jax import random
 from jax.example_libraries.optimizers import Optimizer
@@ -173,7 +173,7 @@ class FlowEnsemble:
         err_samples: int = None,
         seed: int = None,
         returnEnsemble: bool = False,
-    ) -> np.ndarray:
+    ) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
@@ -200,12 +200,12 @@ class FlowEnsemble:
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             For shape, see returnEnsemble description above.
         """
 
         # calculate log_prob for each flow in the ensemble
-        ensemble = np.array(
+        ensemble = jnp.array(
             [
                 flow.log_prob(inputs, err_samples, seed)
                 for flow in self._ensemble.values()
@@ -213,7 +213,7 @@ class FlowEnsemble:
         )
 
         # re-arrange so that (axis 0, axis 1) = (inputs, flows in ensemble)
-        ensemble = np.rollaxis(ensemble, axis=1)
+        ensemble = jnp.rollaxis(ensemble, axis=1)
 
         if returnEnsemble:
             # return the ensemble of log_probs
@@ -221,13 +221,13 @@ class FlowEnsemble:
         else:
             # return mean over ensemble
             # note we return log(mean prob) instead of just mean log_prob
-            return np.log(np.exp(ensemble).mean(axis=1))
+            return jnp.log(jnp.exp(ensemble).mean(axis=1))
 
     def posterior(
         self,
         inputs: pd.DataFrame,
         column: str,
-        grid: np.ndarray,
+        grid: jnp.ndarray,
         marg_rules: dict = None,
         normalize: bool = True,
         err_samples: int = None,
@@ -235,7 +235,7 @@ class FlowEnsemble:
         batch_size: int = None,
         returnEnsemble: bool = False,
         nan_to_zero: bool = True,
-    ) -> np.ndarray:
+    ) -> jnp.ndarray:
         """Calculates posterior distributions for the provided column.
 
         Calculates the conditional posterior distribution, assuming the
@@ -252,7 +252,7 @@ class FlowEnsemble:
             is calculated. Must be one of the columns in self.data_columns.
             However, whether or not this column is one of the columns in
             `inputs` is irrelevant.
-        grid : np.ndarray
+        grid : jnp.ndarray
             Grid on which to calculate the posterior.
         marg_rules : dict; optional
             Dictionary with rules for marginalizing over missing variables.
@@ -263,7 +263,7 @@ class FlowEnsemble:
             variables that will need to be marginalized over, where name is
             the name of the variable, and callable is a callable that takes
             the row of variables nad returns a grid over which to marginalize
-            the variable. E.g. {"y": lambda row: np.linspace(0, row["x"], 10)}.
+            the variable. E.g. {"y": lambda row: jnp.linspace(0, row["x"], 10)}.
             Note: the callable for a given name must *always* return an array
             of the same length, regardless of the input row.
         normalize : boolean; default=True
@@ -290,12 +290,12 @@ class FlowEnsemble:
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             For shape, see returnEnsemble description above.
         """
 
         # calculate posterior for each flow in the ensemble
-        ensemble = np.array(
+        ensemble = jnp.array(
             [
                 flow.posterior(
                     inputs=inputs,
@@ -313,13 +313,13 @@ class FlowEnsemble:
         )
 
         # re-arrange so that (axis 0, axis 1) = (inputs, flows in ensemble)
-        ensemble = np.rollaxis(ensemble, axis=1)
+        ensemble = jnp.rollaxis(ensemble, axis=1)
 
         if returnEnsemble:
             # return the ensemble of posteriors
             if normalize:
                 ensemble = ensemble.reshape(-1, grid.size)
-                ensemble = ensemble / np.trapz(y=ensemble, x=grid).reshape(
+                ensemble = ensemble / jnp.trapz(y=ensemble, x=grid).reshape(
                     -1, 1
                 )
                 ensemble = ensemble.reshape(inputs.shape[0], -1, grid.size)
@@ -328,7 +328,7 @@ class FlowEnsemble:
             # return mean over ensemble
             pdfs = ensemble.mean(axis=1)
             if normalize:
-                pdfs = pdfs / np.trapz(y=pdfs, x=grid).reshape(-1, 1)
+                pdfs = pdfs / jnp.trapz(y=pdfs, x=grid).reshape(-1, 1)
             return pdfs
 
     def sample(
@@ -377,7 +377,7 @@ class FlowEnsemble:
             # if this isn't a conditional flow, sampling is straightforward
             if conditions is None:
                 # return nsamples drawn uniformly from the flows in the ensemble
-                N = int(np.ceil(nsamples / len(self._ensemble)))
+                N = int(jnp.ceil(nsamples / len(self._ensemble)))
                 samples = pd.concat(
                     [
                         flow.sample(N, conditions, save_conditions, seed)
@@ -394,7 +394,7 @@ class FlowEnsemble:
                     conditions = pd.concat([conditions] * nsamples)
 
                 # now the main sampling algorithm
-                seed = onp.random.randint(1e18) if seed is None else seed
+                seed = np.random.randint(1e18) if seed is None else seed
                 # if we are drawing more samples than the number of flows in
                 # the ensemble, then we will shuffle the conditions and randomly
                 # assign them to one of the constituent flows
@@ -404,14 +404,14 @@ class FlowEnsemble:
                         frac=1.0, random_state=int(seed / 1e9)
                     )
                     # split conditions into ~equal sized chunks
-                    chunks = onp.array_split(
+                    chunks = np.array_split(
                         conditions_shuffled, len(self._ensemble)
                     )
                     # shuffle the chunks
                     chunks = [
                         chunks[i]
                         for i in random.permutation(
-                            random.PRNGKey(seed), np.arange(len(chunks))
+                            random.PRNGKey(seed), jnp.arange(len(chunks))
                         )
                     ]
                     # sample from each flow, and return all the samples
@@ -428,7 +428,7 @@ class FlowEnsemble:
                 # however, if there are more flows in the ensemble than samples
                 # being drawn, then we will randomly select flows for each condition
                 else:
-                    rng = onp.random.default_rng(seed)
+                    rng = np.random.default_rng(seed)
                     # randomly select a flow to sample from for each condition
                     flows = rng.choice(
                         list(self._ensemble.values()),
