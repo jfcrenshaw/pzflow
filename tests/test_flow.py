@@ -499,9 +499,22 @@ def test_latent_with_wrong_dimension():
         Flow(data_columns=cols, latent=latent, bijector=Reverse())
 
 
+def test_bijector_not_set():
+
+    flow = Flow(["x", "y"])
+
+    with pytest.raises(ValueError):
+        flow.sample(1)
+
+    with pytest.raises(ValueError):
+        x = np.linspace(0, 1, 12)
+        df = pd.DataFrame(x.reshape(-1, 2), columns=("x", "y"))
+        flow.posterior(x, column="x", grid=x)
+
+
 def test_default_bijector():
 
     flow = Flow(["x", "y"])
-    losses = flow.train(get_twomoons_data())
 
+    losses = flow.train(get_twomoons_data())
     assert all(~np.isnan(losses))
