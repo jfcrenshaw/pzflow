@@ -5,15 +5,17 @@ Each contains a link to open the notebook on Google Colab, as well as a link to 
 
 ### Basic
 
-- [Introduction to PZFlow](intro.ipynb) - building a basic flow to model the two moons data set from `sklearn`
-- [Chaining Bijectors](redshift_example.ipynb) - chaining multiple bijectors together, demonstrated on a photometric galaxy catalog
-- [FlowEnsembles](ensemble_demo.ipynb) - using `FlowEnsemble` to create an ensemble of normalizing flows
+- [Introduction to PZFlow](intro.ipynb) - using the default flow to train, sample, and calculate posteriors
+- [Conditional Flows](conditional_redshift_example.ipynb) - building a conditional flow to model conditional distributions
+- [Convolving Gaussian Errors](gaussian_errors.ipynb) - convolving Gaussian errors during training and posterior calculation
+- [Flow Ensembles](ensemble_demo.ipynb) - using `FlowEnsemble` to create an ensemble of normalizing flows
 
 ### Intermediate
 
-- [Convolving Gaussian Errors](gaussian_errors.ipynb) - convolving Gaussian errors during training and posterior calculation
+- [Chaining bijectors](redshift_example.ipynb) - chaining multiple bijectors together
 - [Modeling Discrete Variables](dequantization.ipynb) - using dequantizers to model discrete data
 - [Modeling Variables with Periodic Topology](spherical_flow_example.ipynb) - using circular splines to model data with periodic topology, e.g. positions on a sphere
+- [Other Latent Distributions](tutorials/index.md) - using a user-specified latent distribution
 
 ### Advanced
 

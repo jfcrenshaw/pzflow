@@ -47,7 +47,7 @@ class CentBeta(LatentDist):
     This distribution is just a regular Beta distribution, scaled and shifted
     to have support on the domain [-B, B] in each dimension.
 
-    The alpha and beta parameters for each dimension are learned during training.
+    Alpha and beta parameters for each dimension are learned during training.
     """
 
     def __init__(self, input_dim: int, B: float = 5):
@@ -132,9 +132,111 @@ class CentBeta(LatentDist):
         )
         return 2 * self.B * (samples - 0.5)
 
+class CentBeta13(LatentDist):
+    """A centered Beta distribution with alpha, beta = 13.
+
+    This distribution is just a regular Beta distribution, scaled and shifted
+    to have support on the domain [-B, B] in each dimension.
+
+    Alpha, beta = 13 means that the distribution looks like a Gaussian
+    distribution, but with hard cutoffs at +/- B.
+    """
+
+    def __init__(self, input_dim: int, B: float = 5):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            The dimension of the distribution.
+        B : float; default=5
+            The distribution has support (-B, B) along each dimension.
+        """
+        self.input_dim = input_dim
+        self.B = B
+
+        # save dist info
+        self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
+        self.info = ("CentBeta22", (input_dim, B))
+        self.a = 13
+        self.b = 13
+
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
+        """Calculates log probability density of inputs.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        inputs : jnp.ndarray
+            Input data for which log probability density is calculated.
+
+        Returns
+        -------
+        jnp.ndarray
+            Device array of shape (inputs.shape[0],).
+        """
+        log_prob = jnp.hstack(
+            [
+                beta.logpdf(
+                    inputs[:, i],
+                    a=self.a,
+                    b=self.b,
+                    loc=-self.B,
+                    scale=2 * self.B,
+                ).reshape(-1, 1)
+                for i in range(self.input_dim)
+            ]
+        ).sum(axis=1)
+
+        return log_prob
+
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
+        """Returns samples from the distribution.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        nsamples : int
+            The number of samples to be returned.
+        seed : int; optional
+            Sets the random seed for the samples.
+
+        Returns
+        -------
+        jnp.ndarray
+            Device array of shape (nsamples, self.input_dim).
+        """
+        seed = np.random.randint(1e18) if seed is None else seed
+        seeds = random.split(random.PRNGKey(seed), self.input_dim)
+        samples = jnp.hstack(
+            [
+                random.beta(
+                    seeds[i],
+                    self.a,
+                    self.b,
+                    shape=(nsamples, 1),
+                )
+                for i in range(self.input_dim)
+            ]
+        )
+        return 2 * self.B * (samples - 0.5)
+
+
 
 class Normal(LatentDist):
-    """A multivariate Gaussian distribution with mean zero and unit variance."""
+    """A multivariate Gaussian distribution with mean zero and unit variance.
+
+    Note this distribution has infinite support, so it is not recommended that
+    you use it with the spline coupling layers, which have compact support.
+    If you do use the two together, you should set the support of the spline
+    layers (using the spline parameter B) to be large enough that you rarely
+    draw Gaussian samples outside the support of the splines.
+    """
 
     def __init__(self, input_dim: int):
         """
@@ -201,7 +303,15 @@ class Normal(LatentDist):
 
 
 class Tdist(LatentDist):
-    """A multivariate T distribution with mean zero and unit scale matrix."""
+    """A multivariate T distribution with mean zero and unit scale matrix.
+
+    The number of degrees of freedom (i.e. the weight of the tails) is learned
+    during training.
+
+    Note this distribution has infinite support and potentially large tails,
+    so it is not recommended to use this distribution with the spline coupling
+    layers, which have compact support.
+    """
 
     def __init__(self, input_dim: int):
         """

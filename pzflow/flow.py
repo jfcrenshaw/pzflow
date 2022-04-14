@@ -1,4 +1,3 @@
-import itertools
 from typing import Any, Callable, Sequence, Tuple
 
 import dill as pickle
@@ -311,7 +310,7 @@ class Flow:
 
         self.set_bijector(
             Chain(
-                ShiftBounds(mins, maxs, 4.9),
+                ShiftBounds(mins, maxs, 4.),
                 RollingSplineCoupling(
                     len(self.data_columns), n_conditions=n_conditions
                 ),
@@ -870,7 +869,7 @@ class Flow:
     def train(
         self,
         inputs: pd.DataFrame,
-        epochs: int = 50,
+        epochs: int = 100,
         batch_size: int = 1024,
         optimizer: Callable = None,
         loss_fn: Callable = None,
@@ -878,6 +877,7 @@ class Flow:
         patience: int = None,
         seed: int = 0,
         verbose: bool = False,
+        progress_bar: bool = False,
     ) -> list:
         """Trains the normalizing flow on the provided inputs.
 
@@ -886,7 +886,7 @@ class Flow:
         inputs : pd.DataFrame
             Data on which to train the normalizing flow.
             Must have columns matching `self.data_columns`.
-        epochs : int; default=50
+        epochs : int; default=100
             Number of epochs to train.
         batch_size : int; default=1024
             Batch size for training.
@@ -913,6 +913,8 @@ class Flow:
             instantiation).
         verbose : bool; default=False
             If true, print the training loss every 5% of epochs.
+        progress_bar : bool; default=False
+            If true, display a tqdm progress bar during training.
 
         Returns
         -------
@@ -1004,7 +1006,8 @@ class Flow:
         early_stopping_counter = 0
 
         # loop through training
-        for epoch in tqdm(range(epochs)):
+        loop = tqdm(range(epochs)) if progress_bar else range(epochs)
+        for epoch in loop:
             # new permutation of batches
             permute_key, sample_key, key = random.split(key, num=3)
             idx = random.permutation(permute_key, inputs.shape[0])
