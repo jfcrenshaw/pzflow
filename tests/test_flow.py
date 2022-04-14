@@ -488,3 +488,12 @@ def test_patience():
     losses = flow.train(x, patience=2)
     print(losses)
     assert len(losses) == 4
+
+
+def test_latent_with_wrong_dimension():
+
+    cols = ["x", "y"]
+    latent = Uniform(3)
+
+    with pytest.raises(ValueError):
+        Flow(data_columns=cols, latent=latent, bijector=Reverse())
