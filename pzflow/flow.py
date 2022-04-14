@@ -4,9 +4,9 @@ from typing import Any, Callable, Sequence, Tuple
 import dill as pickle
 import jax.numpy as jnp
 import numpy as np
+import optax
 import pandas as pd
 from jax import grad, jit, random
-from jax.example_libraries.optimizers import Optimizer, adam
 from tqdm import tqdm
 
 from pzflow import distributions
@@ -790,7 +790,7 @@ class Flow:
         inputs: pd.DataFrame,
         epochs: int = 50,
         batch_size: int = 1024,
-        optimizer: Optimizer = None,
+        optimizer: Callable = None,
         loss_fn: Callable = None,
         convolve_errs: bool = False,
         patience: int = None,
@@ -808,9 +808,9 @@ class Flow:
             Number of epochs to train.
         batch_size : int; default=1024
             Batch size for training.
-        optimizer : jax Optimizer
-            An optimizer from `jax.example_libraries.optimizers`.
-            default = adam(step_size=1e-3)
+        optimizer : optax optimizer
+            An optimizer from Optax. default = optax.adam(learning_rate=1e-3)
+            see https://optax.readthedocs.io/en/latest/index.html for more.
         loss_fn : Callable; optional
             A function to calculate the loss: `loss = loss_fn(params, x)`.
             If not provided, will be `-mean(log_prob)`.
@@ -848,16 +848,21 @@ class Flow:
                 return -jnp.mean(self._log_prob(params, x, c))
 
         # initialize the optimizer
-        optimizer = adam(step_size=1e-3) if optimizer is None else optimizer
-        opt_init, opt_update, get_params = optimizer
-        opt_state = opt_init(self._params)
+        optimizer = (
+            optax.adam(learning_rate=1e-3) if optimizer is None else optimizer
+        )
+        opt_state = optimizer.init(self._params)
+
+        # pull out the model parameters
+        model_params = self._params
 
         # define the training step function
         @jit
-        def step(i, opt_state, x, c):
-            params = get_params(opt_state)
+        def step(params, opt_state, x, c):
             gradients = grad(loss_fn)(params, x, c)
-            return opt_update(i, gradients, opt_state)
+            updates, opt_state = optimizer.update(gradients, opt_state, params)
+            params = optax.apply_updates(params, updates)
+            return params, opt_state
 
         # get list of data columns
         columns = list(self.data_columns)
@@ -898,15 +903,15 @@ class Flow:
         # save the initial loss
         X = jnp.array(inputs[columns].to_numpy())
         C = self._get_conditions(inputs)
-        losses = [loss_fn(self._params, X, C)]
+        losses = [loss_fn(model_params, X, C)]
         if verbose:
             print(f"(0) {losses[-1]:.4f}")
 
-        # loop through training
-        itercount = itertools.count()
-
+        # initialize variables for early stopping
         best_loss = jnp.inf
         early_stopping_counter = 0
+
+        # loop through training
         for epoch in tqdm(range(epochs)):
             # new permutation of batches
             permute_key, sample_key, key = random.split(key, num=3)
@@ -930,18 +935,17 @@ class Flow:
                     type="conditions",
                 )
 
-                opt_state = step(
-                    next(itercount),
+                model_params, opt_state = step(
+                    model_params,
                     opt_state,
                     batch,
                     batch_conditions,
                 )
 
             # save end-of-epoch training loss
-            params = get_params(opt_state)
             losses.append(
                 loss_fn(
-                    params,
+                    model_params,
                     jnp.array(X[columns].to_numpy()),
                     self._get_conditions(X),
                 )
@@ -977,6 +981,6 @@ class Flow:
                     early_stopping_counter = 0
 
         # update the flow parameters with the final training state
-        self._params = get_params(opt_state)
+        self._params = model_params
 
         return losses

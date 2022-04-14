@@ -5,7 +5,6 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 from jax import random
-from jax.example_libraries.optimizers import Optimizer
 
 from pzflow import Flow, distributions
 from pzflow.bijectors import Bijector_Info, InitFunction
@@ -506,7 +505,7 @@ class FlowEnsemble:
         inputs: pd.DataFrame,
         epochs: int = 50,
         batch_size: int = 1024,
-        optimizer: Optimizer = None,
+        optimizer: Callable = None,
         loss_fn: Callable = None,
         convolve_errs: bool = False,
         patience: int = None,
@@ -524,8 +523,9 @@ class FlowEnsemble:
             Number of epochs to train.
         batch_size : int; default=1024
             Batch size for training.
-        optimizer : jax Optimizer, default=adam(step_size=1e-3)
-            An optimizer from jax.experimental.optimizers.
+        optimizer : optax optimizer
+            An optimizer from Optax. default = optax.adam(learning_rate=1e-3)
+            see https://optax.readthedocs.io/en/latest/index.html for more.
         loss_fn : Callable; optional
             A function to calculate the loss: loss = loss_fn(params, x).
             If not provided, will be -mean(log_prob).
