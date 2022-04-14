@@ -68,11 +68,11 @@ class Flow:
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
         conditional_columns : Sequence[str]; optional
             Names of columns on which to condition the normalizing flow.
-        latent : distribution; optional
+        latent : distributions.LatentDist; optional
             The latent distribution for the normalizing flow. Can be any of
             the distributions from pzflow.distributions. If not provided,
-            a normal distribution is used with the number of dimensions
-            inferred.
+            a uniform distribution is used with input_dim = len(data_columns),
+            and B=5.
         data_error_model : Callable; optional
             A callable that defines the error model for data variables.
             data_error_model must take key, X, Xerr, nsamples as arguments:
@@ -215,10 +215,19 @@ class Flow:
 
             # set up the latent distribution
             if latent is None:
-                self.latent = distributions.Normal(self._input_dim)
+                self.latent = distributions.Uniform(self._input_dim, 5)
             else:
                 self.latent = latent
             self._latent_info = self.latent.info
+
+            # make sure the latent distribution and data_columns have the
+            # same number of dimensions
+            if self.latent.input_dim != len(data_columns):
+                raise ValueError(
+                    f"The latent distribution has {self.latent.input_dim} "
+                    f"dimensions, but data_columns has {len(data_columns)} "
+                    "dimensions. They must match!"
+                )
 
             # set up the error models
             if data_error_model is None:
@@ -948,13 +957,11 @@ class Flow:
             # if patience provided, we need to check for early stopping
             if patience is not None:
 
-                # if this is the best loss, reset the counter
-                if losses[-1] < best_loss:
-                    best_loss = losses[-1]
-                    early_stopping_counter = 0
-
-                # if it's not, increment the counter
-                else:
+                # if loss didn't improve, increase counter
+                # and check early stopping criterion
+                if losses[-1] >= best_loss or jnp.isclose(
+                    losses[-1], best_loss
+                ):
                     early_stopping_counter += 1
 
                     # check if the early stopping criterion is met
@@ -964,6 +971,10 @@ class Flow:
                             f"Training stopping after epoch {epoch}.",
                         )
                         break
+                # if this is the best loss, reset the counter
+                else:
+                    best_loss = losses[-1]
+                    early_stopping_counter = 0
 
         # update the flow parameters with the final training state
         self._params = get_params(opt_state)

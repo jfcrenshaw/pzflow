@@ -39,7 +39,7 @@ def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
     [
         Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
         Flow(("redshift", "y"), Reverse(), latent=Tdist(2)),
-        Flow(("redshift", "y"), Reverse(), latent=Uniform((-3, 3), (-3, 3))),
+        Flow(("redshift", "y"), Reverse(), latent=Uniform(2, 3)),
         Flow(("redshift", "y"), Reverse(), latent=CentBeta(2)),
     ],
 )
@@ -486,4 +486,5 @@ def test_patience():
     x = pd.DataFrame(xarray, columns=columns)
 
     losses = flow.train(x, patience=2)
+    print(losses)
     assert len(losses) == 4

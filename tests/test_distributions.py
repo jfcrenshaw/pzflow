@@ -10,10 +10,10 @@ from pzflow.distributions import *
         (CentBeta, (2, 3), ((0, 1), (2, 3))),
         (Normal, (2,), ()),
         (Tdist, (2,), jnp.log(30.0)),
-        (Uniform, ((0, 1), (0, 1)), ()),
-        (Joint, (Normal(1), Uniform((0, 1))), ((), ())),
+        (Uniform, (2,), ()),
+        (Joint, (Normal(1), Uniform(1, 4)), ((), ())),
         (Joint, (Normal(1), Tdist(1)), ((), jnp.log(30.0))),
-        (Joint, (Joint(Normal(1), Uniform((0, 1))).info[1]), ((), ())),
+        (Joint, (Joint(Normal(1), Uniform(1)).info[1]), ((), ())),
     ],
 )
 class TestDistributions:
@@ -40,15 +40,3 @@ class TestDistributions:
         s1 = dist.sample(params, nsamples, seed=0)
         s2 = dist.sample(params, nsamples, seed=0)
         assert jnp.allclose(s1, s2)
-
-
-@pytest.mark.parametrize(
-    "inputs",
-    [
-        ((-1, 1, 2),),
-        ((2, 1),),
-    ],
-)
-def test_uniform_bad_inputs(inputs):
-    with pytest.raises(ValueError):
-        Uniform(*inputs)

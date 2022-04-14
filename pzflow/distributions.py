@@ -45,7 +45,7 @@ class CentBeta(LatentDist):
     """A centered Beta distribution.
 
     This distribution is just a regular Beta distribution, scaled and shifted
-    to have support on the domain (-B, B) for each dimension.
+    to have support on the domain [-B, B] in each dimension.
 
     The alpha and beta parameters for each dimension are learned during training.
     """
@@ -282,37 +282,23 @@ class Tdist(LatentDist):
 
 
 class Uniform(LatentDist):
-    """A multivariate uniform distribution."""
+    """A multivariate uniform distribution with support [-B, B]."""
 
-    def __init__(self, *ranges):
+    def __init__(self, input_dim: int, B: float = 5):
         """
         Parameters
         ----------
-        ranges : list or tuple
-            List of maximum and minimum for each dimension.
-            The overall dimension is inferred from the number of ranges provided.
+        input_dim : int
+            The dimension of the distribution.
+        B : float; default=5
+            The distribution has support (-B, B) along each dimension.
         """
+        self.input_dim = input_dim
+        self.B = B
 
-        # validate inputs
-        ranges = jnp.atleast_2d(ranges)
-        if ranges.shape[1] != 2:
-            raise ValueError("ranges must be tuple or list of (min, max)")
-
-        # save min and max of each dimension
-        mins, maxes = ranges[:, 0], ranges[:, 1]
-
-        # make sure all the minima are less than the maxima
-        if not all(mins < maxes):
-            raise ValueError("Range minima must be less than maxima.")
-
-        # save the ranges
-        self.mins = mins
-        self.maxes = maxes
-
-        # save distribution info
-        self.input_dim = ranges.shape[0]
+        # save dist info
         self._params = ()
-        self.info = ("Uniform", (*ranges,))
+        self.info = ("Uniform", (input_dim, B))
 
     def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
         """Calculates log probability density of inputs.
@@ -333,13 +319,13 @@ class Uniform(LatentDist):
 
         # which inputs are inside the support of the distribution
         mask = (
-            ((inputs >= self.mins) & (inputs <= self.maxes))
+            ((inputs >= -self.B) & (inputs <= self.B))
             .astype(float)
             .prod(axis=-1)
         )
 
         # calculate log_prob
-        prob = mask / (self.maxes - self.mins).prod()
+        prob = mask / (2 * self.B) ** self.input_dim
         prob = jnp.where(prob == 0, epsilon, prob)
         log_prob = jnp.log(prob)
 
@@ -368,9 +354,9 @@ class Uniform(LatentDist):
         seed = np.random.randint(1e18) if seed is None else seed
         samples = random.uniform(
             random.PRNGKey(seed),
-            shape=(nsamples, len(self.maxes)),
-            minval=self.mins,
-            maxval=self.maxes,
+            shape=(nsamples, self.input_dim),
+            minval=-self.B,
+            maxval=self.B,
         )
         return jnp.array(samples)
 

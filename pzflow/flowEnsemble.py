@@ -64,11 +64,11 @@ class FlowEnsemble:
             Can be the output of any Bijector, e.g. Reverse(), Chain(...), etc.
         conditional_columns : Sequence[str]; optional
             Names of columns on which to condition the normalizing flows.
-        latent : distribution; optional
-            The latent distribution for the normalizing flows. Can be any of
+        latent : distributions.LatentDist; optional
+            The latent distribution for the normalizing flow. Can be any of
             the distributions from pzflow.distributions. If not provided,
-            a normal distribution is used with the number of dimensions
-            inferred.
+            a uniform distribution is used with input_dim = len(data_columns),
+            and B=5.
         data_error_model : Callable; optional
             A callable that defines the error model for data variables.
             data_error_model must take key, X, Xerr, nsamples as arguments where:
