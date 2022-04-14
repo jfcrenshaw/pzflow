@@ -8,6 +8,7 @@ from jax import random
 from pzflow import Flow
 from pzflow.bijectors import Reverse, RollingSplineCoupling
 from pzflow.distributions import *
+from pzflow.examples import get_twomoons_data
 
 
 @pytest.mark.parametrize(
@@ -496,3 +497,11 @@ def test_latent_with_wrong_dimension():
 
     with pytest.raises(ValueError):
         Flow(data_columns=cols, latent=latent, bijector=Reverse())
+
+
+def test_default_bijector():
+
+    flow = Flow(["x", "y"])
+    losses = flow.train(get_twomoons_data())
+
+    assert all(~np.isnan(losses))
