@@ -12,7 +12,7 @@ Each contains a link to open the notebook on Google Colab, as well as a link to 
 
 ### Intermediate
 
-- [Chaining bijectors](redshift_example.ipynb) - chaining multiple bijectors together
+- [Customizing the flow](customizing_example.ipynb) - Customizing the bijector and latent space
 - [Modeling Discrete Variables](dequantization.ipynb) - using dequantizers to model discrete data
 - [Modeling Variables with Periodic Topology](spherical_flow_example.ipynb) - using circular splines to model data with periodic topology, e.g. positions on a sphere
 - [Other Latent Distributions](tutorials/index.md) - using a user-specified latent distribution
