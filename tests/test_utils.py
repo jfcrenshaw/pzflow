@@ -1,13 +1,14 @@
-import jax.numpy as np
+import jax.numpy as jnp
+import pytest
 from jax import random
+
 from pzflow.bijectors import *
 from pzflow.utils import *
-import pytest
 
 
 def test_build_bijector_from_info():
 
-    x = np.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
+    x = jnp.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
 
     init_fun, info1 = Chain(
         Reverse(),
@@ -25,26 +26,26 @@ def test_build_bijector_from_info():
 
     params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), 4)
     xfwd2, log_det2 = forward_fun(params, x)
-    assert np.allclose(xfwd1, xfwd2)
-    assert np.allclose(log_det1, log_det2)
+    assert jnp.allclose(xfwd1, xfwd2)
+    assert jnp.allclose(log_det1, log_det2)
 
     invx, inv_log_det = inverse_fun(params, xfwd2)
-    assert np.allclose(x, invx)
-    assert np.allclose(log_det2, -inv_log_det)
+    assert jnp.allclose(x, invx)
+    assert jnp.allclose(log_det2, -inv_log_det)
 
 
 def test_sub_diag_indices_correct():
-    x = np.array([[[0, 0], [0, 0]], [[1, 1], [1, 1]], [[2, 2], [2, 2]]])
-    y = np.array([[[1, 0], [0, 1]], [[2, 1], [1, 2]], [[3, 2], [2, 3]]])
+    x = jnp.array([[[0, 0], [0, 0]], [[1, 1], [1, 1]], [[2, 2], [2, 2]]])
+    y = jnp.array([[[1, 0], [0, 1]], [[2, 1], [1, 2]], [[3, 2], [2, 3]]])
     idx = sub_diag_indices(x)
     x = x.at[idx].set(x[idx] + 1)
 
-    assert np.allclose(x, y)
+    assert jnp.allclose(x, y)
 
 
 @pytest.mark.parametrize(
     "x",
-    [np.ones(2), np.ones((2, 2)), np.ones((2, 2, 2, 2))],
+    [jnp.ones(2), jnp.ones((2, 2)), jnp.ones((2, 2, 2, 2))],
 )
 def test_sub_diag_indices_bad_input(x):
     with pytest.raises(ValueError):
