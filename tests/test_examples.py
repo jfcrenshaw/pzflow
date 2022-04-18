@@ -7,19 +7,24 @@ from pzflow import Flow, examples
 def test_get_twomoons_data():
     data = examples.get_twomoons_data()
     assert isinstance(data, pd.DataFrame)
-    assert data.shape == (10000, 2)
+    assert data.shape == (100_000, 2)
 
 
 def test_get_galaxy_data():
     data = examples.get_galaxy_data()
     assert isinstance(data, pd.DataFrame)
-    assert data.shape == (100000, 7)
+    assert data.shape == (100_000, 7)
 
 
 def test_get_city_data():
     data = examples.get_city_data()
     assert isinstance(data, pd.DataFrame)
-    assert data.shape == (47966, 5)
+    assert data.shape == (47_966, 5)
+
+def test_get_checkerboard_data():
+    data = examples.get_checkerboard_data()
+    assert isinstance(data, pd.DataFrame)
+    assert data.shape == (100_000, 2)
 
 
 def test_get_example_flow():
