@@ -14,6 +14,7 @@ from pzflow.distributions import *
         (Joint, (Normal(1), Uniform(1, 4)), ((), ())),
         (Joint, (Normal(1), Tdist(1)), ((), jnp.log(30.0))),
         (Joint, (Joint(Normal(1), Uniform(1)).info[1]), ((), ())),
+        (CentBeta13, (2, 4), ())
     ],
 )
 class TestDistributions:
