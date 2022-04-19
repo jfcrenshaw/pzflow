@@ -6,7 +6,7 @@ nav:
   - Tutorials:
       - tutorials/index.md
       - Introduction: tutorials/intro.ipynb
-      - Conditional Flows: tutorials/conditional_redshift_example.ipynb
+      - Conditional Flows: tutorials/conditional_demo.ipynb
       - Convolving Gaussian Errors: tutorials/gaussian_errors.ipynb
       - Flow Ensembles: tutorials/ensemble_demo.ipynb
       - Customizing the flow: tutorials/customizing_example.ipynb
