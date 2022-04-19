@@ -1,3 +1,4 @@
-from .version import __version__
-from .flow import Flow
-from .flowEnsemble import FlowEnsemble
+from pzflow.flow import Flow
+from pzflow.flowEnsemble import FlowEnsemble
+
+__version__ = "3.0.0"

@@ -1,0 +1,48 @@
+site_name: PZFlow
+repo_url: https://github.com/jfcrenshaw/pzflow
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Tutorials:
+      - tutorials/index.md
+      - Introduction: tutorials/intro.ipynb
+      - Conditional Flows: tutorials/conditional_redshift_example.ipynb
+      - Convolving Gaussian Errors: tutorials/gaussian_errors.ipynb
+      - Flow Ensembles: tutorials/ensemble_demo.ipynb
+      - Customizing the flow: tutorials/customizing_example.ipynb
+      - Modeling Variables with Periodic Topology: tutorials/spherical_flow_example.ipynb
+      - Marginalizing Variables: tutorials/marginalization.ipynb
+      - Convolving Non-Gaussian Errors: tutorials/nongaussian_errors.ipynb
+  - Common gotchas: gotchas.md
+  - Contributing to PZFlow: contributing.md
+  - API: API/
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: pink
+    accent: deep orange
+  icon:
+    logo: material/star-face
+  features:
+    - navigation.indexes
+plugins:
+  - search
+  - mkdocs-jupyter:
+      theme: dark
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - section-index
+  - literate-nav
+  - mkdocstrings:
+      watch:
+        - pzflow/
+      handlers:
+        python:
+          selection:
+            docstring_style: numpy
+extra:
+  version:
+    provider: mike

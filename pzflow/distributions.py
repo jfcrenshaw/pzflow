@@ -1,7 +1,9 @@
 import sys
+from abc import ABC, abstractmethod
+from typing import Union
 
-import jax.numpy as np
-import numpy as onp
+import jax.numpy as jnp
+import numpy as np
 from jax import random
 from jax.scipy.special import gammaln
 from jax.scipy.stats import beta, multivariate_normal
@@ -11,25 +13,41 @@ from pzflow.bijectors import Pytree
 epsilon = sys.float_info.epsilon
 
 
+class LatentDist(ABC):
+    """Base class for latent distributions."""
+
+    info = ("LatentDist", ())
+
+    @abstractmethod
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
+        """Calculate log-probability of the inputs."""
+
+    @abstractmethod
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
+        """Sample from the distribution."""
+
+
 def _mahalanobis_and_logdet(x, cov):
-    """Calculate mahalanobis distance and log_det of cov.
-    Uses scipy method, explained here:
-    http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
-    """
-    vals, vecs = np.linalg.eigh(cov)
-    U = vecs * np.sqrt(1 / vals[..., None])
-    maha = np.square(U @ x[..., None]).reshape(x.shape[0], -1).sum(axis=1)
-    log_det = np.log(vals).sum(axis=-1)
+    # Calculate mahalanobis distance and log_det of cov.
+    # Uses scipy method, explained here:
+    # http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
+
+    vals, vecs = jnp.linalg.eigh(cov)
+    U = vecs * jnp.sqrt(1 / vals[..., None])
+    maha = jnp.square(U @ x[..., None]).reshape(x.shape[0], -1).sum(axis=1)
+    log_det = jnp.log(vals).sum(axis=-1)
     return maha, log_det
 
 
-class CentBeta:
+class CentBeta(LatentDist):
     """A centered Beta distribution.
 
     This distribution is just a regular Beta distribution, scaled and shifted
-    to have support on the domain (-B, B) for each dimension.
+    to have support on the domain [-B, B] in each dimension.
 
-    The alpha and beta parameters for each dimension are learned during training.
+    Alpha and beta parameters for each dimension are learned during training.
     """
 
     def __init__(self, input_dim: int, B: float = 5):
@@ -38,7 +56,7 @@ class CentBeta:
         ----------
         input_dim : int
             The dimension of the distribution.
-        B : float, default=5
+        B : float; default=5
             The distribution has support (-B, B) along each dimension.
         """
         self.input_dim = input_dim
@@ -48,7 +66,7 @@ class CentBeta:
         self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
         self.info = ("CentBeta", (input_dim, B))
 
-    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
@@ -56,20 +74,20 @@ class CentBeta:
         params : a Jax pytree
             Tuple of ((a1, b1), (a2, b2), ...) where aN,bN are log(alpha),log(beta)
             for the Nth dimension.
-        inputs : np.ndarray
+        inputs : jnp.ndarray
             Input data for which log probability density is calculated.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        log_prob = np.hstack(
+        log_prob = jnp.hstack(
             [
                 beta.logpdf(
                     inputs[:, i],
-                    a=np.exp(params[i][0]),
-                    b=np.exp(params[i][1]),
+                    a=jnp.exp(params[i][0]),
+                    b=jnp.exp(params[i][1]),
                     loc=-self.B,
                     scale=2 * self.B,
                 ).reshape(-1, 1)
@@ -79,7 +97,9 @@ class CentBeta:
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -89,22 +109,116 @@ class CentBeta:
             for the Nth dimension.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (nsamples, self.input_dim).
         """
-        seed = onp.random.randint(1e18) if seed is None else seed
+        seed = np.random.randint(1e18) if seed is None else seed
         seeds = random.split(random.PRNGKey(seed), self.input_dim)
-        samples = np.hstack(
+        samples = jnp.hstack(
             [
                 random.beta(
                     seeds[i],
-                    np.exp(params[i][0]),
-                    np.exp(params[i][1]),
+                    jnp.exp(params[i][0]),
+                    jnp.exp(params[i][1]),
+                    shape=(nsamples, 1),
+                )
+                for i in range(self.input_dim)
+            ]
+        )
+        return 2 * self.B * (samples - 0.5)
+
+class CentBeta13(LatentDist):
+    """A centered Beta distribution with alpha, beta = 13.
+
+    This distribution is just a regular Beta distribution, scaled and shifted
+    to have support on the domain [-B, B] in each dimension.
+
+    Alpha, beta = 13 means that the distribution looks like a Gaussian
+    distribution, but with hard cutoffs at +/- B.
+    """
+
+    def __init__(self, input_dim: int, B: float = 5):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            The dimension of the distribution.
+        B : float; default=5
+            The distribution has support (-B, B) along each dimension.
+        """
+        self.input_dim = input_dim
+        self.B = B
+
+        # save dist info
+        self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
+        self.info = ("CentBeta22", (input_dim, B))
+        self.a = 13
+        self.b = 13
+
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
+        """Calculates log probability density of inputs.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        inputs : jnp.ndarray
+            Input data for which log probability density is calculated.
+
+        Returns
+        -------
+        jnp.ndarray
+            Device array of shape (inputs.shape[0],).
+        """
+        log_prob = jnp.hstack(
+            [
+                beta.logpdf(
+                    inputs[:, i],
+                    a=self.a,
+                    b=self.b,
+                    loc=-self.B,
+                    scale=2 * self.B,
+                ).reshape(-1, 1)
+                for i in range(self.input_dim)
+            ]
+        ).sum(axis=1)
+
+        return log_prob
+
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
+        """Returns samples from the distribution.
+
+        Parameters
+        ----------
+        params : a Jax pytree
+            Empty pytree -- this distribution doesn't have learnable parameters.
+            This parameter is present to ensure a consistent interface.
+        nsamples : int
+            The number of samples to be returned.
+        seed : int; optional
+            Sets the random seed for the samples.
+
+        Returns
+        -------
+        jnp.ndarray
+            Device array of shape (nsamples, self.input_dim).
+        """
+        seed = np.random.randint(1e18) if seed is None else seed
+        seeds = random.split(random.PRNGKey(seed), self.input_dim)
+        samples = jnp.hstack(
+            [
+                random.beta(
+                    seeds[i],
+                    self.a,
+                    self.b,
                     shape=(nsamples, 1),
                 )
                 for i in range(self.input_dim)
@@ -113,8 +227,16 @@ class CentBeta:
         return 2 * self.B * (samples - 0.5)
 
 
-class Normal:
-    """A multivariate Gaussian distribution with mean zero and unit variance."""
+
+class Normal(LatentDist):
+    """A multivariate Gaussian distribution with mean zero and unit variance.
+
+    Note this distribution has infinite support, so it is not recommended that
+    you use it with the spline coupling layers, which have compact support.
+    If you do use the two together, you should set the support of the spline
+    layers (using the spline parameter B) to be large enough that you rarely
+    draw Gaussian samples outside the support of the splines.
+    """
 
     def __init__(self, input_dim: int):
         """
@@ -129,7 +251,7 @@ class Normal:
         self._params = ()
         self.info = ("Normal", (input_dim,))
 
-    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
@@ -137,21 +259,23 @@ class Normal:
         params : a Jax pytree
             Empty pytree -- this distribution doesn't have learnable parameters.
             This parameter is present to ensure a consistent interface.
-        inputs : np.ndarray
+        inputs : jnp.ndarray
             Input data for which log probability density is calculated.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
         return multivariate_normal.logpdf(
             inputs,
-            mean=np.zeros(self.input_dim),
-            cov=np.identity(self.input_dim),
+            mean=jnp.zeros(self.input_dim),
+            cov=jnp.identity(self.input_dim),
         )
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -161,25 +285,33 @@ class Normal:
             This parameter is present to ensure a consistent interface.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (nsamples, self.input_dim).
         """
-        seed = onp.random.randint(1e18) if seed is None else seed
+        seed = np.random.randint(1e18) if seed is None else seed
         return random.multivariate_normal(
             key=random.PRNGKey(seed),
-            mean=np.zeros(self.input_dim),
-            cov=np.identity(self.input_dim),
+            mean=jnp.zeros(self.input_dim),
+            cov=jnp.identity(self.input_dim),
             shape=(nsamples,),
         )
 
 
-class Tdist:
-    """A multivariate T distribution with mean zero and unit scale matrix."""
+class Tdist(LatentDist):
+    """A multivariate T distribution with mean zero and unit scale matrix.
+
+    The number of degrees of freedom (i.e. the weight of the tails) is learned
+    during training.
+
+    Note this distribution has infinite support and potentially large tails,
+    so it is not recommended to use this distribution with the spline coupling
+    layers, which have compact support.
+    """
 
     def __init__(self, input_dim: int):
         """
@@ -191,10 +323,10 @@ class Tdist:
         self.input_dim = input_dim
 
         # save dist info
-        self._params = np.log(30.0)
+        self._params = jnp.log(30.0)
         self.info = ("Tdist", (input_dim,))
 
-    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
         Uses method explained here:
@@ -204,27 +336,29 @@ class Tdist:
         ----------
         params : float
             The degrees of freedom (nu) of the t-distribution.
-        inputs : np.ndarray
+        inputs : jnp.ndarray
             Input data for which log probability density is calculated.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        cov = np.identity(self.input_dim)
-        nu = np.exp(params)
+        cov = jnp.identity(self.input_dim)
+        nu = jnp.exp(params)
         maha, log_det = _mahalanobis_and_logdet(inputs, cov)
         t = 0.5 * (nu + self.input_dim)
         A = gammaln(t)
         B = gammaln(0.5 * nu)
-        C = self.input_dim / 2.0 * np.log(nu * np.pi)
+        C = self.input_dim / 2.0 * jnp.log(nu * jnp.pi)
         D = 0.5 * log_det
-        E = -t * np.log(1 + (1.0 / nu) * maha)
+        E = -t * jnp.log(1 + (1.0 / nu) * maha)
 
         return A - B - C - D + E
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -233,64 +367,50 @@ class Tdist:
             The degrees of freedom (nu) of the t-distribution.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (nsamples, self.input_dim).
         """
-        mean = np.zeros(self.input_dim)
-        nu = np.exp(params)
+        mean = jnp.zeros(self.input_dim)
+        nu = jnp.exp(params)
 
-        seed = onp.random.randint(1e18) if seed is None else seed
-        rng = onp.random.default_rng(int(seed))
-        x = np.array(rng.chisquare(nu, nsamples) / nu)
+        seed = np.random.randint(1e18) if seed is None else seed
+        rng = np.random.default_rng(int(seed))
+        x = jnp.array(rng.chisquare(nu, nsamples) / nu)
         z = random.multivariate_normal(
             key=random.PRNGKey(seed),
-            mean=np.zeros(self.input_dim),
-            cov=np.identity(self.input_dim),
+            mean=jnp.zeros(self.input_dim),
+            cov=jnp.identity(self.input_dim),
             shape=(nsamples,),
         )
-        samples = mean + z / np.sqrt(x)[:, None]
+        samples = mean + z / jnp.sqrt(x)[:, None]
         return samples
 
 
-class Uniform:
-    """A multivariate uniform distribution."""
+class Uniform(LatentDist):
+    """A multivariate uniform distribution with support [-B, B]."""
 
-    def __init__(self, *ranges):
+    def __init__(self, input_dim: int, B: float = 5):
         """
         Parameters
         ----------
-        ranges : list or tuple
-            List of maximum and minimum for each dimension.
-            The overall dimension is inferred from the number of ranges provided.
+        input_dim : int
+            The dimension of the distribution.
+        B : float; default=5
+            The distribution has support (-B, B) along each dimension.
         """
+        self.input_dim = input_dim
+        self.B = B
 
-        # validate inputs
-        ranges = np.atleast_2d(ranges)
-        if ranges.shape[1] != 2:
-            raise ValueError("ranges must be tuple or list of (min, max)")
-
-        # save min and max of each dimension
-        mins, maxes = ranges[:, 0], ranges[:, 1]
-
-        # make sure all the minima are less than the maxima
-        if not all(mins < maxes):
-            raise ValueError("Range minima must be less than maxima.")
-
-        # save the ranges
-        self.mins = mins
-        self.maxes = maxes
-
-        # save distribution info
-        self.input_dim = ranges.shape[0]
+        # save dist info
         self._params = ()
-        self.info = ("Uniform", (*ranges,))
+        self.info = ("Uniform", (input_dim, B))
 
-    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
@@ -298,28 +418,32 @@ class Uniform:
         params : Jax Pytree
             Empty pytree -- this distribution doesn't have learnable parameters.
             This parameter is present to ensure a consistent interface.
-        inputs : np.ndarray
+        inputs : jnp.ndarray
             Input data for which log probability density is calculated.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
 
         # which inputs are inside the support of the distribution
         mask = (
-            ((inputs >= self.mins) & (inputs <= self.maxes)).astype(float).prod(axis=-1)
+            ((inputs >= -self.B) & (inputs <= self.B))
+            .astype(float)
+            .prod(axis=-1)
         )
 
         # calculate log_prob
-        prob = mask / (self.maxes - self.mins).prod()
-        prob = np.where(prob == 0, epsilon, prob)
-        log_prob = np.log(prob)
+        prob = mask / (2 * self.B) ** self.input_dim
+        prob = jnp.where(prob == 0, epsilon, prob)
+        log_prob = jnp.log(prob)
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -329,33 +453,40 @@ class Uniform:
             This parameter is present to ensure a consistent interface.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (nsamples, self.input_dim).
         """
-        seed = onp.random.randint(1e18) if seed is None else seed
+        seed = np.random.randint(1e18) if seed is None else seed
         samples = random.uniform(
             random.PRNGKey(seed),
-            shape=(nsamples, len(self.maxes)),
-            minval=self.mins,
-            maxval=self.maxes,
+            shape=(nsamples, self.input_dim),
+            minval=-self.B,
+            maxval=self.B,
         )
-        return np.array(samples)
+        return jnp.array(samples)
 
 
-class Joint:
-    """A joint distribution built from other distributions."""
+class Joint(LatentDist):
+    """A joint distribution built from other distributions.
 
-    def __init__(self, *inputs):
+    Note that each of the other distributions already have support for
+    multiple dimensions. This is only useful if you want to combine
+    different distributions for different dimensions, e.g. if your first
+    dimension has a Uniform latent space and the second dimension has a
+    CentBeta latent space.
+    """
+
+    def __init__(self, *inputs: Union[LatentDist, tuple]):
         """
         Parameters
         ----------
-        inputs
-            A list of distributions, or a Joint info object.
+        inputs: LatentDist or tuple
+            The latent distributions to join together.
         """
 
         # if Joint info provided, use that for setup
@@ -368,35 +499,40 @@ class Joint:
         # save info
         self._params = [dist._params for dist in self.dists]
         self.input_dim = sum([dist.input_dim for dist in self.dists])
-        self.info = ("Joint", ("Joint info", [dist.info for dist in self.dists]))
+        self.info = (
+            "Joint",
+            ("Joint info", [dist.info for dist in self.dists]),
+        )
 
         # save the indices at which inputs will be split for log_prob
         # they must be concretely saved ahead-of-time so that jax trace
         # works properly when jitting
-        self._splits = np.cumsum(np.array([dist.input_dim for dist in self.dists]))[:-1]
+        self._splits = jnp.cumsum(
+            jnp.array([dist.input_dim for dist in self.dists])
+        )[:-1]
 
-    def log_prob(self, params: Pytree, inputs: np.ndarray) -> np.ndarray:
+    def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
         Parameters
         ----------
         params : Jax Pytree
             Parameters for the distributions.
-        inputs : np.ndarray
+        inputs : jnp.ndarray
             Input data for which log probability density is calculated.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
 
         # split inputs for corresponding distribution
-        inputs = np.split(inputs, self._splits, axis=1)
+        inputs = jnp.split(inputs, self._splits, axis=1)
 
         # calculate log_prob with respect to each sub-distribution,
         # then sum all the log_probs for each input
-        log_prob = np.hstack(
+        log_prob = jnp.hstack(
             [
                 self.dists[i].log_prob(params[i], inputs[i]).reshape(-1, 1)
                 for i in range(len(self.dists))
@@ -405,7 +541,9 @@ class Joint:
 
         return log_prob
 
-    def sample(self, params: Pytree, nsamples: int, seed: int = None) -> np.ndarray:
+    def sample(
+        self, params: Pytree, nsamples: int, seed: int = None
+    ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
         Parameters
@@ -414,18 +552,20 @@ class Joint:
             Parameters for the distributions.
         nsamples : int
             The number of samples to be returned.
-        seed : int, optional
+        seed : int; optional
             Sets the random seed for the samples.
 
         Returns
         -------
-        np.ndarray
+        jnp.ndarray
             Device array of shape (nsamples, self.input_dim).
         """
 
-        seed = onp.random.randint(1e18) if seed is None else seed
-        seeds = random.randint(random.PRNGKey(seed), (len(self.dists),), 0, int(1e9))
-        samples = np.hstack(
+        seed = np.random.randint(1e18) if seed is None else seed
+        seeds = random.randint(
+            random.PRNGKey(seed), (len(self.dists),), 0, int(1e9)
+        )
+        samples = jnp.hstack(
             [
                 self.dists[i]
                 .sample(params[i], nsamples, seeds[i])

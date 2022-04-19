@@ -1,8 +1,21 @@
+"""Functions that return example data and a example flow trained on
+galaxy data. To see these examples in action, see the tutorial notebooks.
+"""
+
 import os
 
 import pandas as pd
 
 from pzflow import Flow
+
+EXAMPLE_FILE_DIR = "example_files"
+
+
+def _load_example_data(name: str) -> pd.DataFrame:
+    this_dir, _ = os.path.split(__file__)
+    data_path = os.path.join(this_dir, f"{EXAMPLE_FILE_DIR}/{name}.pkl")
+    data = pd.read_pickle(data_path)
+    return data
 
 
 def get_twomoons_data() -> pd.DataFrame:
@@ -11,10 +24,7 @@ def get_twomoons_data() -> pd.DataFrame:
     Two moons data originally from scikit-learn,
     i.e., `sklearn.datasets.make_moons`.
     """
-    this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "two-moons-data.pkl")
-    data = pd.read_pickle(data_path)
-    return data
+    return _load_example_data("two-moons-data")
 
 
 def get_galaxy_data() -> pd.DataFrame:
@@ -29,10 +39,12 @@ def get_galaxy_data() -> pd.DataFrame:
     Synthetic Sky Catalogs. arXiv:1901.02401, 2019.
     https://arxiv.org/abs/1901.02401
     """
-    this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "galaxy-data.pkl")
-    data = pd.read_pickle(data_path)
-    return data
+    return _load_example_data("galaxy-data")
+
+
+def get_checkerboard_data() -> pd.DataFrame:
+    """Return DataFrame with discrete checkerboard data."""
+    return _load_example_data("checkerboard-data")
 
 
 def get_city_data() -> pd.DataFrame:
@@ -87,10 +99,7 @@ def get_city_data() -> pd.DataFrame:
         (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
         DATABASE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     """
-    this_dir, _ = os.path.split(__file__)
-    data_path = os.path.join(this_dir, "city-data.pkl")
-    data = pd.read_pickle(data_path)
-    return data
+    return _load_example_data("city-data")
 
 
 def get_example_flow() -> Flow:
@@ -101,6 +110,6 @@ def get_example_flow() -> Flow:
     For more info: `print(example_flow().info)`.
     """
     this_dir, _ = os.path.split(__file__)
-    flow_path = os.path.join(this_dir, "example-flow.pkl")
+    flow_path = os.path.join(this_dir, f"{EXAMPLE_FILE_DIR}/example-flow.pzflow.pkl")
     flow = Flow(file=flow_path)
     return flow

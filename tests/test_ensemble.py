@@ -1,9 +1,10 @@
 import dill as pickle
-import jax.numpy as np
-import numpy as onp
+import jax.numpy as jnp
+import numpy as np
 import pandas as pd
 import pytest
 from jax import random
+
 from pzflow import Flow, FlowEnsemble
 from pzflow.bijectors import Reverse, RollingSplineCoupling
 
@@ -11,7 +12,7 @@ flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
 flow0 = Flow(("x", "y"), RollingSplineCoupling(nlayers=2), seed=0)
 flow1 = Flow(("x", "y"), RollingSplineCoupling(nlayers=2), seed=1)
 
-xarray = onp.arange(6).reshape(3, 2) / 10
+xarray = np.arange(6).reshape(3, 2) / 10
 x = pd.DataFrame(xarray, columns=("x", "y"))
 
 
@@ -22,27 +23,29 @@ def test_log_prob():
 
     lp0 = flow0.log_prob(x)
     lp1 = flow1.log_prob(x)
-    assert np.allclose(lpEns[:, 0], lp0)
-    assert np.allclose(lpEns[:, 1], lp1)
+    assert jnp.allclose(lpEns[:, 0], lp0)
+    assert jnp.allclose(lpEns[:, 1], lp1)
 
     lpEnsMean = flowEns.log_prob(x)
     assert lpEnsMean.shape == lp0.shape
 
-    manualMean = np.log(np.mean(np.array([np.exp(lp0), np.exp(lp1)]), axis=0))
-    assert np.allclose(lpEnsMean, manualMean)
+    manualMean = jnp.log(
+        jnp.mean(jnp.array([jnp.exp(lp0), jnp.exp(lp1)]), axis=0)
+    )
+    assert jnp.allclose(lpEnsMean, manualMean)
 
 
 def test_posterior():
 
-    grid = np.linspace(-1, 1, 5)
+    grid = jnp.linspace(-1, 1, 5)
 
     pEns = flowEns.posterior(x, "x", grid, returnEnsemble=True)
     assert pEns.shape == (3, 2, grid.size)
 
     p0 = flow0.posterior(x, "x", grid)
     p1 = flow1.posterior(x, "x", grid)
-    assert np.allclose(pEns[:, 0, :], p0)
-    assert np.allclose(pEns[:, 1, :], p1)
+    assert jnp.allclose(pEns[:, 0, :], p0)
+    assert jnp.allclose(pEns[:, 1, :], p1)
 
     pEnsMean = flowEns.posterior(x, "x", grid)
     assert pEnsMean.shape == p0.shape
@@ -50,8 +53,8 @@ def test_posterior():
     p0 = flow0.posterior(x, "x", grid, normalize=False)
     p1 = flow1.posterior(x, "x", grid, normalize=False)
     manualMean = (p0 + p1) / 2
-    manualMean = manualMean / np.trapz(y=manualMean, x=grid).reshape(-1, 1)
-    assert np.allclose(pEnsMean, manualMean)
+    manualMean = manualMean / jnp.trapz(y=manualMean, x=grid).reshape(-1, 1)
+    assert jnp.allclose(pEnsMean, manualMean)
 
 
 def test_sample():
@@ -62,8 +65,10 @@ def test_sample():
 
     s0 = flow0.sample(5, seed=0)
     s1 = flow1.sample(5, seed=0)
-    sManual = np.vstack([s0.values, s1.values])
-    assert np.allclose(sEns[sEns[:, 0].argsort()], sManual[sManual[:, 0].argsort()])
+    sManual = jnp.vstack([s0.values, s1.values])
+    assert jnp.allclose(
+        sEns[sEns[:, 0].argsort()], sManual[sManual[:, 0].argsort()]
+    )
 
     # now test everything with returnEnsemble=True
     sEns = flowEns.sample(10, seed=0, returnEnsemble=True).values
@@ -71,8 +76,8 @@ def test_sample():
 
     s0 = flow0.sample(10, seed=0)
     s1 = flow1.sample(10, seed=0)
-    sManual = np.vstack([s0.values, s1.values])
-    assert np.allclose(sEns, sManual)
+    sManual = jnp.vstack([s0.values, s1.values])
+    assert jnp.allclose(sEns, sManual)
 
 
 def test_conditional_sample():
@@ -85,24 +90,33 @@ def test_conditional_sample():
     )
 
     # test with nsamples = 1, fewer samples than flows
-    conditions = pd.DataFrame(onp.arange(2).reshape(-1, 2), columns=("a", "b"))
-    samples = cEns.sample(nsamples=1, conditions=conditions, save_conditions=False)
+    conditions = pd.DataFrame(np.arange(2).reshape(-1, 2), columns=("a", "b"))
+    samples = cEns.sample(
+        nsamples=1, conditions=conditions, save_conditions=False
+    )
     assert samples.shape == (1, 2)
 
     # test with nsamples = 1, more samples than flows
-    conditions = pd.DataFrame(onp.arange(10).reshape(-1, 2), columns=("a", "b"))
-    samples = cEns.sample(nsamples=1, conditions=conditions, save_conditions=False)
+    conditions = pd.DataFrame(np.arange(10).reshape(-1, 2), columns=("a", "b"))
+    samples = cEns.sample(
+        nsamples=1, conditions=conditions, save_conditions=False
+    )
     assert samples.shape == (5, 2)
 
     # test with nsamples = 2, more samples than flows
-    conditions = pd.DataFrame(onp.arange(10).reshape(-1, 2), columns=("a", "b"))
-    samples = cEns.sample(nsamples=2, conditions=conditions, save_conditions=False)
+    conditions = pd.DataFrame(np.arange(10).reshape(-1, 2), columns=("a", "b"))
+    samples = cEns.sample(
+        nsamples=2, conditions=conditions, save_conditions=False
+    )
     assert samples.shape == (10, 2)
 
     # test with returnEnsemble=True
-    conditions = pd.DataFrame(onp.arange(10).reshape(-1, 2), columns=("a", "b"))
+    conditions = pd.DataFrame(np.arange(10).reshape(-1, 2), columns=("a", "b"))
     samples = cEns.sample(
-        nsamples=1, conditions=conditions, save_conditions=False, returnEnsemble=True
+        nsamples=1,
+        conditions=conditions,
+        save_conditions=False,
+        returnEnsemble=True,
     )
     assert samples.shape == (10, 2)
 
@@ -110,13 +124,17 @@ def test_conditional_sample():
 def test_train():
 
     data = random.normal(random.PRNGKey(0), shape=(100, 2))
-    data = pd.DataFrame(onp.array(data), columns=("x", "y"))
+    data = pd.DataFrame(np.array(data), columns=("x", "y"))
 
     loss_dict = flowEns.train(data, epochs=4, batch_size=50, verbose=True)
-    losses0 = flow0.train(data, epochs=4, batch_size=50)
-    losses1 = flow1.train(data, epochs=4, batch_size=50)
-    assert np.allclose(np.array(loss_dict["Flow 0"]), np.array(losses0))
-    assert np.allclose(np.array(loss_dict["Flow 1"]), np.array(losses1))
+
+    rng = np.random.default_rng(0)
+    seeds = rng.integers(1e9, size=2)
+    losses0 = flow0.train(data, epochs=4, batch_size=50, seed=seeds[0])
+    losses1 = flow1.train(data, epochs=4, batch_size=50, seed=seeds[1])
+
+    assert jnp.allclose(jnp.array(loss_dict["Flow 0"]), jnp.array(losses0))
+    assert jnp.allclose(jnp.array(loss_dict["Flow 1"]), jnp.array(losses1))
 
 
 def test_load_ensemble(tmp_path):
@@ -133,7 +151,7 @@ def test_load_ensemble(tmp_path):
 
     postSave = flowEns.sample(10, seed=0)
 
-    assert np.allclose(preSave.values, postSave.values)
+    assert jnp.allclose(preSave.values, postSave.values)
 
     with open(str(file), "rb") as handle:
         save_dict = pickle.load(handle)
@@ -148,7 +166,6 @@ def test_load_ensemble(tmp_path):
     "data_columns,bijector,info,file",
     [
         (None, None, None, None),
-        (("x", "y"), None, None, None),
         (None, Reverse(), None, None),
         (("x", "y"), None, None, "file"),
         (None, Reverse(), None, "file"),
