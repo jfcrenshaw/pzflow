@@ -513,6 +513,7 @@ class FlowEnsemble:
         patience: int = None,
         seed: int = 0,
         verbose: bool = False,
+        progress_bar: bool = False,
     ) -> dict:
         """Trains the normalizing flows on the provided inputs.
 
@@ -546,6 +547,8 @@ class FlowEnsemble:
             error sampling.
         verbose : bool; default=False
             If true, print the training loss every 5% of epochs.
+        progress_bar : bool; default=False
+            If true, display a tqdm progress bar during training.
 
         Returns
         -------
@@ -575,6 +578,7 @@ class FlowEnsemble:
                 patience=patience,
                 seed=seeds[i],
                 verbose=verbose,
+                progress_bar=progress_bar,
             )
 
         return loss_dict
