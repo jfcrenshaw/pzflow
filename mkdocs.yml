@@ -14,7 +14,6 @@ nav:
       - Marginalizing Variables: tutorials/marginalization.ipynb
       - Convolving Non-Gaussian Errors: tutorials/nongaussian_errors.ipynb
   - Common gotchas: gotchas.md
-  - Contributing to PZFlow: contributing.md
   - API: API/
 
 theme:
