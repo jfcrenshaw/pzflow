@@ -12,6 +12,8 @@ If your data consists of continuous variables that can be put into a Pandas Data
 The `Flow` class makes building and training a normalizing flow simple.
 It also allows you to easily sample from the normalizing flow (e.g., for forward modeling or data augmentation), and calculate posteriors over any of your variables.
 
+There are several tutorial notebooks in the [docs](https://jfcrenshaw.github.io/pzflow/tutorials/).
+
 ## Installation
 
 See the instructions in the [docs](https://jfcrenshaw.github.io/pzflow/install/).
