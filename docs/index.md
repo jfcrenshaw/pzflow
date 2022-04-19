@@ -1,3 +1,8 @@
+![build](https://github.com/jfcrenshaw/pzflow/workflows/build/badge.svg)
+[![codecov](https://codecov.io/gh/jfcrenshaw/pzflow/branch/main/graph/badge.svg?token=qR5cey0swQ)](https://codecov.io/gh/jfcrenshaw/pzflow)
+[![PyPI version](https://badge.fury.io/py/pzflow.svg)](https://badge.fury.io/py/pzflow)
+[![DOI](https://zenodo.org/badge/327498448.svg)](https://zenodo.org/badge/latestdoi/327498448)
+
 # PZFlow
 
 PZFlow is a python package for probabilistic modeling of tabular data with normalizing flows.
@@ -6,6 +11,10 @@ If your data consists of continuous variables that can be put into a Pandas Data
 
 The `Flow` class makes building and training a normalizing flow simple.
 It also allows you to easily sample from the normalizing flow (e.g., for forward modeling or data augmentation), and calculate posteriors over any of your variables.
+
+## Installation
+
+See the instructions in the [docs](https://jfcrenshaw.github.io/pzflow/install/).
 
 ## Citation
 
