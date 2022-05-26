@@ -1,3 +1,4 @@
+"""Define utility functions for use in other modules."""
 from typing import Callable, Tuple
 
 import jax.numpy as jnp
@@ -7,7 +8,7 @@ from jax.example_libraries.stax import Dense, LeakyRelu, serial
 from pzflow import bijectors
 
 
-def build_bijector_from_info(info):
+def build_bijector_from_info(info: tuple) -> tuple:
     """Build a Bijector from a Bijector_Info object"""
 
     # recurse through chains

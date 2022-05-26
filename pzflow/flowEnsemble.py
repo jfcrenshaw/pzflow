@@ -1,3 +1,4 @@
+"""Define FlowEnsemble object that holds an ensemble of normalizing flows."""
 from typing import Any, Callable, Sequence, Tuple
 
 import dill as pickle
@@ -45,7 +46,7 @@ class FlowEnsemble:
         N: int = 1,
         info: Any = None,
         file: str = None,
-    ):
+    ) -> None:
         """Instantiate an ensemble of normalizing flows.
 
         Note that while all of the init parameters are technically optional,
@@ -468,7 +469,7 @@ class FlowEnsemble:
                         ],
                     ).set_index(conditions.index)
 
-    def save(self, file: str):
+    def save(self, file: str) -> None:
         """Saves the ensemble to a file.
 
         Pickles the ensemble and saves it to a file that can be passed as
