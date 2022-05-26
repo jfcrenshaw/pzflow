@@ -1,3 +1,4 @@
+"""Define the latent distributions used in the normalizing flows."""
 import sys
 from abc import ABC, abstractmethod
 from typing import Union
@@ -29,7 +30,7 @@ class LatentDist(ABC):
         """Sample from the distribution."""
 
 
-def _mahalanobis_and_logdet(x, cov):
+def _mahalanobis_and_logdet(x: jnp.array, cov: jnp.array) -> tuple:
     # Calculate mahalanobis distance and log_det of cov.
     # Uses scipy method, explained here:
     # http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
@@ -50,7 +51,7 @@ class CentBeta(LatentDist):
     Alpha and beta parameters for each dimension are learned during training.
     """
 
-    def __init__(self, input_dim: int, B: float = 5):
+    def __init__(self, input_dim: int, B: float = 5) -> None:
         """
         Parameters
         ----------
@@ -142,7 +143,7 @@ class CentBeta13(LatentDist):
     distribution, but with hard cutoffs at +/- B.
     """
 
-    def __init__(self, input_dim: int, B: float = 5):
+    def __init__(self, input_dim: int, B: float = 5) -> None:
         """
         Parameters
         ----------
@@ -238,7 +239,7 @@ class Normal(LatentDist):
     draw Gaussian samples outside the support of the splines.
     """
 
-    def __init__(self, input_dim: int):
+    def __init__(self, input_dim: int) -> None:
         """
         Parameters
         ----------
@@ -313,7 +314,7 @@ class Tdist(LatentDist):
     layers, which have compact support.
     """
 
-    def __init__(self, input_dim: int):
+    def __init__(self, input_dim: int) -> None:
         """
         Parameters
         ----------
@@ -394,7 +395,7 @@ class Tdist(LatentDist):
 class Uniform(LatentDist):
     """A multivariate uniform distribution with support [-B, B]."""
 
-    def __init__(self, input_dim: int, B: float = 5):
+    def __init__(self, input_dim: int, B: float = 5) -> None:
         """
         Parameters
         ----------
@@ -481,7 +482,7 @@ class Joint(LatentDist):
     CentBeta latent space.
     """
 
-    def __init__(self, *inputs: Union[LatentDist, tuple]):
+    def __init__(self, *inputs: Union[LatentDist, tuple]) -> None:
         """
         Parameters
         ----------

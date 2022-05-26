@@ -1,3 +1,4 @@
+"""Define the bijectors used in the normalizing flows."""
 from functools import update_wrapper
 from typing import Callable, Sequence, Tuple, Union
 
@@ -34,7 +35,7 @@ class ForwardFunction:
         The log determinant of the Jacobian evaluated at the inputs.
     """
 
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable) -> None:
         self._func = func
 
     def __call__(
@@ -65,7 +66,7 @@ class InverseFunction:
         The log determinant of the Jacobian evaluated at the inputs.
     """
 
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable) -> None:
         self._func = func
 
     def __call__(
@@ -97,7 +98,7 @@ class InitFunction:
         The inverse function of the Bijector.
     """
 
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable) -> None:
         self._func = func
 
     def __call__(
@@ -109,7 +110,7 @@ class InitFunction:
 class Bijector:
     """Wrapper class for bijector functions"""
 
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable) -> None:
         self._func = func
         update_wrapper(self, func)
 
