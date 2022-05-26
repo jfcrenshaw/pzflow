@@ -1,3 +1,4 @@
+"""Define the Flow object that defines the normalizing flow."""
 from typing import Any, Callable, Sequence, Tuple
 
 import dill as pickle
@@ -56,7 +57,7 @@ class Flow:
         info: Any = None,
         file: str = None,
         _dictionary: dict = None,
-    ):
+    ) -> None:
         """Instantiate a normalizing flow.
 
         Note that while all of the init parameters are technically optional,
@@ -249,7 +250,7 @@ class Flow:
             else:
                 self._bijector_info = None
 
-    def _check_bijector(self):
+    def _check_bijector(self) -> None:
         if self._bijector_info is None:
             raise ValueError(
                 "The bijector has not been set up yet! "
@@ -264,7 +265,7 @@ class Flow:
         bijector: Tuple[InitFunction, Bijector_Info],
         params: Pytree = None,
         seed: int = 0,
-    ):
+    ) -> None:
         """Set the bijector.
 
         Parameters
@@ -292,7 +293,7 @@ class Flow:
         # save the bijector params along with the latent params
         self._params = (self.latent._params, bijector_params)
 
-    def _set_default_bijector(self, inputs: pd.DataFrame, seed: int = 0):
+    def _set_default_bijector(self, inputs: pd.DataFrame, seed: int = 0) -> None:
         # Set the default bijector
         # which is ShiftBounds -> RollingSplineCoupling
 
@@ -817,7 +818,7 @@ class Flow:
         # return the samples!
         return x
 
-    def _save_dict(self):
+    def _save_dict(self) -> None:
         ### Returns the dictionary of all flow params to be saved.
         save_dict = {"class": self.__class__.__name__}
         keys = [
@@ -844,7 +845,7 @@ class Flow:
 
         return save_dict
 
-    def save(self, file: str):
+    def save(self, file: str) -> None:
         """Saves the flow to a file.
 
         Pickles the flow and saves it to a file that can be passed as
