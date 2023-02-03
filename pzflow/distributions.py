@@ -429,16 +429,14 @@ class Uniform(LatentDist):
         """
 
         # which inputs are inside the support of the distribution
-        mask = (
-            ((inputs >= -self.B) & (inputs <= self.B))
-            .astype(float)
-            .prod(axis=-1)
-        )
+        mask = jnp.prod((inputs >= -self.B) & (inputs <= self.B), axis=-1)
 
         # calculate log_prob
-        prob = mask / (2 * self.B) ** self.input_dim
-        prob = jnp.where(prob == 0, epsilon, prob)
-        log_prob = jnp.log(prob)
+        log_prob = jnp.where(
+            mask,
+            -self.input_dim * jnp.log(2 * self.B),
+            -jnp.inf,
+        )
 
         return log_prob
 
