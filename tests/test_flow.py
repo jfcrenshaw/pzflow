@@ -518,7 +518,18 @@ def test_validation_train():
     val_set = data[8:]
 
     # train the default flow
-    flow = Flow(train_set.columns)
+    flow = Flow(train_set.columns, Reverse())
     losses = flow.train(train_set, val_set, verbose=True, epochs=3)
     assert len(losses[0]) == 4
     assert len(losses[1]) == 4
+
+
+def test_nan_train_stop():
+    # create data with NaNs
+    data = jnp.nan * jnp.ones((4, 2))
+    data = pd.DataFrame(data, columns=["x", "y"])
+
+    # train the flow
+    flow = Flow(x.columns, Reverse())
+    losses = flow.train(data)
+    assert len(losses) == 2
