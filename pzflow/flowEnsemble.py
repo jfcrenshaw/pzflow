@@ -131,7 +131,6 @@ class FlowEnsemble:
 
         # if file is provided, load everything from the file
         if file is not None:
-
             # load the file
             with open(file, "rb") as handle:
                 save_dict = pickle.load(handle)
@@ -506,12 +505,14 @@ class FlowEnsemble:
     def train(
         self,
         inputs: pd.DataFrame,
+        val_set: pd.DataFrame = None,
         epochs: int = 50,
         batch_size: int = 1024,
         optimizer: Callable = None,
         loss_fn: Callable = None,
         convolve_errs: bool = False,
         patience: int = None,
+        best_params: bool = True,
         seed: int = 0,
         verbose: bool = False,
         progress_bar: bool = False,
@@ -523,6 +524,9 @@ class FlowEnsemble:
         inputs : pd.DataFrame
             Data on which to train the normalizing flows.
             Must have columns matching self.data_columns.
+        val_set : pd.DataFrame; default=None
+            Validation set, of same format as inputs. If provided,
+            validation loss will be calculated at the end of each epoch.
         epochs : int; default=50
             Number of epochs to train.
         batch_size : int; default=1024
@@ -543,6 +547,11 @@ class FlowEnsemble:
         patience : int; optional
             Factor that controls early stopping. Training will stop if the
             loss doesn't decrease for this number of epochs.
+        best_params : bool; default=True
+            Whether to use the params from the epoch with the lowest loss.
+            Note if a validation set is provided, the epoch with the lowest
+            validation loss is chosen. If False, the params from the final
+            epoch are saved.
         seed : int; default=0
             A random seed to control the batching and the (optional)
             error sampling.
@@ -565,18 +574,19 @@ class FlowEnsemble:
         loss_dict = dict()
 
         for i, (name, flow) in enumerate(self._ensemble.items()):
-
             if verbose:
                 print(name)
 
             loss_dict[name] = flow.train(
                 inputs=inputs,
+                val_set=val_set,
                 epochs=epochs,
                 batch_size=batch_size,
                 optimizer=optimizer,
                 loss_fn=loss_fn,
                 convolve_errs=convolve_errs,
                 patience=patience,
+                best_params=best_params,
                 seed=seeds[i],
                 verbose=verbose,
                 progress_bar=progress_bar,
