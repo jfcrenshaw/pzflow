@@ -18,7 +18,7 @@ from pzflow.bijectors import (
     RollingSplineCoupling,
     ShiftBounds,
 )
-from pzflow.utils import build_bijector_from_info, gaussian_error_model
+from pzflow.utils import build_bijector_from_info, gaussian_error_model, mean
 
 
 class Flow:
@@ -149,7 +149,6 @@ class Flow:
 
         # if file or dictionary is provided, load everything from it
         if file is not None or _dictionary is not None:
-
             save_dict = self._save_dict()
             if file is not None:
                 with open(file, "rb") as handle:
@@ -293,7 +292,9 @@ class Flow:
         # save the bijector params along with the latent params
         self._params = (self.latent._params, bijector_params)
 
-    def _set_default_bijector(self, inputs: pd.DataFrame, seed: int = 0) -> None:
+    def _set_default_bijector(
+        self, inputs: pd.DataFrame, seed: int = 0
+    ) -> None:
         # Set the default bijector
         # which is ShiftBounds -> RollingSplineCoupling
 
@@ -311,7 +312,7 @@ class Flow:
 
         self.set_bijector(
             Chain(
-                ShiftBounds(mins, maxs, 4.),
+                ShiftBounds(mins, maxs, 4.0),
                 RollingSplineCoupling(
                     len(self.data_columns), n_conditions=n_conditions
                 ),
@@ -405,7 +406,11 @@ class Flow:
         return log_prob
 
     def log_prob(
-        self, inputs: pd.DataFrame, err_samples: int = None, seed: int = None
+        self,
+        inputs: pd.DataFrame,
+        err_samples: int = None,
+        seed: int = None,
+        ignore_nans: bool = False,
     ) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
@@ -424,6 +429,9 @@ class Flow:
             be `u_err`. Zero error assumed for any missing error columns.
         seed : int; default=None
             Random seed for drawing the samples with Gaussian errors.
+        ignore_nans: bool; default=False
+            Whether to ignore NaNs when averaging over the err_samples by using
+            jnp.nanmean instead of jnp.mean.
 
         Returns
         -------
@@ -449,6 +457,7 @@ class Flow:
                 err_samples, int
             ), "err_samples must be a positive integer."
             assert err_samples > 0, "err_samples must be a positive integer."
+
             # get Gaussian samples
             seed = np.random.randint(1e18) if seed is None else seed
             key = random.PRNGKey(seed)
@@ -456,10 +465,11 @@ class Flow:
             C = self._get_err_samples(
                 key, inputs, err_samples, type="conditions"
             )
+
             # calculate log_probs
             log_probs = self._log_prob(self._params, X, C)
             probs = jnp.exp(log_probs.reshape(-1, err_samples))
-            return jnp.log(probs.mean(axis=1))
+            return jnp.log(mean(probs, axis=1, ignore_nans=ignore_nans))
 
     def posterior(
         self,
@@ -472,6 +482,7 @@ class Flow:
         seed: int = None,
         batch_size: int = None,
         nan_to_zero: bool = True,
+        ignore_nans: bool = False,
     ) -> jnp.ndarray:
         """Calculates posterior distributions for the provided column.
 
@@ -519,6 +530,9 @@ class Flow:
             Whether to normalize the posterior so that it integrates to 1.
         nan_to_zero : bool; default=True
             Whether to convert NaN's to zero probability in the final pdfs.
+        ignore_nans: bool; default=False
+            Whether to ignore NaNs when averaging over the err_samples by using
+            jnp.nanmean instead of jnp.mean.
 
         Returns
         -------
@@ -556,7 +570,6 @@ class Flow:
         # if marginalization rules were passed, we will loop over the rules
         # and repeatedly call this method
         if marg_rules is not None:
-
             # if the flag is NaN, we must use jnp.isnan to check for flags
             if np.isnan(marg_rules["flag"]):
 
@@ -597,7 +610,6 @@ class Flow:
 
             # now we will loop over the rules in marg_rules
             for name, rule in marg_rules.items():
-
                 # ignore the flag, because that's not a column in the data
                 if name == "flag":
                     continue
@@ -665,10 +677,8 @@ class Flow:
 
         # now for the main posterior calculation loop
         else:
-
             # loop through batches
             for batch_idx in range(0, nrows, batch_size):
-
                 # get the data batch
                 # and, if this is a conditional flow, the correpsonding conditions
                 batch = inputs.iloc[batch_idx : batch_idx + batch_size]
@@ -723,7 +733,7 @@ class Flow:
                 # if we were Gaussian sampling, average over the samples
                 if err_samples is not None:
                     prob = prob.reshape(-1, err_samples, len(grid))
-                    prob = prob.mean(axis=1)
+                    prob = mean(prob, axis=1, ignore_nans=ignore_nans)
                 # add the pdfs to the bigger list
                 pdfs = pdfs.at[batch_idx : batch_idx + batch_size, :].set(
                     prob,
@@ -879,6 +889,7 @@ class Flow:
         seed: int = 0,
         verbose: bool = False,
         progress_bar: bool = False,
+        ignore_nans: bool = False,
     ) -> list:
         """Trains the normalizing flow on the provided inputs.
 
@@ -916,6 +927,9 @@ class Flow:
             If true, print the training loss every 5% of epochs.
         progress_bar : bool; default=False
             If true, display a tqdm progress bar during training.
+        ignore_nans: bool; default=False
+            Whether to ignore NaNs when averaging losses for the sample. Note
+            this only matters if you are using the default loss_fn.
 
         Returns
         -------
@@ -940,7 +954,10 @@ class Flow:
 
             @jit
             def loss_fn(params, x, c):
-                return -jnp.mean(self._log_prob(params, x, c))
+                return -mean(
+                    self._log_prob(params, x, c),
+                    ignore_nans=ignore_nans,
+                )
 
         # initialize the optimizer
         optimizer = (
@@ -1016,7 +1033,6 @@ class Flow:
 
             # loop through batches and step optimizer
             for batch_idx in range(0, len(X), batch_size):
-
                 # if sampling from the error distribution, this returns a
                 # Gaussian sample of the batch. Else just returns batch as a
                 # jax array
@@ -1056,7 +1072,6 @@ class Flow:
 
             # if patience provided, we need to check for early stopping
             if patience is not None:
-
                 # if loss didn't improve, increase counter
                 # and check early stopping criterion
                 if losses[-1] >= best_loss or jnp.isclose(

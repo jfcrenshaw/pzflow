@@ -131,7 +131,6 @@ class FlowEnsemble:
 
         # if file is provided, load everything from the file
         if file is not None:
-
             # load the file
             with open(file, "rb") as handle:
                 save_dict = pickle.load(handle)
@@ -191,6 +190,7 @@ class FlowEnsemble:
         err_samples: int = None,
         seed: int = None,
         returnEnsemble: bool = False,
+        ignore_nans: bool = False,
     ) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
@@ -215,6 +215,9 @@ class FlowEnsemble:
             If False, the prob is averaged over the flows in the ensemble,
             and the log of this average is returned as an array of shape
             (inputs.shape[0],)
+        ignore_nans: bool; default=False
+            Whether to ignore NaNs when averaging over the err_samples by using
+            jnp.nanmean instead of jnp.mean.
 
         Returns
         -------
@@ -225,7 +228,9 @@ class FlowEnsemble:
         # calculate log_prob for each flow in the ensemble
         ensemble = jnp.array(
             [
-                flow.log_prob(inputs, err_samples, seed)
+                flow.log_prob(
+                    inputs, err_samples, seed, ignore_nans=ignore_nans
+                )
                 for flow in self._ensemble.values()
             ]
         )
@@ -253,6 +258,7 @@ class FlowEnsemble:
         batch_size: int = None,
         returnEnsemble: bool = False,
         nan_to_zero: bool = True,
+        ignore_nans: bool = False,
     ) -> jnp.ndarray:
         """Calculates posterior distributions for the provided column.
 
@@ -305,6 +311,9 @@ class FlowEnsemble:
             and returned as an array of shape (inputs.shape[0], grid.size)
         nan_to_zero : bool; default=True
             Whether to convert NaN's to zero probability in the final pdfs.
+        ignore_nans: bool; default=False
+            Whether to ignore NaNs when averaging over the err_samples by using
+            jnp.nanmean instead of jnp.mean.
 
         Returns
         -------
@@ -325,6 +334,7 @@ class FlowEnsemble:
                     batch_size=batch_size,
                     normalize=False,
                     nan_to_zero=nan_to_zero,
+                    ignore_nans=ignore_nans,
                 )
                 for flow in self._ensemble.values()
             ]
@@ -515,6 +525,7 @@ class FlowEnsemble:
         seed: int = 0,
         verbose: bool = False,
         progress_bar: bool = False,
+        ignore_nans: bool = False,
     ) -> dict:
         """Trains the normalizing flows on the provided inputs.
 
@@ -550,6 +561,9 @@ class FlowEnsemble:
             If true, print the training loss every 5% of epochs.
         progress_bar : bool; default=False
             If true, display a tqdm progress bar during training.
+        ignore_nans: bool; default=False
+            Whether to ignore NaNs when averaging losses for the sample. Note
+            this only matters if you are using the default loss_fn.
 
         Returns
         -------
@@ -565,7 +579,6 @@ class FlowEnsemble:
         loss_dict = dict()
 
         for i, (name, flow) in enumerate(self._ensemble.items()):
-
             if verbose:
                 print(name)
 
@@ -580,6 +593,7 @@ class FlowEnsemble:
                 seed=seeds[i],
                 verbose=verbose,
                 progress_bar=progress_bar,
+                ignore_nans=ignore_nans,
             )
 
         return loss_dict

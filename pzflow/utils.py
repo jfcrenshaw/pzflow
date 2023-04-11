@@ -241,3 +241,27 @@ def sub_diag_indices(
         jnp.tile(jnp.arange(ndiag), nblocks),
     )
     return idx
+
+
+def mean(x: jnp.ndarray, ignore_nans: bool = False, **kwargs) -> jnp.ndarray:
+    """Calculate the mean of the array.
+
+    Thin wrapper over jnp.mean and jnp.nanmean.
+
+    Parameters
+    ----------
+    x: jnp.ndarray
+        Array of values.
+    ignore_nans: bool, default=False
+        Whether to ignore NaNs in the mean calculation
+    kwargs
+        Any keywords that can be passed to jnp.mean and jnp.nanmean.
+
+    Returns
+    -------
+    jnp.ndarray
+    """
+    if ignore_nans:
+        return jnp.nanmean(x, **kwargs)
+    else:
+        return jnp.mean(x, **kwargs)
