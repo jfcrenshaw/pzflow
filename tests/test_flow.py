@@ -530,6 +530,6 @@ def test_nan_train_stop():
     data = pd.DataFrame(data, columns=["x", "y"])
 
     # train the flow
-    flow = Flow(x.columns, Reverse())
+    flow = Flow(data.columns, Reverse())
     losses = flow.train(data)
     assert len(losses) == 2
