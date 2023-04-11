@@ -7,7 +7,6 @@ from pzflow.utils import *
 
 
 def test_build_bijector_from_info():
-
     x = jnp.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
 
     init_fun, info1 = Chain(
@@ -50,3 +49,20 @@ def test_sub_diag_indices_correct():
 def test_sub_diag_indices_bad_input(x):
     with pytest.raises(ValueError):
         idx = sub_diag_indices(x)
+
+
+def test_mean():
+    # create the first array of floats
+    x = jnp.linspace(0, 10, 11)
+
+    # check that the mean = 5
+    assert jnp.isclose(mean(x), 5.0)
+
+    # add a NaN to the array
+    x = x.at[-1].set(jnp.nan)
+
+    # check that the regular mean is a NaN
+    assert jnp.isnan(mean(x))
+
+    # check the the ignore_nans mean = 4.5
+    assert jnp.isclose(mean(x, ignore_nans=True), 4.5)
