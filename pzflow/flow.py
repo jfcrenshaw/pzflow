@@ -1114,10 +1114,10 @@ class Flow:
                     early_stopping_counter = 0
 
             # break if the training loss is NaN
-            if np.isnan(losses[-1]):
+            if not np.isfinite(losses[-1]):
                 print(
                     f"Training stopping after epoch {epoch}",
-                    "because training loss is NaN.",
+                    "because training loss diverged.",
                 )
                 break
 
