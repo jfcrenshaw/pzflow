@@ -519,7 +519,13 @@ def test_validation_train():
 
     # train the default flow
     flow = Flow(train_set.columns, Reverse())
-    losses = flow.train(train_set, val_set, verbose=True, epochs=3)
+    losses = flow.train(
+        train_set,
+        val_set,
+        verbose=True,
+        epochs=3,
+        best_params=False,
+    )
     assert len(losses[0]) == 4
     assert len(losses[1]) == 4
 
