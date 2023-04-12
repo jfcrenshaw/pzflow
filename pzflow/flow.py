@@ -149,7 +149,6 @@ class Flow:
 
         # if file or dictionary is provided, load everything from it
         if file is not None or _dictionary is not None:
-
             save_dict = self._save_dict()
             if file is not None:
                 with open(file, "rb") as handle:
@@ -293,7 +292,9 @@ class Flow:
         # save the bijector params along with the latent params
         self._params = (self.latent._params, bijector_params)
 
-    def _set_default_bijector(self, inputs: pd.DataFrame, seed: int = 0) -> None:
+    def _set_default_bijector(
+        self, inputs: pd.DataFrame, seed: int = 0
+    ) -> None:
         # Set the default bijector
         # which is ShiftBounds -> RollingSplineCoupling
 
@@ -311,7 +312,7 @@ class Flow:
 
         self.set_bijector(
             Chain(
-                ShiftBounds(mins, maxs, 4.),
+                ShiftBounds(mins, maxs, 4.0),
                 RollingSplineCoupling(
                     len(self.data_columns), n_conditions=n_conditions
                 ),
@@ -556,7 +557,6 @@ class Flow:
         # if marginalization rules were passed, we will loop over the rules
         # and repeatedly call this method
         if marg_rules is not None:
-
             # if the flag is NaN, we must use jnp.isnan to check for flags
             if np.isnan(marg_rules["flag"]):
 
@@ -597,7 +597,6 @@ class Flow:
 
             # now we will loop over the rules in marg_rules
             for name, rule in marg_rules.items():
-
                 # ignore the flag, because that's not a column in the data
                 if name == "flag":
                     continue
@@ -665,10 +664,8 @@ class Flow:
 
         # now for the main posterior calculation loop
         else:
-
             # loop through batches
             for batch_idx in range(0, nrows, batch_size):
-
                 # get the data batch
                 # and, if this is a conditional flow, the correpsonding conditions
                 batch = inputs.iloc[batch_idx : batch_idx + batch_size]
@@ -870,12 +867,14 @@ class Flow:
     def train(
         self,
         inputs: pd.DataFrame,
+        val_set: pd.DataFrame = None,
         epochs: int = 100,
         batch_size: int = 1024,
         optimizer: Callable = None,
         loss_fn: Callable = None,
         convolve_errs: bool = False,
         patience: int = None,
+        best_params: bool = True,
         seed: int = 0,
         verbose: bool = False,
         progress_bar: bool = False,
@@ -887,6 +886,9 @@ class Flow:
         inputs : pd.DataFrame
             Data on which to train the normalizing flow.
             Must have columns matching `self.data_columns`.
+        val_set : pd.DataFrame; default=None
+            Validation set, of same format as inputs. If provided,
+            validation loss will be calculated at the end of each epoch.
         epochs : int; default=100
             Number of epochs to train.
         batch_size : int; default=1024
@@ -906,7 +908,13 @@ class Flow:
             flow instantiation.
         patience : int; optional
             Factor that controls early stopping. Training will stop if the
-            loss doesn't decrease for this number of epochs.
+            loss doesn't decrease for this number of epochs. Note if a
+            validation set is provided, the validation loss is used.
+        best_params : bool; default=True
+            Whether to use the params from the epoch with the lowest loss.
+            Note if a validation set is provided, the epoch with the lowest
+            validation loss is chosen. If False, the params from the final
+            epoch are saved.
         seed : int; default=0
             A random seed to control the batching and the (optional)
             error sampling and creating the default bijector (the latter
@@ -920,7 +928,10 @@ class Flow:
         Returns
         -------
         list
-            List of training losses from every epoch.
+            List of training losses from every epoch. If no val_set provided,
+            these are just training losses. If val_set is provided, then the
+            first element is the list of training losses, while the second is
+            the list of validation losses.
         """
 
         # split the seed
@@ -998,12 +1009,22 @@ class Flow:
         # save the initial loss
         X = jnp.array(inputs[columns].to_numpy())
         C = self._get_conditions(inputs)
-        losses = [loss_fn(model_params, X, C)]
+        losses = [loss_fn(model_params, X, C).item()]
+
+        if val_set is not None:
+            Xval = jnp.array(val_set[columns].to_numpy())
+            Cval = self._get_conditions(val_set)
+            val_losses = [loss_fn(model_params, Xval, Cval).item()]
+
         if verbose:
-            print(f"(0) {losses[-1]:.4f}")
+            if val_set is None:
+                print(f"(0) {losses[-1]:.4f}")
+            else:
+                print(f"(0) {losses[-1]:.4f}  {val_losses[-1]:.4f}")
 
         # initialize variables for early stopping
         best_loss = jnp.inf
+        best_param_vals = model_params
         early_stopping_counter = 0
 
         # loop through training
@@ -1016,7 +1037,6 @@ class Flow:
 
             # loop through batches and step optimizer
             for batch_idx in range(0, len(X), batch_size):
-
                 # if sampling from the error distribution, this returns a
                 # Gaussian sample of the batch. Else just returns batch as a
                 # jax array
@@ -1044,39 +1064,70 @@ class Flow:
                     model_params,
                     jnp.array(X[columns].to_numpy()),
                     self._get_conditions(X),
-                )
+                ).item()
             )
+
+            # and validation loss
+            if val_set is not None:
+                val_losses.append(loss_fn(model_params, Xval, Cval).item())
 
             # if verbose, print current loss
             if verbose and (
                 epoch % max(int(0.05 * epochs), 1) == 0
                 or (epoch + 1) == epochs
             ):
-                print(f"({epoch+1}) {losses[-1]:.4f}")
+                if val_set is None:
+                    print(f"({epoch+1}) {losses[-1]:.4f}")
+                else:
+                    print(
+                        f"({epoch+1}) {losses[-1]:.4f}  {val_losses[-1]:.4f}"
+                    )
 
             # if patience provided, we need to check for early stopping
-            if patience is not None:
+            if patience is not None or best_loss:
+                if val_set is None:
+                    tracked_losses = losses
+                else:
+                    tracked_losses = val_losses
 
                 # if loss didn't improve, increase counter
                 # and check early stopping criterion
-                if losses[-1] >= best_loss or jnp.isclose(
-                    losses[-1], best_loss
+                if tracked_losses[-1] >= best_loss or jnp.isclose(
+                    tracked_losses[-1], best_loss
                 ):
                     early_stopping_counter += 1
 
                     # check if the early stopping criterion is met
-                    if early_stopping_counter >= patience:
+                    if (
+                        patience is not None
+                        and early_stopping_counter >= patience
+                    ):
                         print(
                             "Early stopping criterion is met.",
-                            f"Training stopping after epoch {epoch}.",
+                            f"Training stopping after epoch {epoch+1}.",
                         )
                         break
                 # if this is the best loss, reset the counter
                 else:
-                    best_loss = losses[-1]
+                    best_loss = tracked_losses[-1]
+                    best_param_vals = model_params
                     early_stopping_counter = 0
 
-        # update the flow parameters with the final training state
-        self._params = model_params
+            # break if the training loss is NaN
+            if not np.isfinite(losses[-1]):
+                print(
+                    f"Training stopping after epoch {epoch+1}",
+                    "because training loss diverged.",
+                )
+                break
 
-        return losses
+        # update the flow parameters with the final training state
+        if best_params:
+            self._params = best_param_vals
+        else:
+            self._params = model_params
+
+        if val_set is None:
+            return losses
+        else:
+            return [losses, val_losses]

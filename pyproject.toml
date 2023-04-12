@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pzflow"
-version = "3.0.3"
+version = "3.1.0"
 description = "Probabilistic modeling of tabular data with normalizing flows."
 authors = ["John Franklin Crenshaw <jfcrenshaw@gmail.com>"]
 license = "MIT"

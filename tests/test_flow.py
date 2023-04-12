@@ -39,8 +39,8 @@ def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
     [
         Flow(("redshift", "y"), Reverse(), latent=Normal(2)),
         Flow(("redshift", "y"), Reverse(), latent=Tdist(2)),
-        Flow(("redshift", "y"), Reverse(), latent=Uniform(2, 3)),
-        Flow(("redshift", "y"), Reverse(), latent=CentBeta(2)),
+        Flow(("redshift", "y"), Reverse(), latent=Uniform(2, 10)),
+        Flow(("redshift", "y"), Reverse(), latent=CentBeta(2, 10)),
     ],
 )
 def test_returns_correct_shape(flow):
@@ -89,7 +89,6 @@ def test_returns_correct_shape(flow):
     ],
 )
 def test_posterior_with_marginalization(flag):
-
     flow = Flow(("a", "b", "c", "d"), Reverse())
 
     # test posteriors with marginalization
@@ -233,7 +232,6 @@ def test_posterior_with_marginalization(flag):
     ],
 )
 def test_error_convolution(flow, x, x_with_err):
-
     assert flow.log_prob(x, err_samples=10).shape == (x.shape[0],)
     assert jnp.allclose(
         flow.log_prob(x, err_samples=10, seed=0),
@@ -368,7 +366,6 @@ def test_train_bad_inputs(epochs, loss_fn):
 
 
 def test_conditional_sample():
-
     flow = Flow(("x", "y"), Reverse(), conditional_columns=("a", "b"))
     x = np.arange(12).reshape(-1, 4)
     x = pd.DataFrame(x, columns=("x", "y", "a", "b"))
@@ -399,7 +396,6 @@ def test_train_no_errs_same():
 
 
 def test_get_err_samples():
-
     rng = random.PRNGKey(0)
 
     # check Gaussian data samples
@@ -456,7 +452,6 @@ def test_get_err_samples():
 
 
 def test_train_w_conditions():
-
     xarray = np.array(
         [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4], [5.0, 6.0, 0.5, 0.6]]
     )
@@ -478,7 +473,6 @@ def test_train_w_conditions():
 
 
 def test_patience():
-
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -491,7 +485,6 @@ def test_patience():
 
 
 def test_latent_with_wrong_dimension():
-
     cols = ["x", "y"]
     latent = Uniform(3)
 
@@ -500,7 +493,6 @@ def test_latent_with_wrong_dimension():
 
 
 def test_bijector_not_set():
-
     flow = Flow(["x", "y"])
 
     with pytest.raises(ValueError):
@@ -513,8 +505,37 @@ def test_bijector_not_set():
 
 
 def test_default_bijector():
-
     flow = Flow(["x", "y"])
 
     losses = flow.train(get_twomoons_data())
     assert all(~np.isnan(losses))
+
+
+def test_validation_train():
+    # load some training data
+    data = get_twomoons_data()[:10]
+    train_set = data[:8]
+    val_set = data[8:]
+
+    # train the default flow
+    flow = Flow(train_set.columns, Reverse())
+    losses = flow.train(
+        train_set,
+        val_set,
+        verbose=True,
+        epochs=3,
+        best_params=False,
+    )
+    assert len(losses[0]) == 4
+    assert len(losses[1]) == 4
+
+
+def test_nan_train_stop():
+    # create data with NaNs
+    data = jnp.nan * jnp.ones((4, 2))
+    data = pd.DataFrame(data, columns=["x", "y"])
+
+    # train the flow
+    flow = Flow(data.columns, Reverse())
+    losses = flow.train(data)
+    assert len(losses) == 2
