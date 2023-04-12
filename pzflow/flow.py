@@ -1104,7 +1104,7 @@ class Flow:
                     ):
                         print(
                             "Early stopping criterion is met.",
-                            f"Training stopping after epoch {epoch}.",
+                            f"Training stopping after epoch {epoch+1}.",
                         )
                         break
                 # if this is the best loss, reset the counter
@@ -1116,7 +1116,7 @@ class Flow:
             # break if the training loss is NaN
             if not np.isfinite(losses[-1]):
                 print(
-                    f"Training stopping after epoch {epoch}",
+                    f"Training stopping after epoch {epoch+1}",
                     "because training loss diverged.",
                 )
                 break
