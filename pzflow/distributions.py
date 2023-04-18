@@ -157,7 +157,7 @@ class CentBeta13(LatentDist):
 
         # save dist info
         self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
-        self.info = ("CentBeta22", (input_dim, B))
+        self.info = ("CentBeta13", (input_dim, B))
         self.a = 13
         self.b = 13
 
