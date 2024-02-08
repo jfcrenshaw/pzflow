@@ -1,4 +1,5 @@
 """Define the Flow object that defines the normalizing flow."""
+
 from typing import Any, Callable, Sequence, Tuple
 
 import dill as pickle
@@ -402,7 +403,7 @@ class Flow:
         u, log_det = self._forward(params[1], inputs, conditions=conditions)
         log_prob = self.latent.log_prob(params[0], u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
-        log_prob = jnp.nan_to_num(log_prob, nan=jnp.NINF)
+        log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
         return log_prob
 
     def log_prob(
