@@ -133,6 +133,7 @@ class CentBeta(LatentDist):
         )
         return 2 * self.B * (samples - 0.5)
 
+
 class CentBeta13(LatentDist):
     """A centered Beta distribution with alpha, beta = 13.
 
@@ -226,7 +227,6 @@ class CentBeta13(LatentDist):
             ]
         )
         return 2 * self.B * (samples - 0.5)
-
 
 
 class Normal(LatentDist):

@@ -1,4 +1,5 @@
 """Define FlowEnsemble object that holds an ensemble of normalizing flows."""
+
 from typing import Any, Callable, Sequence, Tuple
 
 import dill as pickle
@@ -6,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 from jax import random
+from jax.scipy.integrate import trapezoid
 
 from pzflow import Flow, distributions
 from pzflow.bijectors import Bijector_Info, InitFunction
@@ -336,7 +338,7 @@ class FlowEnsemble:
             # return the ensemble of posteriors
             if normalize:
                 ensemble = ensemble.reshape(-1, grid.size)
-                ensemble = ensemble / jnp.trapz(y=ensemble, x=grid).reshape(
+                ensemble = ensemble / trapezoid(y=ensemble, x=grid).reshape(
                     -1, 1
                 )
                 ensemble = ensemble.reshape(inputs.shape[0], -1, grid.size)
@@ -345,7 +347,7 @@ class FlowEnsemble:
             # return mean over ensemble
             pdfs = ensemble.mean(axis=1)
             if normalize:
-                pdfs = pdfs / jnp.trapz(y=pdfs, x=grid).reshape(-1, 1)
+                pdfs = pdfs / trapezoid(y=pdfs, x=grid).reshape(-1, 1)
             return pdfs
 
     def sample(

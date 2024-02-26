@@ -110,6 +110,8 @@ def get_example_flow() -> Flow:
     For more info: `print(example_flow().info)`.
     """
     this_dir, _ = os.path.split(__file__)
-    flow_path = os.path.join(this_dir, f"{EXAMPLE_FILE_DIR}/example-flow.pzflow.pkl")
+    flow_path = os.path.join(
+        this_dir, f"{EXAMPLE_FILE_DIR}/example-flow.pzflow.pkl"
+    )
     flow = Flow(file=flow_path)
     return flow

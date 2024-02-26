@@ -14,12 +14,11 @@ from pzflow.distributions import *
         (Joint, (Normal(1), Uniform(1, 4)), ((), ())),
         (Joint, (Normal(1), Tdist(1)), ((), jnp.log(30.0))),
         (Joint, (Joint(Normal(1), Uniform(1)).info[1]), ((), ())),
-        (CentBeta13, (2, 4), ())
+        (CentBeta13, (2, 4), ()),
     ],
 )
 class TestDistributions:
     def test_returns_correct_shapes(self, distribution, inputs, params):
-
         dist = distribution(*inputs)
 
         nsamples = 8
@@ -30,7 +29,6 @@ class TestDistributions:
         assert log_prob.shape == (nsamples,)
 
     def test_control_sample_randomness(self, distribution, inputs, params):
-
         dist = distribution(*inputs)
 
         nsamples = 8
