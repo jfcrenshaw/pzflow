@@ -7,7 +7,6 @@ from pzflow.utils import *
 
 
 def test_build_bijector_from_info():
-
     x = jnp.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
 
     init_fun, info1 = Chain(

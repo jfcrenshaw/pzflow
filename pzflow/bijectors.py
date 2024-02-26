@@ -143,7 +143,6 @@ def Chain(
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
-
         all_params, forward_funs, inverse_funs = [], [], []
         for init_f in init_funs:
             rng, layer_rng = random.split(rng)
@@ -237,7 +236,6 @@ def ColorTransform(
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
-
         # array of all the indices
         all_idx = jnp.arange(input_dim)
         # indices for columns to stick at the front
@@ -462,7 +460,6 @@ def NeuralSplineCoupling(
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
-
         if transformed_dim is None:
             upper_dim = input_dim // 2  # variables that determine NN params
             lower_dim = (
@@ -797,7 +794,6 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
-
         perm = random.permutation(rng, jnp.arange(input_dim))
         inv_perm = jnp.argsort(perm)
 

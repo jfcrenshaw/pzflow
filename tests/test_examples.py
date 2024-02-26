@@ -21,6 +21,7 @@ def test_get_city_data():
     assert isinstance(data, pd.DataFrame)
     assert data.shape == (47_966, 5)
 
+
 def test_get_checkerboard_data():
     data = examples.get_checkerboard_data()
     assert isinstance(data, pd.DataFrame)

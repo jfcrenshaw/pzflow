@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from jax import random
+from jax.scipy.integrate import trapezoid
 
 from pzflow import Flow, FlowEnsemble
 from pzflow.bijectors import Reverse, RollingSplineCoupling
@@ -17,7 +18,6 @@ x = pd.DataFrame(xarray, columns=("x", "y"))
 
 
 def test_log_prob():
-
     lpEns = flowEns.log_prob(x, returnEnsemble=True)
     assert lpEns.shape == (3, 2)
 
@@ -36,7 +36,6 @@ def test_log_prob():
 
 
 def test_posterior():
-
     grid = jnp.linspace(-1, 1, 5)
 
     pEns = flowEns.posterior(x, "x", grid, returnEnsemble=True)
@@ -53,12 +52,11 @@ def test_posterior():
     p0 = flow0.posterior(x, "x", grid, normalize=False)
     p1 = flow1.posterior(x, "x", grid, normalize=False)
     manualMean = (p0 + p1) / 2
-    manualMean = manualMean / jnp.trapz(y=manualMean, x=grid).reshape(-1, 1)
+    manualMean = manualMean / trapezoid(y=manualMean, x=grid).reshape(-1, 1)
     assert jnp.allclose(pEnsMean, manualMean)
 
 
 def test_sample():
-
     # first test everything with returnEnsemble=False
     sEns = flowEns.sample(10, seed=0).values
     assert sEns.shape == (10, 2)
@@ -81,7 +79,6 @@ def test_sample():
 
 
 def test_conditional_sample():
-
     cEns = FlowEnsemble(
         ("x", "y"),
         RollingSplineCoupling(nlayers=2, n_conditions=2),
@@ -122,7 +119,6 @@ def test_conditional_sample():
 
 
 def test_train():
-
     data = random.normal(random.PRNGKey(0), shape=(100, 2))
     data = pd.DataFrame(np.array(data), columns=("x", "y"))
 
@@ -138,7 +134,6 @@ def test_train():
 
 
 def test_load_ensemble(tmp_path):
-
     flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
 
     preSave = flowEns.sample(10, seed=0)
