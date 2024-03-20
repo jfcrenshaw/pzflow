@@ -870,6 +870,7 @@ class Flow:
         self,
         inputs: pd.DataFrame,
         val_set: pd.DataFrame = None,
+        sample_weight: np.ndarray = None,
         epochs: int = 100,
         batch_size: int = 1024,
         optimizer: Callable = None,
@@ -891,6 +892,8 @@ class Flow:
         val_set : pd.DataFrame; default=None
             Validation set, of same format as inputs. If provided,
             validation loss will be calculated at the end of each epoch.
+        sample_weight: np.ndarray; default=None
+            Array of weights for each sample in the training set.
         epochs : int; default=100
             Number of epochs to train.
         batch_size : int; default=1024
@@ -899,7 +902,7 @@ class Flow:
             An optimizer from Optax. default = optax.adam(learning_rate=1e-3)
             see https://optax.readthedocs.io/en/latest/index.html for more.
         loss_fn : Callable; optional
-            A function to calculate the loss: `loss = loss_fn(params, x)`.
+            A function to calculate the loss: `loss = loss_fn(params, x, c, w)`.
             If not provided, will be `-mean(log_prob)`.
         convolve_errs : bool; default=False
             Whether to draw new data from the error distributions during
@@ -952,8 +955,8 @@ class Flow:
         if loss_fn is None:
 
             @jit
-            def loss_fn(params, x, c):
-                return -jnp.mean(self._log_prob(params, x, c))
+            def loss_fn(params, x, c, w):
+                return -jnp.mean(w * self._log_prob(params, x, c))
 
         # initialize the optimizer
         optimizer = (
@@ -966,8 +969,8 @@ class Flow:
 
         # define the training step function
         @jit
-        def step(params, opt_state, x, c):
-            gradients = grad(loss_fn)(params, x, c)
+        def step(params, opt_state, x, c, w):
+            gradients = grad(loss_fn)(params, x, c, w)
             updates, opt_state = optimizer.update(gradients, opt_state, params)
             params = optax.apply_updates(params, updates)
             return params, opt_state
@@ -1011,12 +1014,14 @@ class Flow:
         # save the initial loss
         X = jnp.array(inputs[columns].to_numpy())
         C = self._get_conditions(inputs)
-        losses = [loss_fn(model_params, X, C).item()]
+        W = jnp.ones(X.shape[0]) if sample_weight is None else sample_weight
+        losses = [loss_fn(model_params, X, C, W).item()]
 
         if val_set is not None:
             Xval = jnp.array(val_set[columns].to_numpy())
             Cval = self._get_conditions(val_set)
-            val_losses = [loss_fn(model_params, Xval, Cval).item()]
+            Wval = jnp.ones(Xval.shape[0]) if sample_weight is None else sample_weight
+            val_losses = [loss_fn(model_params, Xval, Cval, Wval).item()]
 
         if verbose:
             if val_set is None:
@@ -1052,12 +1057,17 @@ class Flow:
                     X.iloc[batch_idx : batch_idx + batch_size],
                     type="conditions",
                 )
+                batch_weights = jnp.asarray(
+                    W[idx][batch_idx : batch_idx + batch_size]
+                )
+                batch_weights /= jnp.mean(batch_weights)
 
                 model_params, opt_state = step(
                     model_params,
                     opt_state,
                     batch,
                     batch_conditions,
+                    batch_weights
                 )
 
             # save end-of-epoch training loss
@@ -1066,12 +1076,13 @@ class Flow:
                     model_params,
                     jnp.array(X[columns].to_numpy()),
                     self._get_conditions(X),
+                    jnp.asarray(W),
                 ).item()
             )
 
             # and validation loss
             if val_set is not None:
-                val_losses.append(loss_fn(model_params, Xval, Cval).item())
+                val_losses.append(loss_fn(model_params, Xval, Cval, Wval).item())
 
             # if verbose, print current loss
             if verbose and (
