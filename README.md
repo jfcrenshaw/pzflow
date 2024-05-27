@@ -21,9 +21,35 @@ See the instructions in the [docs](https://jfcrenshaw.github.io/pzflow/install/)
 
 ## Citation
 
-We are preparing a paper on pzflow.
-If you use this package in your research, please check back here for a citation before publication.
-In the meantime, please cite the [Zenodo release](https://zenodo.org/badge/latestdoi/327498448).
+If you use this package in your research, please cite the following two sources:
+
+The paper
+```bibtex
+@misc{crenshaw2024,
+      title={Probabilistic Forward Modeling of Galaxy Catalogs with Normalizing Flows}, 
+      author={John Franklin Crenshaw and J. Bryce Kalmbach and Alexander Gagliano and Ziang Yan and Andrew J. Connolly and Alex I. Malz and Samuel J. Schmidt and The LSST Dark Energy Science Collaboration},
+      year={2024},
+      eprint={2405.04740},
+      archivePrefix={arXiv},
+      primaryClass={astro-ph.IM}
+}
+```
+
+The Zenodo deposit
+```bibtex
+@software{pzflow,
+  author       = {Crenshaw, John Franklin and
+                  Yan, Ziang and
+                  Doster, Vlad},
+  title        = {jfcrenshaw/pzflow: v3.1.3},
+  month        = feb,
+  year         = 2024,
+  publisher    = {Zenodo},
+  version      = {v3.1.3},
+  doi          = {10.5281/zenodo.10710271},
+  url          = {https://doi.org/10.5281/zenodo.10710271}
+}
+```
 
 ### Sources
 
