@@ -1015,6 +1015,7 @@ class Flow:
         X = jnp.array(inputs[columns].to_numpy())
         C = self._get_conditions(inputs)
         W = jnp.ones(X.shape[0]) if sample_weight is None else sample_weight
+        W /= W.mean()
         losses = [loss_fn(model_params, X, C, W).item()]
 
         if val_set is not None:
@@ -1060,7 +1061,6 @@ class Flow:
                 batch_weights = jnp.asarray(
                     W[idx][batch_idx : batch_idx + batch_size]
                 )
-                batch_weights /= jnp.mean(batch_weights)
 
                 model_params, opt_state = step(
                     model_params,
