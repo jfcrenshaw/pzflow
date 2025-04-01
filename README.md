@@ -23,7 +23,7 @@ See the instructions in the [docs](https://jfcrenshaw.github.io/pzflow/install/)
 
 If you use this package in your research, please cite the following two sources:
 
-The paper
+1. The paper
 ```bibtex
 @ARTICLE{2024AJ....168...80C,
        author = {{Crenshaw}, John Franklin and {Kalmbach}, J. Bryce and {Gagliano}, Alexander and {Yan}, Ziang and {Connolly}, Andrew J. and {Malz}, Alex I. and {Schmidt}, Samuel J. and {The LSST Dark Energy Science Collaboration}},
@@ -45,21 +45,9 @@ archivePrefix = {arXiv},
 }
 ```
 
+2. The [Zenodo deposit](https://zenodo.org/records/10710271) associated with the version number you used.
 The Zenodo deposit
-```bibtex
-@software{pzflow,
-  author       = {Crenshaw, John Franklin and
-                  Yan, Ziang and
-                  Doster, Vlad},
-  title        = {jfcrenshaw/pzflow: v3.1.3},
-  month        = feb,
-  year         = 2024,
-  publisher    = {Zenodo},
-  version      = {v3.1.3},
-  doi          = {10.5281/zenodo.10710271},
-  url          = {https://doi.org/10.5281/zenodo.10710271}
-}
-```
+
 
 ### Sources
 

@@ -9,6 +9,7 @@ Each contains a link to open the notebook on Google Colab, as well as a link to 
 - [Conditional Flows](conditional_demo.ipynb) - building a conditional flow to model conditional distributions
 - [Convolving Gaussian Errors](gaussian_errors.ipynb) - convolving Gaussian errors during training and posterior calculation
 - [Flow Ensembles](ensemble_demo.ipynb) - using `FlowEnsemble` to create an ensemble of normalizing flows
+- [Training Weights](weighted.ipynb) - giving different weights to your training samples
 
 ### Intermediate
 
