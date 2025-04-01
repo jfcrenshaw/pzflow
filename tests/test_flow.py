@@ -539,3 +539,44 @@ def test_nan_train_stop():
     flow = Flow(data.columns, Reverse())
     losses = flow.train(data)
     assert len(losses) == 2
+
+def test_train_weights():
+    # load some training data
+    data = get_twomoons_data()[:10]
+    train_set = data[:8]
+    val_set = data[8:]
+    train_weight = np.linspace(1, 2, len(train_set))
+    val_weight = np.linspace(1, 2, len(val_set))
+
+    # train the default flow
+    flow = Flow(train_set.columns, Reverse())
+    losses = flow.train(
+        train_set,
+        val_set,
+        verbose=True,
+        epochs=3,
+        best_params=False,
+        train_weight=train_weight,
+        val_weight=val_weight,
+    )
+    assert len(losses[0]) == 4
+    assert len(losses[1]) == 4
+
+def test_no_initial_loss():
+    # load some training data
+    data = get_twomoons_data()[:10]
+    train_set = data[:8]
+    val_set = data[8:]
+
+    # train the default flow
+    flow = Flow(train_set.columns, Reverse())
+    losses = flow.train(
+        train_set,
+        val_set,
+        verbose=True,
+        epochs=3,
+        best_params=False,
+        initial_loss=False,
+    )
+    assert len(losses[0]) == 3
+    assert len(losses[1]) == 3

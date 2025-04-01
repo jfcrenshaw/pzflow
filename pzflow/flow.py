@@ -85,8 +85,7 @@ class Flow:
         latent : distributions.LatentDist; optional
             The latent distribution for the normalizing flow. Can be any of
             the distributions from pzflow.distributions. If not provided,
-            a uniform distribution is used with input_dim = len(data_columns),
-            and B=5.
+            CentBeta13 is used with input_dim = len(data_columns) and B=5.
         conditional_columns : Sequence[str]; optional
             Names of columns on which to condition the normalizing flow.
         data_error_model : Callable; optional
@@ -220,7 +219,7 @@ class Flow:
 
             # set up the latent distribution
             if latent is None:
-                self.latent = distributions.Uniform(self._input_dim, 5)
+                self.latent = distributions.CentBeta13(self._input_dim, 5)
             else:
                 self.latent = latent
             self._latent_info = self.latent.info
@@ -870,7 +869,8 @@ class Flow:
         self,
         inputs: pd.DataFrame,
         val_set: pd.DataFrame = None,
-        sample_weight: np.ndarray = None,
+        train_weight: np.ndarray = None,
+        val_weight: np.ndarray = None,
         epochs: int = 100,
         batch_size: int = 1024,
         optimizer: Callable = None,
@@ -881,6 +881,7 @@ class Flow:
         seed: int = 0,
         verbose: bool = False,
         progress_bar: bool = False,
+        initial_loss: bool = True,
     ) -> list:
         """Trains the normalizing flow on the provided inputs.
 
@@ -889,11 +890,15 @@ class Flow:
         inputs : pd.DataFrame
             Data on which to train the normalizing flow.
             Must have columns matching `self.data_columns`.
+            If training a conditional flow, must also have columns
+            matching `self.conditional_columns`.
         val_set : pd.DataFrame; default=None
             Validation set, of same format as inputs. If provided,
             validation loss will be calculated at the end of each epoch.
-        sample_weight: np.ndarray; default=None
+        train_weight: np.ndarray; default=None
             Array of weights for each sample in the training set.
+        val_weight: np.ndarray; default=None
+            Array of weights for each sample in the validation set.
         epochs : int; default=100
             Number of epochs to train.
         batch_size : int; default=1024
@@ -929,6 +934,8 @@ class Flow:
             If true, print the training loss every 5% of epochs.
         progress_bar : bool; default=False
             If true, display a tqdm progress bar during training.
+        initial_loss : bool; default=True
+            If true, start by calculating the initial loss.
 
         Returns
         -------
@@ -938,7 +945,6 @@ class Flow:
             first element is the list of training losses, while the second is
             the list of validation losses.
         """
-
         # split the seed
         rng = np.random.default_rng(seed)
         batch_seed, bijector_seed = rng.integers(1e9, size=2)
@@ -1012,19 +1018,26 @@ class Flow:
             print(f"Training {epochs} epochs \nLoss:")
 
         # save the initial loss
-        X = jnp.array(inputs[columns].to_numpy())
-        C = self._get_conditions(inputs)
-        W = jnp.ones(X.shape[0]) if sample_weight is None else sample_weight
+        W = jnp.ones(len(inputs)) if train_weight is None else train_weight
         W /= W.mean()
-        losses = [loss_fn(model_params, X, C, W).item()]
+        if initial_loss:
+            X = jnp.array(inputs[columns].to_numpy())
+            C = self._get_conditions(inputs)
+            losses = [loss_fn(model_params, X, C, W).item()]
+        else:
+            losses = []
 
         if val_set is not None:
             Xval = jnp.array(val_set[columns].to_numpy())
             Cval = self._get_conditions(val_set)
-            Wval = jnp.ones(Xval.shape[0]) if sample_weight is None else sample_weight
-            val_losses = [loss_fn(model_params, Xval, Cval, Wval).item()]
+            Wval = jnp.ones(len(val_set)) if val_weight is None else val_weight
+            Wval /= Wval.mean()
+            if initial_loss:
+                val_losses = [loss_fn(model_params, Xval, Cval, Wval).item()]
+            else:
+                val_losses = []
 
-        if verbose:
+        if verbose and initial_loss:
             if val_set is None:
                 print(f"(0) {losses[-1]:.4f}")
             else:
