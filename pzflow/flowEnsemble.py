@@ -508,6 +508,8 @@ class FlowEnsemble:
         self,
         inputs: pd.DataFrame,
         val_set: pd.DataFrame = None,
+        train_weight: np.ndarray = None,
+        val_weight: np.ndarray = None,
         epochs: int = 50,
         batch_size: int = 1024,
         optimizer: Callable = None,
@@ -518,6 +520,7 @@ class FlowEnsemble:
         seed: int = 0,
         verbose: bool = False,
         progress_bar: bool = False,
+        initial_loss: bool = True,
     ) -> dict:
         """Trains the normalizing flows on the provided inputs.
 
@@ -529,6 +532,10 @@ class FlowEnsemble:
         val_set : pd.DataFrame; default=None
             Validation set, of same format as inputs. If provided,
             validation loss will be calculated at the end of each epoch.
+        train_weight: np.ndarray; default=None
+            Array of weights for each sample in the training set.
+        val_weight: np.ndarray; default=None
+            Array of weights for each sample in the validation set.
         epochs : int; default=50
             Number of epochs to train.
         batch_size : int; default=1024
@@ -561,6 +568,8 @@ class FlowEnsemble:
             If true, print the training loss every 5% of epochs.
         progress_bar : bool; default=False
             If true, display a tqdm progress bar during training.
+        initial_loss : bool; default=True
+            If true, start by calculating the initial loss.
 
         Returns
         -------
@@ -582,6 +591,8 @@ class FlowEnsemble:
             loss_dict[name] = flow.train(
                 inputs=inputs,
                 val_set=val_set,
+                train_weight=train_weight,
+                val_weight=val_weight,
                 epochs=epochs,
                 batch_size=batch_size,
                 optimizer=optimizer,
@@ -592,6 +603,7 @@ class FlowEnsemble:
                 seed=seeds[i],
                 verbose=verbose,
                 progress_bar=progress_bar,
+                initial_loss=initial_loss,
             )
 
         return loss_dict
