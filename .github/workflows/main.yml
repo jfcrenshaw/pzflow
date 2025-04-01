@@ -18,7 +18,7 @@ jobs:
       fail-fast: true
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -26,7 +26,7 @@ jobs:
       #               checkout repository
       # ----------------------------------------------
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # ----------------------------------------------
       #         install and configure poetry
@@ -34,7 +34,7 @@ jobs:
       - name: Install poetry
         run: pipx install poetry
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
@@ -65,10 +65,11 @@ jobs:
       #          upload coverage to Codecov
       # ----------------------------------------------
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         with:
           file: ./coverage.xml
           flags: unittests
           env_vars: OS,PYTHON
           name: codecov-umbrella
           fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
