@@ -21,9 +21,33 @@ See the instructions in the [docs](https://jfcrenshaw.github.io/pzflow/install/)
 
 ## Citation
 
-We are preparing a paper on pzflow.
-If you use this package in your research, please check back here for a citation before publication.
-In the meantime, please cite the [Zenodo release](https://zenodo.org/badge/latestdoi/327498448).
+If you use this package in your research, please cite the following two sources:
+
+1. The paper
+```bibtex
+@ARTICLE{2024AJ....168...80C,
+       author = {{Crenshaw}, John Franklin and {Kalmbach}, J. Bryce and {Gagliano}, Alexander and {Yan}, Ziang and {Connolly}, Andrew J. and {Malz}, Alex I. and {Schmidt}, Samuel J. and {The LSST Dark Energy Science Collaboration}},
+        title = "{Probabilistic Forward Modeling of Galaxy Catalogs with Normalizing Flows}",
+      journal = {\aj},
+     keywords = {Neural networks, Galaxy photometry, Surveys, Computational methods, 1933, 611, 1671, 1965, Astrophysics - Instrumentation and Methods for Astrophysics, Astrophysics - Cosmology and Nongalactic Astrophysics},
+         year = 2024,
+        month = aug,
+       volume = {168},
+       number = {2},
+          eid = {80},
+        pages = {80},
+          doi = {10.3847/1538-3881/ad54bf},
+archivePrefix = {arXiv},
+       eprint = {2405.04740},
+ primaryClass = {astro-ph.IM},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024AJ....168...80C},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
+
+2. The [Zenodo deposit](https://zenodo.org/records/10710271) associated with the version number you used.
+The Zenodo deposit
+
 
 ### Sources
 
