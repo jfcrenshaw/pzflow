@@ -2,7 +2,7 @@
 
 from typing import Any, Callable, Sequence, Tuple
 
-import dill as pickle
+import pickle
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -879,7 +879,7 @@ class Flow:
             Extension `.pkl` will be appended if not already present.
         """
         with open(file, "wb") as handle:
-            pickle.dump(self, handle, recurse=True)
+            pickle.dump(self, handle)
 
     def train(
         self,
