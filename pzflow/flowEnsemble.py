@@ -136,6 +136,8 @@ class FlowEnsemble:
             # load the file
             with open(file, "rb") as handle:
                 state = pickle.load(handle)
+            if not isinstance(state, dict):
+                state = state.__getstate__()
 
             self.__setstate__(state)
 
@@ -522,7 +524,7 @@ class FlowEnsemble:
             Extension `.pkl` will be appended if not already present.
         """
         with open(file, "wb") as handle:
-            pickle.dump(self, handle, recurse=True)
+            pickle.dump(self, handle)
 
     def train(
         self,

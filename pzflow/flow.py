@@ -2,7 +2,7 @@
 
 from typing import Any, Callable, Sequence, Tuple
 
-import pickle
+import dill as pickle
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -153,10 +153,13 @@ class Flow:
             if file is not None:
                 with open(file, "rb") as handle:
                     state = pickle.load(handle)
+                if not isinstance(state, dict):
+                    state = state.__getstate__()
             else:
                 state = _dictionary
 
             self.__setstate__(state)
+
 
         # if no file is provided, use provided parameters
         else:

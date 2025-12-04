@@ -149,10 +149,10 @@ def test_load_ensemble(tmp_path):
     assert jnp.allclose(preSave.values, postSave.values)
 
     with open(str(file), "rb") as handle:
-        save_dict = pickle.load(handle)
+        save_dict = pickle.load(handle).__getstate__()
     save_dict["class"] = "Flow"
     with open(str(file), "wb") as handle:
-        pickle.dump(save_dict, handle, recurse=True)
+        pickle.dump(save_dict, handle)
     with pytest.raises(TypeError):
         FlowEnsemble(file=str(file))
 

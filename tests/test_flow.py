@@ -310,7 +310,6 @@ def test_load_flow(tmp_path):
     file = tmp_path / "test-flow.pzflow.pkl"
     flow.save(str(file))
 
-    file = tmp_path / "test-flow.pzflow.pkl"
     flow = Flow(file=str(file))
 
     x = jnp.array([[1, 2], [3, 4]])
@@ -326,10 +325,10 @@ def test_load_flow(tmp_path):
     assert flow.info == ["random", 42]
 
     with open(str(file), "rb") as handle:
-        save_dict = pickle.load(handle)
+        save_dict = pickle.load(handle).__getstate__()
     save_dict["class"] = "FlowEnsemble"
     with open(str(file), "wb") as handle:
-        pickle.dump(save_dict, handle, recurse=True)
+        pickle.dump(save_dict, handle)
     with pytest.raises(TypeError):
         Flow(file=str(file))
 
