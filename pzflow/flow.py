@@ -2,7 +2,7 @@
 
 from typing import Any, Callable, Sequence, Tuple
 
-import dill as pickle
+import pickle
 import jax.numpy as jnp
 import numpy as np
 import optax
@@ -150,51 +150,13 @@ class Flow:
 
         # if file or dictionary is provided, load everything from it
         if file is not None or _dictionary is not None:
-            save_dict = self._save_dict()
             if file is not None:
                 with open(file, "rb") as handle:
-                    save_dict.update(pickle.load(handle))
+                    state = pickle.load(handle)
             else:
-                save_dict.update(_dictionary)
+                state = _dictionary
 
-            if save_dict["class"] != self.__class__.__name__:
-                raise TypeError(
-                    f"This save file isn't a {self.__class__.__name__}. "
-                    f"It is a {save_dict['class']}"
-                )
-
-            # load columns and dimensions
-            self.data_columns = save_dict["data_columns"]
-            self.conditional_columns = save_dict["conditional_columns"]
-            self._input_dim = len(self.data_columns)
-            self.info = save_dict["info"]
-
-            # load the latent distribution
-            self._latent_info = save_dict["latent_info"]
-            self.latent = getattr(distributions, self._latent_info[0])(
-                *self._latent_info[1]
-            )
-
-            # load the error models
-            self.data_error_model = save_dict["data_error_model"]
-            self.condition_error_model = save_dict["condition_error_model"]
-
-            # load the bijector
-            self._bijector_info = save_dict["bijector_info"]
-            if self._bijector_info is not None:
-                init_fun, _ = build_bijector_from_info(self._bijector_info)
-                _, self._forward, self._inverse = init_fun(
-                    random.PRNGKey(0), self._input_dim
-                )
-            self._params = save_dict["params"]
-
-            # load the conditional means and stds
-            self._condition_means = save_dict["condition_means"]
-            self._condition_stds = save_dict["condition_stds"]
-
-            # set whether or not to automatically standard scale any
-            # conditions passed to the normalizing flow
-            self._autoscale_conditions = save_dict["autoscale_conditions"]
+            self.__setstate__(state)
 
         # if no file is provided, use provided parameters
         else:
@@ -816,9 +778,15 @@ class Flow:
         # return the samples!
         return x
 
-    def _save_dict(self) -> None:
-        ### Returns the dictionary of all flow params to be saved.
-        save_dict = {"class": self.__class__.__name__}
+    def __getstate__(self) -> dict:
+        """Returns the state dictionary for pickling.
+
+        Returns
+        -------
+        dict
+            Dictionary containing all flow parameters to be saved.
+        """
+        state = {"class": self.__class__.__name__}
         keys = [
             "data_columns",
             "conditional_columns",
@@ -834,14 +802,61 @@ class Flow:
         ]
         for key in keys:
             try:
-                save_dict[key] = getattr(self, key)
+                state[key] = getattr(self, key)
             except AttributeError:
                 try:
-                    save_dict[key] = getattr(self, "_" + key)
+                    state[key] = getattr(self, "_" + key)
                 except AttributeError:
-                    save_dict[key] = None
+                    state[key] = None
 
-        return save_dict
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Restores the flow from a state dictionary.
+
+        Parameters
+        ----------
+        state : dict
+            Dictionary containing all flow parameters.
+        """
+        # Validate class type
+        if state["class"] != self.__class__.__name__:
+            raise TypeError(
+                f"This save file isn't a {self.__class__.__name__}. "
+                f"It is a {state['class']}"
+            )
+
+        # load columns and dimensions
+        self.data_columns = state["data_columns"]
+        self.conditional_columns = state["conditional_columns"]
+        self._input_dim = len(self.data_columns)
+        self.info = state["info"]
+
+        # load the latent distribution
+        self._latent_info = state["latent_info"]
+        self.latent = getattr(distributions, self._latent_info[0])(
+            *self._latent_info[1]
+        )
+
+        # load the error models
+        self.data_error_model = state["data_error_model"]
+        self.condition_error_model = state["condition_error_model"]
+
+        # load the bijector
+        self._bijector_info = state["bijector_info"]
+        if self._bijector_info is not None:
+            init_fun, _ = build_bijector_from_info(self._bijector_info)
+            _, self._forward, self._inverse = init_fun(
+                random.PRNGKey(0), self._input_dim
+            )
+        self._params = state["params"]
+
+        # load the conditional means and stds
+        self._condition_means = state["condition_means"]
+        self._condition_stds = state["condition_stds"]
+
+        # load autoscale_conditions setting
+        self._autoscale_conditions = state["autoscale_conditions"]
 
     def save(self, file: str) -> None:
         """Saves the flow to a file.
@@ -860,10 +875,8 @@ class Flow:
             Path to where the flow will be saved.
             Extension `.pkl` will be appended if not already present.
         """
-        save_dict = self._save_dict()
-
         with open(file, "wb") as handle:
-            pickle.dump(save_dict, handle, recurse=True)
+            pickle.dump(self, handle, recurse=True)
 
     def train(
         self,
