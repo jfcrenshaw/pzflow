@@ -2,7 +2,7 @@
 
 from typing import Any, Callable, Sequence, Tuple
 
-import dill as pickle
+import pickle
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -135,31 +135,11 @@ class FlowEnsemble:
         if file is not None:
             # load the file
             with open(file, "rb") as handle:
-                save_dict = pickle.load(handle)
+                state = pickle.load(handle)
+            if not isinstance(state, dict):
+                state = state.__getstate__()
 
-            # make sure the saved file is for this class
-            c = save_dict.pop("class")
-            if c != self.__class__.__name__:
-                raise TypeError(
-                    f"This save file isn't a {self.__class__.__name__}. It is a {c}."
-                )
-
-            # load the ensemble from the dictionary
-            self._ensemble = {
-                name: Flow(_dictionary=flow_dict)
-                for name, flow_dict in save_dict["ensemble"].items()
-            }
-            # load the metadata
-            self.data_columns = save_dict["data_columns"]
-            self.conditional_columns = save_dict["conditional_columns"]
-            self.data_error_model = save_dict["data_error_model"]
-            self.condition_error_model = save_dict["condition_error_model"]
-            self.info = save_dict["info"]
-
-            self._latent_info = save_dict["latent_info"]
-            self.latent = getattr(distributions, self._latent_info[0])(
-                *self._latent_info[1]
-            )
+            self.__setstate__(state)
 
         # otherwise create a new ensemble from the provided parameters
         else:
@@ -470,6 +450,62 @@ class FlowEnsemble:
                         ],
                     ).set_index(conditions.index)
 
+    def __getstate__(self) -> dict:
+        """Returns the state dictionary for pickling.
+
+        Returns
+        -------
+        dict
+            Dictionary containing all ensemble parameters to be saved.
+        """
+        return {
+            "data_columns": self.data_columns,
+            "conditional_columns": self.conditional_columns,
+            "latent_info": self.latent.info,
+            "data_error_model": self.data_error_model,
+            "condition_error_model": self.condition_error_model,
+            "info": self.info,
+            "class": self.__class__.__name__,
+            "ensemble": {
+                name: flow.__getstate__()
+                for name, flow in self._ensemble.items()
+            },
+        }
+
+    def __setstate__(self, state: dict) -> None:
+        """Restores the ensemble from a state dictionary.
+
+        Parameters
+        ----------
+        state : dict
+            Dictionary containing all ensemble parameters.
+        """
+        # Validate class type
+        c = state.pop("class")
+        if c != self.__class__.__name__:
+            raise TypeError(
+                f"This save file isn't a {self.__class__.__name__}. It is a {c}."
+            )
+
+        # load the ensemble from the dictionary
+        self._ensemble = {}
+        for name, flow_state in state["ensemble"].items():
+            flow = Flow.__new__(Flow)
+            flow.__setstate__(flow_state)
+            self._ensemble[name] = flow
+
+        # load the metadata
+        self.data_columns = state["data_columns"]
+        self.conditional_columns = state["conditional_columns"]
+        self.data_error_model = state["data_error_model"]
+        self.condition_error_model = state["condition_error_model"]
+        self.info = state["info"]
+
+        self._latent_info = state["latent_info"]
+        self.latent = getattr(distributions, self._latent_info[0])(
+            *self._latent_info[1]
+        )
+
     def save(self, file: str) -> None:
         """Saves the ensemble to a file.
 
@@ -487,22 +523,8 @@ class FlowEnsemble:
             Path to where the ensemble will be saved.
             Extension `.pkl` will be appended if not already present.
         """
-        save_dict = {
-            "data_columns": self.data_columns,
-            "conditional_columns": self.conditional_columns,
-            "latent_info": self.latent.info,
-            "data_error_model": self.data_error_model,
-            "condition_error_model": self.condition_error_model,
-            "info": self.info,
-            "class": self.__class__.__name__,
-            "ensemble": {
-                name: flow._save_dict()
-                for name, flow in self._ensemble.items()
-            },
-        }
-
         with open(file, "wb") as handle:
-            pickle.dump(save_dict, handle, recurse=True)
+            pickle.dump(self, handle)
 
     def train(
         self,

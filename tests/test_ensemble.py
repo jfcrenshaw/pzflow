@@ -1,4 +1,4 @@
-import dill as pickle
+import pickle
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -149,12 +149,29 @@ def test_load_ensemble(tmp_path):
     assert jnp.allclose(preSave.values, postSave.values)
 
     with open(str(file), "rb") as handle:
-        save_dict = pickle.load(handle)
+        save_dict = pickle.load(handle).__getstate__()
     save_dict["class"] = "Flow"
     with open(str(file), "wb") as handle:
-        pickle.dump(save_dict, handle, recurse=True)
+        pickle.dump(save_dict, handle)
     with pytest.raises(TypeError):
         FlowEnsemble(file=str(file))
+
+
+def test_pickle_ensemble(tmp_path):
+    flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
+
+    preSave = flowEns.sample(10, seed=0)
+
+    file = tmp_path / "test-ensemble.pzflow.pkl"
+    with open(str(file), "wb") as handle:
+        pickle.dump(flowEns, handle)
+
+    with open(str(file), "rb") as handle:
+        flowEns = pickle.load(handle)
+
+    postSave = flowEns.sample(10, seed=0)
+
+    assert jnp.allclose(preSave.values, postSave.values)
 
 
 @pytest.mark.parametrize(

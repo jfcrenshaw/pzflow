@@ -1,4 +1,4 @@
-import dill as pickle
+import pickle
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -310,7 +310,6 @@ def test_load_flow(tmp_path):
     file = tmp_path / "test-flow.pzflow.pkl"
     flow.save(str(file))
 
-    file = tmp_path / "test-flow.pzflow.pkl"
     flow = Flow(file=str(file))
 
     x = jnp.array([[1, 2], [3, 4]])
@@ -326,12 +325,35 @@ def test_load_flow(tmp_path):
     assert flow.info == ["random", 42]
 
     with open(str(file), "rb") as handle:
-        save_dict = pickle.load(handle)
+        save_dict = pickle.load(handle).__getstate__()
     save_dict["class"] = "FlowEnsemble"
     with open(str(file), "wb") as handle:
-        pickle.dump(save_dict, handle, recurse=True)
+        pickle.dump(save_dict, handle)
     with pytest.raises(TypeError):
         Flow(file=str(file))
+
+def test_pickle_flow(tmp_path):
+    columns = ("x", "y")
+    flow = Flow(columns, Reverse(), info=["random", 42])
+
+    file = tmp_path / "test-flow.pzflow.pkl"
+    with open(str(file), 'wb') as f:
+        pickle.dump(flow, f)
+
+    with open(str(file), 'rb') as f:
+        flow = pickle.load(f)
+
+    x = jnp.array([[1, 2], [3, 4]])
+    xrev = jnp.array([[2, 1], [4, 3]])
+
+    assert jnp.allclose(flow._forward(flow._params, x)[0], xrev)
+    assert jnp.allclose(
+        flow._inverse(flow._params, flow._forward(flow._params, x)[0])[0], x
+    )
+    assert jnp.allclose(
+        flow._forward(flow._params, x)[1], flow._inverse(flow._params, x)[1]
+    )
+    assert flow.info == ["random", 42]
 
 
 def test_control_sample_randomness():
