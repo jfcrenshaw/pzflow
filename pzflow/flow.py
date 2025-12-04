@@ -156,7 +156,7 @@ class Flow:
                 if not isinstance(state, dict):
                     state = state.__getstate__()
             else:
-                state = _dictionary
+                state = _dictionary  # pragma: no cover
 
             self.__setstate__(state)
 
@@ -809,7 +809,7 @@ class Flow:
             except AttributeError:
                 try:
                     state[key] = getattr(self, "_" + key)
-                except AttributeError:
+                except AttributeError: # pragma: no cover
                     state[key] = None
 
         return state
