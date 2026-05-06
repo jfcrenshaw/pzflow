@@ -1,12 +1,24 @@
+"""Tests for pzflow.utils."""
+
+from typing import Any
+
 import jax.numpy as jnp
 import pytest
 from jax import random
 
-from pzflow.bijectors import *
-from pzflow.utils import *
+from pzflow.bijectors import (
+    Chain,
+    ColorTransform,
+    InvSoftplus,
+    Reverse,
+    Roll,
+    Scale,
+)
+from pzflow.utils import RationalQuadraticSpline, build_bijector_from_info, sub_diag_indices
 
 
-def test_build_bijector_from_info():
+def test_build_bijector_from_info() -> None:
+    """build_bijector_from_info reconstructs a bijector with identical outputs."""
     x = jnp.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
 
     init_fun, info1 = Chain(
@@ -33,7 +45,8 @@ def test_build_bijector_from_info():
     assert jnp.allclose(log_det2, -inv_log_det)
 
 
-def test_sub_diag_indices_correct():
+def test_sub_diag_indices_correct() -> None:
+    """sub_diag_indices returns the right index arrays for block diagonals."""
     x = jnp.array([[[0, 0], [0, 0]], [[1, 1], [1, 1]], [[2, 2], [2, 2]]])
     y = jnp.array([[[1, 0], [0, 1]], [[2, 1], [1, 2]], [[3, 2], [2, 3]]])
     idx = sub_diag_indices(x)
@@ -46,6 +59,7 @@ def test_sub_diag_indices_correct():
     "x",
     [jnp.ones(2), jnp.ones((2, 2)), jnp.ones((2, 2, 2, 2))],
 )
-def test_sub_diag_indices_bad_input(x):
+def test_sub_diag_indices_bad_input(x: Any) -> None:
+    """sub_diag_indices raises ValueError for non-3D inputs."""
     with pytest.raises(ValueError):
-        idx = sub_diag_indices(x)
+        sub_diag_indices(x)

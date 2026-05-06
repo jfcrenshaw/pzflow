@@ -1,8 +1,26 @@
+"""Tests for pzflow.bijectors."""
+
+from typing import Any
+
 import jax.numpy as jnp
 import pytest
 from jax import jit, random
 
-from pzflow.bijectors import *
+from pzflow.bijectors import (
+    Beta13Dequantizer,
+    Chain,
+    ColorTransform,
+    InvSoftplus,
+    NeuralSplineCoupling,
+    Reverse,
+    Roll,
+    RollingSplineCoupling,
+    Scale,
+    ShiftBounds,
+    Shuffle,
+    StandardScaler,
+    UniformDequantizer,
+)
 
 x = jnp.array(
     [
@@ -50,7 +68,10 @@ x = jnp.array(
     ],
 )
 class TestBijectors:
-    def test_returns_correct_shape(self, bijector, args, conditions):
+    """Tests for bijector correctness and shape compliance."""
+
+    def test_returns_correct_shape(self, bijector: Any, args: Any, conditions: Any) -> None:
+        """Forward and inverse outputs have the expected shapes."""
         init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(
             random.PRNGKey(0), x.shape[-1]
@@ -68,7 +89,8 @@ class TestBijectors:
         assert inv_outputs.shape == x.shape
         assert inv_log_det.shape == x.shape[:1]
 
-    def test_is_bijective(self, bijector, args, conditions):
+    def test_is_bijective(self, bijector: Any, args: Any, conditions: Any) -> None:
+        """Composing forward then inverse recovers the input."""
         init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(
             random.PRNGKey(0), x.shape[-1]
@@ -81,11 +103,11 @@ class TestBijectors:
             params, fwd_outputs, conditions=conditions
         )
 
-        print(inv_outputs)
         assert jnp.allclose(inv_outputs, x, atol=1e-6)
         assert jnp.allclose(fwd_log_det, -inv_log_det, atol=1e-6)
 
-    def test_is_jittable(self, bijector, args, conditions):
+    def test_is_jittable(self, bijector: Any, args: Any, conditions: Any) -> None:
+        """Forward and inverse functions can be JIT-compiled."""
         init_fun, bijector_info = bijector(*args)
         params, forward_fun, inverse_fun = init_fun(
             random.PRNGKey(0), x.shape[-1]
@@ -126,7 +148,8 @@ class TestBijectors:
         (ShiftBounds, (jnp.array([0, 1]), 2, 1)),
     ],
 )
-def test_bad_inputs(bijector, args):
+def test_bad_inputs(bijector: Any, args: Any) -> None:
+    """Invalid constructor arguments raise ValueError."""
     with pytest.raises(ValueError):
         bijector(*args)
 
@@ -134,7 +157,8 @@ def test_bad_inputs(bijector, args):
 @pytest.mark.parametrize(
     "Dequantizer", [UniformDequantizer, Beta13Dequantizer]
 )
-def test_dequantizer_returns_correct_shape(Dequantizer):
+def test_dequantizer_returns_correct_shape(Dequantizer: Any) -> None:
+    """Dequantizer forward/inverse outputs have the expected shapes."""
     init_fun, bijector_info = Dequantizer([1, 3, 4])
     params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
@@ -151,7 +175,8 @@ def test_dequantizer_returns_correct_shape(Dequantizer):
 @pytest.mark.parametrize(
     "Dequantizer", [UniformDequantizer, Beta13Dequantizer]
 )
-def test_dequantizer_adds_noise(Dequantizer):
+def test_dequantizer_adds_noise(Dequantizer: Any) -> None:
+    """Dequantizer shifts target columns into (0, 1) and leaves others unchanged."""
     col_idx = [1, 3]
     other_idx = [0, 2, 4, 5, 6]
     x_int = jnp.zeros((100, 7), dtype=float)

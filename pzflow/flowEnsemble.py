@@ -1,6 +1,7 @@
 """Define FlowEnsemble object that holds an ensemble of normalizing flows."""
 
-from typing import Any, Callable, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import pickle
 import jax.numpy as jnp
@@ -33,21 +34,21 @@ class FlowEnsemble:
         of __init__ for more details.
     info : Any
         Object containing any kind of info included with the ensemble.
-        Often Reverse the data the flows are trained on.
+        Often describes the data the flows are trained on.
     """
 
     def __init__(
         self,
-        data_columns: Sequence[str] = None,
-        bijector: Tuple[InitFunction, Bijector_Info] = None,
-        latent: distributions.LatentDist = None,
-        conditional_columns: Sequence[str] = None,
-        data_error_model: Callable = None,
-        condition_error_model: Callable = None,
+        data_columns: Sequence[str] | None = None,
+        bijector: tuple[InitFunction, Bijector_Info] | None = None,
+        latent: distributions.LatentDist | None = None,
+        conditional_columns: Sequence[str] | None = None,
+        data_error_model: Callable | None = None,
+        condition_error_model: Callable | None = None,
         autoscale_conditions: bool = True,
         N: int = 1,
         info: Any = None,
-        file: str = None,
+        file: str | None = None,
     ) -> None:
         """Instantiate an ensemble of normalizing flows.
 
@@ -133,7 +134,6 @@ class FlowEnsemble:
 
         # if file is provided, load everything from the file
         if file is not None:
-            # load the file
             with open(file, "rb") as handle:
                 state = pickle.load(handle)
             if not isinstance(state, dict):
@@ -143,7 +143,6 @@ class FlowEnsemble:
 
         # otherwise create a new ensemble from the provided parameters
         else:
-            # save the ensemble of flows
             self._ensemble = {
                 f"Flow {i}": Flow(
                     data_columns=data_columns,
@@ -158,7 +157,6 @@ class FlowEnsemble:
                 )
                 for i in range(N)
             }
-            # save the metadata
             self.data_columns = data_columns
             self.conditional_columns = conditional_columns
             self.latent = self._ensemble["Flow 0"].latent
@@ -169,9 +167,9 @@ class FlowEnsemble:
     def log_prob(
         self,
         inputs: pd.DataFrame,
-        err_samples: int = None,
-        seed: int = None,
-        returnEnsemble: bool = False,
+        err_samples: int | None = None,
+        seed: int | None = None,
+        return_ensemble: bool = False,
     ) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
@@ -190,7 +188,7 @@ class FlowEnsemble:
             be `u_err`. Zero error assumed for any missing error columns.
         seed : int; default=None
             Random seed for drawing the samples with Gaussian errors.
-        returnEnsemble : bool; default=False
+        return_ensemble : bool; default=False
             If True, returns log_prob for each flow in the ensemble as an
             array of shape (inputs.shape[0], N flows in ensemble).
             If False, the prob is averaged over the flows in the ensemble,
@@ -200,7 +198,7 @@ class FlowEnsemble:
         Returns
         -------
         jnp.ndarray
-            For shape, see returnEnsemble description above.
+            For shape, see return_ensemble description above.
         """
 
         # calculate log_prob for each flow in the ensemble
@@ -214,12 +212,10 @@ class FlowEnsemble:
         # re-arrange so that (axis 0, axis 1) = (inputs, flows in ensemble)
         ensemble = jnp.rollaxis(ensemble, axis=1)
 
-        if returnEnsemble:
-            # return the ensemble of log_probs
+        if return_ensemble:
             return ensemble
         else:
-            # return mean over ensemble
-            # note we return log(mean prob) instead of just mean log_prob
+            # return log(mean prob) instead of mean log_prob
             return jnp.log(jnp.exp(ensemble).mean(axis=1))
 
     def posterior(
@@ -227,12 +223,12 @@ class FlowEnsemble:
         inputs: pd.DataFrame,
         column: str,
         grid: jnp.ndarray,
-        marg_rules: dict = None,
+        marg_rules: dict | None = None,
         normalize: bool = True,
-        err_samples: int = None,
-        seed: int = None,
-        batch_size: int = None,
-        returnEnsemble: bool = False,
+        err_samples: int | None = None,
+        seed: int | None = None,
+        batch_size: int | None = None,
+        return_ensemble: bool = False,
         nan_to_zero: bool = True,
     ) -> jnp.ndarray:
         """Calculates posterior distributions for the provided column.
@@ -279,7 +275,7 @@ class FlowEnsemble:
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
             is faster, but memory intensive for large data sets.
-        returnEnsemble : bool; default=False
+        return_ensemble : bool; default=False
             If True, returns posterior for each flow in the ensemble as an
             array of shape (inputs.shape[0], N flows in ensemble, grid.size).
             If False, the posterior is averaged over the flows in the ensemble,
@@ -290,7 +286,7 @@ class FlowEnsemble:
         Returns
         -------
         jnp.ndarray
-            For shape, see returnEnsemble description above.
+            For shape, see return_ensemble description above.
         """
 
         # calculate posterior for each flow in the ensemble
@@ -314,8 +310,7 @@ class FlowEnsemble:
         # re-arrange so that (axis 0, axis 1) = (inputs, flows in ensemble)
         ensemble = jnp.rollaxis(ensemble, axis=1)
 
-        if returnEnsemble:
-            # return the ensemble of posteriors
+        if return_ensemble:
             if normalize:
                 ensemble = ensemble.reshape(-1, grid.size)
                 ensemble = ensemble / trapezoid(y=ensemble, x=grid).reshape(
@@ -324,7 +319,6 @@ class FlowEnsemble:
                 ensemble = ensemble.reshape(inputs.shape[0], -1, grid.size)
             return ensemble
         else:
-            # return mean over ensemble
             pdfs = ensemble.mean(axis=1)
             if normalize:
                 pdfs = pdfs / trapezoid(y=pdfs, x=grid).reshape(-1, 1)
@@ -333,10 +327,10 @@ class FlowEnsemble:
     def sample(
         self,
         nsamples: int = 1,
-        conditions: pd.DataFrame = None,
+        conditions: pd.DataFrame | None = None,
         save_conditions: bool = True,
-        seed: int = None,
-        returnEnsemble: bool = False,
+        seed: int | None = None,
+        return_ensemble: bool = False,
     ) -> pd.DataFrame:
         """Returns samples from the ensemble.
 
@@ -344,7 +338,7 @@ class FlowEnsemble:
         ----------
         nsamples : int; default=1
             The number of samples to be returned, either overall or per flow
-            in the ensemble (see returnEnsemble below).
+            in the ensemble (see return_ensemble below).
         conditions : pd.DataFrame; optional
             If this is a conditional flow, you must pass conditions for
             each sample. nsamples will be drawn for each row in conditions.
@@ -353,7 +347,7 @@ class FlowEnsemble:
             that is returned.
         seed : int; optional
             Sets the random seed for the samples.
-        returnEnsemble : bool; default=False
+        return_ensemble : bool; default=False
             If True, nsamples is drawn from each flow in the ensemble.
             If False, nsamples are drawn uniformly from the flows in the ensemble.
 
@@ -363,7 +357,7 @@ class FlowEnsemble:
             Pandas DataFrame of samples.
         """
 
-        if returnEnsemble:
+        if return_ensemble:
             # return nsamples for each flow in the ensemble
             return pd.concat(
                 [
@@ -484,10 +478,11 @@ class FlowEnsemble:
             Dictionary containing all ensemble parameters.
         """
         # Validate class type
-        c = state.pop("class")
-        if c != self.__class__.__name__:
+        class_name = state["class"]
+        if class_name != self.__class__.__name__:
             raise TypeError(
-                f"This save file isn't a {self.__class__.__name__}. It is a {c}."
+                f"This save file isn't a {self.__class__.__name__}. "
+                f"It is a {class_name}."
             )
 
         # load the ensemble from the dictionary
@@ -532,15 +527,15 @@ class FlowEnsemble:
     def train(
         self,
         inputs: pd.DataFrame,
-        val_set: pd.DataFrame = None,
-        train_weight: np.ndarray = None,
-        val_weight: np.ndarray = None,
+        val_set: pd.DataFrame | None = None,
+        train_weight: np.ndarray | None = None,
+        val_weight: np.ndarray | None = None,
         epochs: int = 50,
         batch_size: int = 1024,
-        optimizer: Callable = None,
-        loss_fn: Callable = None,
+        optimizer: Callable | None = None,
+        loss_fn: Callable | None = None,
         convolve_errs: bool = False,
-        patience: int = None,
+        patience: int | None = None,
         best_params: bool = True,
         seed: int = 0,
         verbose: bool = False,
@@ -607,7 +602,7 @@ class FlowEnsemble:
         rng = np.random.default_rng(seed)
         seeds = rng.integers(1e9, size=len(self._ensemble))
 
-        loss_dict = dict()
+        loss_dict = {}
 
         for i, (name, flow) in enumerate(self._ensemble.items()):
             if verbose:

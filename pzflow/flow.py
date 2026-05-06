@@ -1,6 +1,7 @@
 """Define the Flow object that defines the normalizing flow."""
 
-from typing import Any, Callable, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import pickle
 import jax.numpy as jnp
@@ -48,17 +49,17 @@ class Flow:
 
     def __init__(
         self,
-        data_columns: Sequence[str] = None,
-        bijector: Tuple[InitFunction, Bijector_Info] = None,
-        latent: distributions.LatentDist = None,
-        conditional_columns: Sequence[str] = None,
-        data_error_model: Callable = None,
-        condition_error_model: Callable = None,
+        data_columns: Sequence[str] | None = None,
+        bijector: tuple[InitFunction, Bijector_Info] | None = None,
+        latent: distributions.LatentDist | None = None,
+        conditional_columns: Sequence[str] | None = None,
+        data_error_model: Callable | None = None,
+        condition_error_model: Callable | None = None,
         autoscale_conditions: bool = True,
         seed: int = 0,
         info: Any = None,
-        file: str = None,
-        _dictionary: dict = None,
+        file: str | None = None,
+        _dictionary: dict | None = None,
     ) -> None:
         """Instantiate a normalizing flow.
 
@@ -160,7 +161,6 @@ class Flow:
 
             self.__setstate__(state)
 
-
         # if no file is provided, use provided parameters
         else:
             self.data_columns = tuple(data_columns)
@@ -211,7 +211,6 @@ class Flow:
             # set up the bijector
             if bijector is not None:
                 self.set_bijector(bijector, seed=seed)
-            # if no bijector was provided, set bijector_info to None
             else:
                 self._bijector_info = None
 
@@ -227,8 +226,8 @@ class Flow:
 
     def set_bijector(
         self,
-        bijector: Tuple[InitFunction, Bijector_Info],
-        params: Pytree = None,
+        bijector: tuple[InitFunction, Bijector_Info],
+        params: Pytree | None = None,
         seed: int = 0,
     ) -> None:
         """Set the bijector.
@@ -261,8 +260,7 @@ class Flow:
     def _set_default_bijector(
         self, inputs: pd.DataFrame, seed: int = 0
     ) -> None:
-        # Set the default bijector
-        # which is ShiftBounds -> RollingSplineCoupling
+        # Set the default bijector: ShiftBounds -> RollingSplineCoupling.
 
         # get the min/max for each data column
         data = inputs[list(self.data_columns)].to_numpy()
@@ -303,28 +301,28 @@ class Flow:
 
     def _get_err_samples(
         self,
-        key,
+        key: jnp.ndarray,
         inputs: pd.DataFrame,
         err_samples: int,
-        type: str = "data",
-        skip: str = None,
+        kind: str = "data",
+        skip: str | None = None,
     ) -> jnp.ndarray:
         # Draw error samples for each row of inputs.
 
         X = inputs.copy()
 
         # get list of columns
-        if type == "data":
+        if kind == "data":
             columns = list(self.data_columns)
             error_model = self.data_error_model
-        elif type == "conditions":
+        elif kind == "conditions":
             if self.conditional_columns is None:
                 return jnp.zeros((err_samples * X.shape[0], 1))
             else:
                 columns = list(self.conditional_columns)
                 error_model = self.condition_error_model
         else:
-            raise ValueError("type must be `data` or `conditions`.")
+            raise ValueError("kind must be `data` or `conditions`.")
 
         # make sure all relevant variables have error columns
         for col in columns:
@@ -352,7 +350,7 @@ class Flow:
             Xsamples = jnp.delete(Xsamples, idx, axis=1)
 
         # if these are samples of conditions, standard scale them!
-        if type == "conditions":
+        if kind == "conditions":
             Xsamples = (
                 Xsamples - self._condition_means
             ) / self._condition_stds
@@ -372,7 +370,10 @@ class Flow:
         return log_prob
 
     def log_prob(
-        self, inputs: pd.DataFrame, err_samples: int = None, seed: int = None
+        self,
+        inputs: pd.DataFrame,
+        err_samples: int | None = None,
+        seed: int | None = None,
     ) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
@@ -411,17 +412,14 @@ class Flow:
             return self._log_prob(self._params, X, conditions)
 
         else:
-            # validate nsamples
-            assert isinstance(
-                err_samples, int
-            ), "err_samples must be a positive integer."
-            assert err_samples > 0, "err_samples must be a positive integer."
+            if not isinstance(err_samples, int) or err_samples <= 0:
+                raise ValueError("err_samples must be a positive integer.")
             # get Gaussian samples
             seed = np.random.randint(1e18) if seed is None else seed
             key = random.PRNGKey(seed)
-            X = self._get_err_samples(key, inputs, err_samples, type="data")
+            X = self._get_err_samples(key, inputs, err_samples, kind="data")
             C = self._get_err_samples(
-                key, inputs, err_samples, type="conditions"
+                key, inputs, err_samples, kind="conditions"
             )
             # calculate log_probs
             log_probs = self._log_prob(self._params, X, C)
@@ -433,11 +431,11 @@ class Flow:
         inputs: pd.DataFrame,
         column: str,
         grid: jnp.ndarray,
-        marg_rules: dict = None,
+        marg_rules: dict | None = None,
         normalize: bool = True,
-        err_samples: int = None,
-        seed: int = None,
-        batch_size: int = None,
+        err_samples: int | None = None,
+        seed: int | None = None,
+        batch_size: int | None = None,
         nan_to_zero: bool = True,
     ) -> jnp.ndarray:
         """Calculates posterior distributions for the provided column.
@@ -508,11 +506,8 @@ class Flow:
         inputs = inputs.reset_index(drop=True)
 
         if err_samples is not None:
-            # validate nsamples
-            assert isinstance(
-                err_samples, int
-            ), "err_samples must be a positive integer."
-            assert err_samples > 0, "err_samples must be a positive integer."
+            if not isinstance(err_samples, int) or err_samples <= 0:
+                raise ValueError("err_samples must be a positive integer.")
             # set the seed
             seed = np.random.randint(1e18) if seed is None else seed
             key = random.PRNGKey(seed)
@@ -633,7 +628,7 @@ class Flow:
             # loop through batches
             for batch_idx in range(0, nrows, batch_size):
                 # get the data batch
-                # and, if this is a conditional flow, the correpsonding conditions
+                # and, if this is a conditional flow, the corresponding conditions
                 batch = inputs.iloc[batch_idx : batch_idx + batch_size]
 
                 # if not drawing samples, just grab batch and conditions
@@ -643,7 +638,7 @@ class Flow:
                 # if only drawing condition samples...
                 elif len(self.data_columns) == 1:
                     conditions = self._get_err_samples(
-                        key, batch, err_samples, type="conditions"
+                        key, batch, err_samples, kind="conditions"
                     )
                     batch = jnp.repeat(
                         batch[columns].to_numpy(), err_samples, axis=0
@@ -651,10 +646,10 @@ class Flow:
                 # if drawing data and condition samples...
                 else:
                     conditions = self._get_err_samples(
-                        key, batch, err_samples, type="conditions"
+                        key, batch, err_samples, kind="conditions"
                     )
                     batch = self._get_err_samples(
-                        key, batch, err_samples, skip=column, type="data"
+                        key, batch, err_samples, skip=column, kind="data"
                     )
 
                 # make a new copy of each row for each value of the column
@@ -705,9 +700,9 @@ class Flow:
     def sample(
         self,
         nsamples: int = 1,
-        conditions: pd.DataFrame = None,
+        conditions: pd.DataFrame | None = None,
         save_conditions: bool = True,
-        seed: int = None,
+        seed: int | None = None,
     ) -> pd.DataFrame:
         """Returns samples from the normalizing flow.
 
@@ -733,11 +728,8 @@ class Flow:
         # check that the bijector exists
         self._check_bijector()
 
-        # validate nsamples
-        assert isinstance(
-            nsamples, int
-        ), "nsamples must be a positive integer."
-        assert nsamples > 0, "nsamples must be a positive integer."
+        if not isinstance(nsamples, int) or nsamples <= 0:
+            raise ValueError("nsamples must be a positive integer.")
 
         if self.conditional_columns is not None and conditions is None:
             raise ValueError(
@@ -778,7 +770,6 @@ class Flow:
                     np.array(x), columns=self.data_columns
                 ).set_index(conditions_idx)
 
-        # return the samples!
         return x
 
     def __getstate__(self) -> dict:
@@ -809,7 +800,7 @@ class Flow:
             except AttributeError:
                 try:
                     state[key] = getattr(self, "_" + key)
-                except AttributeError: # pragma: no cover
+                except AttributeError:  # pragma: no cover
                     state[key] = None
 
         return state
@@ -884,15 +875,15 @@ class Flow:
     def train(
         self,
         inputs: pd.DataFrame,
-        val_set: pd.DataFrame = None,
-        train_weight: np.ndarray = None,
-        val_weight: np.ndarray = None,
+        val_set: pd.DataFrame | None = None,
+        train_weight: np.ndarray | None = None,
+        val_weight: np.ndarray | None = None,
         epochs: int = 100,
         batch_size: int = 1024,
-        optimizer: Callable = None,
-        loss_fn: Callable = None,
+        optimizer: Callable | None = None,
+        loss_fn: Callable | None = None,
         convolve_errs: bool = False,
-        patience: int = None,
+        patience: int | None = None,
         best_params: bool = True,
         seed: int = 0,
         verbose: bool = False,
@@ -1016,13 +1007,13 @@ class Flow:
         # define a function to return batches
         if convolve_errs:
 
-            def get_batch(sample_key, x, type):
-                return self._get_err_samples(sample_key, x, 1, type=type)
+            def get_batch(sample_key, x, kind):
+                return self._get_err_samples(sample_key, x, 1, kind=kind)
 
         else:
 
-            def get_batch(sample_key, x, type):
-                if type == "conditions":
+            def get_batch(sample_key, x, kind):
+                if kind == "conditions":
                     return self._get_conditions(x)
                 else:
                     return jnp.array(x[columns].to_numpy())
@@ -1034,8 +1025,8 @@ class Flow:
             print(f"Training {epochs} epochs \nLoss:")
 
         # save the initial loss
-        W = jnp.ones(len(inputs)) if train_weight is None else train_weight
-        W /= W.mean()
+        W = jnp.ones(len(inputs)) if train_weight is None else jnp.array(train_weight)
+        W = W / W.mean()
         if initial_loss:
             X = jnp.array(inputs[columns].to_numpy())
             C = self._get_conditions(inputs)
@@ -1046,8 +1037,12 @@ class Flow:
         if val_set is not None:
             Xval = jnp.array(val_set[columns].to_numpy())
             Cval = self._get_conditions(val_set)
-            Wval = jnp.ones(len(val_set)) if val_weight is None else val_weight
-            Wval /= Wval.mean()
+            Wval = (
+                jnp.ones(len(val_set))
+                if val_weight is None
+                else jnp.array(val_weight)
+            )
+            Wval = Wval / Wval.mean()
             if initial_loss:
                 val_losses = [loss_fn(model_params, Xval, Cval, Wval).item()]
             else:
@@ -1059,7 +1054,7 @@ class Flow:
             else:
                 print(f"(0) {losses[-1]:.4f}  {val_losses[-1]:.4f}")
 
-        # initialize variables for early stopping
+        # initialize variables for early stopping / best-param tracking
         best_loss = jnp.inf
         best_param_vals = model_params
         early_stopping_counter = 0
@@ -1080,12 +1075,12 @@ class Flow:
                 batch = get_batch(
                     sample_key,
                     X.iloc[batch_idx : batch_idx + batch_size],
-                    type="data",
+                    kind="data",
                 )
                 batch_conditions = get_batch(
                     sample_key,
                     X.iloc[batch_idx : batch_idx + batch_size],
-                    type="conditions",
+                    kind="conditions",
                 )
                 batch_weights = jnp.asarray(
                     W[idx][batch_idx : batch_idx + batch_size]
@@ -1096,7 +1091,7 @@ class Flow:
                     opt_state,
                     batch,
                     batch_conditions,
-                    batch_weights
+                    batch_weights,
                 )
 
             # save end-of-epoch training loss
@@ -1125,8 +1120,8 @@ class Flow:
                         f"({epoch+1}) {losses[-1]:.4f}  {val_losses[-1]:.4f}"
                     )
 
-            # if patience provided, we need to check for early stopping
-            if patience is not None or best_loss:
+            # track best params, and check for early stopping if requested
+            if patience is not None or best_params:
                 if val_set is None:
                     tracked_losses = losses
                 else:

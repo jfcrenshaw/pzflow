@@ -1,4 +1,8 @@
+"""Tests for pzflow.Flow."""
+
 import pickle
+from typing import Any
+
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -7,7 +11,12 @@ from jax import random
 
 from pzflow import Flow
 from pzflow.bijectors import Reverse, RollingSplineCoupling
-from pzflow.distributions import *
+from pzflow.distributions import (
+    CentBeta,
+    Normal,
+    Tdist,
+    Uniform,
+)
 from pzflow.examples import get_twomoons_data
 
 
@@ -23,7 +32,14 @@ from pzflow.examples import get_twomoons_data
         (None, None, None, "file", "dict"),
     ],
 )
-def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
+def test_bad_inputs(
+    data_columns: Any,
+    bijector: Any,
+    info: Any,
+    file: Any,
+    _dictionary: Any,
+) -> None:
+    """Invalid constructor argument combinations raise ValueError."""
     with pytest.raises(ValueError):
         Flow(
             data_columns,
@@ -43,7 +59,8 @@ def test_bad_inputs(data_columns, bijector, info, file, _dictionary):
         Flow(("redshift", "y"), Reverse(), latent=CentBeta(2, 10)),
     ],
 )
-def test_returns_correct_shape(flow):
+def test_returns_correct_shape(flow: Any) -> None:
+    """Forward, inverse, sample, log_prob, and posterior all return expected shapes."""
     xarray = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
     x = pd.DataFrame(xarray, columns=("redshift", "y"))
 
@@ -88,10 +105,10 @@ def test_returns_correct_shape(flow):
         np.nan,
     ],
 )
-def test_posterior_with_marginalization(flag):
+def test_posterior_with_marginalization(flag: Any) -> None:
+    """Posterior with marg_rules returns the correct shape for flagged columns."""
     flow = Flow(("a", "b", "c", "d"), Reverse())
 
-    # test posteriors with marginalization
     x = pd.DataFrame(
         np.arange(16).reshape(-1, 4), columns=("a", "b", "c", "d")
     )
@@ -231,7 +248,8 @@ def test_posterior_with_marginalization(flag):
         ),
     ],
 )
-def test_error_convolution(flow, x, x_with_err):
+def test_error_convolution(flow: Any, x: Any, x_with_err: Any) -> None:
+    """Error convolution returns correct shapes and is reproducible with a fixed seed."""
     assert flow.log_prob(x, err_samples=10).shape == (x.shape[0],)
     assert jnp.allclose(
         flow.log_prob(x, err_samples=10, seed=0),
@@ -272,7 +290,8 @@ def test_error_convolution(flow, x, x_with_err):
     )
 
 
-def test_posterior_batch():
+def test_posterior_batch() -> None:
+    """Batched posterior computation matches unbatched results."""
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -287,7 +306,8 @@ def test_posterior_batch():
     assert jnp.allclose(pdfs, pdfs_batched)
 
 
-def test_flow_bijection():
+def test_flow_bijection() -> None:
+    """Forward composed with inverse recovers the input."""
     columns = ("x", "y")
     flow = Flow(columns, Reverse())
 
@@ -303,7 +323,8 @@ def test_flow_bijection():
     )
 
 
-def test_load_flow(tmp_path):
+def test_load_flow(tmp_path: Any) -> None:
+    """Flow can be saved and loaded via file, and wrong class raises TypeError."""
     columns = ("x", "y")
     flow = Flow(columns, Reverse(), info=["random", 42])
 
@@ -332,15 +353,17 @@ def test_load_flow(tmp_path):
     with pytest.raises(TypeError):
         Flow(file=str(file))
 
-def test_pickle_flow(tmp_path):
+
+def test_pickle_flow(tmp_path: Any) -> None:
+    """Flow can be pickled and unpickled with identical bijection behaviour."""
     columns = ("x", "y")
     flow = Flow(columns, Reverse(), info=["random", 42])
 
     file = tmp_path / "test-flow.pzflow.pkl"
-    with open(str(file), 'wb') as f:
+    with open(str(file), "wb") as f:
         pickle.dump(flow, f)
 
-    with open(str(file), 'rb') as f:
+    with open(str(file), "rb") as f:
         flow = pickle.load(f)
 
     x = jnp.array([[1, 2], [3, 4]])
@@ -356,7 +379,8 @@ def test_pickle_flow(tmp_path):
     assert flow.info == ["random", 42]
 
 
-def test_control_sample_randomness():
+def test_control_sample_randomness() -> None:
+    """Samples differ between calls but are reproducible with a fixed seed."""
     columns = ("x", "y")
     flow = Flow(columns, Reverse())
 
@@ -372,7 +396,8 @@ def test_control_sample_randomness():
         ("a", None),
     ],
 )
-def test_train_bad_inputs(epochs, loss_fn):
+def test_train_bad_inputs(epochs: Any, loss_fn: Any) -> None:
+    """Invalid epoch values raise ValueError during training."""
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -387,7 +412,8 @@ def test_train_bad_inputs(epochs, loss_fn):
         )
 
 
-def test_conditional_sample():
+def test_conditional_sample() -> None:
+    """Conditional sampling returns the correct number of samples and columns."""
     flow = Flow(("x", "y"), Reverse(), conditional_columns=("a", "b"))
     x = np.arange(12).reshape(-1, 4)
     x = pd.DataFrame(x, columns=("x", "y", "a", "b"))
@@ -405,7 +431,8 @@ def test_conditional_sample():
     assert samples.shape == (4 * x.shape[0], 2)
 
 
-def test_train_no_errs_same():
+def test_train_no_errs_same() -> None:
+    """Training with and without error convolution produces identical losses when no errors present."""
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -417,7 +444,8 @@ def test_train_no_errs_same():
     assert jnp.allclose(jnp.array(losses1), jnp.array(losses2))
 
 
-def test_get_err_samples():
+def test_get_err_samples() -> None:
+    """_get_err_samples draws correctly-shaped samples and respects the skip parameter."""
     rng = random.PRNGKey(0)
 
     # check Gaussian data samples
@@ -438,12 +466,12 @@ def test_get_err_samples():
 
     # check Gaussian conditional samples
     flow = Flow(("x"), Reverse(), conditional_columns=("y"))
-    samples = flow._get_err_samples(rng, x, 10, type="conditions")
+    samples = flow._get_err_samples(rng, x, 10, kind="conditions")
     assert jnp.allclose(samples, 2 * jnp.ones((10, 1)))
 
-    # check incorrect type
+    # check incorrect kind value
     with pytest.raises(ValueError):
-        flow._get_err_samples(rng, x, 10, type="wrong")
+        flow._get_err_samples(rng, x, 10, kind="wrong")
 
     # check constant shift data samples
     columns = ("x", "y")
@@ -467,13 +495,14 @@ def test_get_err_samples():
         conditional_columns=("y"),
         condition_error_model=shift_err_model,
     )
-    samples = flow._get_err_samples(rng, x, 10, type="conditions")
+    samples = flow._get_err_samples(rng, x, 10, kind="conditions")
     assert jnp.allclose(
         samples, jnp.repeat(jnp.array([[2.2], [4.4]]), 10, axis=0)
     )
 
 
-def test_train_w_conditions():
+def test_train_w_conditions() -> None:
+    """Training a conditional flow updates condition_means and condition_stds correctly."""
     xarray = np.array(
         [[1.0, 2.0, 0.1, 0.2], [3.0, 4.0, 0.3, 0.4], [5.0, 6.0, 0.5, 0.6]]
     )
@@ -487,14 +516,12 @@ def test_train_w_conditions():
     )
     assert len(flow.train(x, epochs=11)) == 12
 
-    print("------->>>>>")
-    print(flow._condition_stds, "\n\n")
-    print(xarray[:, 2:].std(axis=0))
     assert jnp.allclose(flow._condition_means, xarray[:, 2:].mean(axis=0))
     assert jnp.allclose(flow._condition_stds, xarray[:, 2:].std(axis=0))
 
 
-def test_patience():
+def test_patience() -> None:
+    """Early stopping halts training after patience epochs without improvement."""
     columns = ("redshift", "y")
     flow = Flow(columns, Reverse())
 
@@ -502,11 +529,11 @@ def test_patience():
     x = pd.DataFrame(xarray, columns=columns)
 
     losses = flow.train(x, patience=2)
-    print(losses)
     assert len(losses) == 4
 
 
-def test_latent_with_wrong_dimension():
+def test_latent_with_wrong_dimension() -> None:
+    """Mismatched latent dimension raises ValueError at construction time."""
     cols = ["x", "y"]
     latent = Uniform(3)
 
@@ -514,7 +541,8 @@ def test_latent_with_wrong_dimension():
         Flow(data_columns=cols, latent=latent, bijector=Reverse())
 
 
-def test_bijector_not_set():
+def test_bijector_not_set() -> None:
+    """Calling sample or posterior before setting a bijector raises ValueError."""
     flow = Flow(["x", "y"])
 
     with pytest.raises(ValueError):
@@ -523,23 +551,23 @@ def test_bijector_not_set():
     with pytest.raises(ValueError):
         x = np.linspace(0, 1, 12)
         df = pd.DataFrame(x.reshape(-1, 2), columns=("x", "y"))
-        flow.posterior(x, column="x", grid=x)
+        flow.posterior(df, column="x", grid=x)
 
 
-def test_default_bijector():
+def test_default_bijector() -> None:
+    """Training without a pre-set bijector uses the default and produces finite losses."""
     flow = Flow(["x", "y"])
 
     losses = flow.train(get_twomoons_data())
     assert all(~np.isnan(losses))
 
 
-def test_validation_train():
-    # load some training data
+def test_validation_train() -> None:
+    """Training with a validation set returns both train and val loss lists."""
     data = get_twomoons_data()[:10]
     train_set = data[:8]
     val_set = data[8:]
 
-    # train the default flow
     flow = Flow(train_set.columns, Reverse())
     losses = flow.train(
         train_set,
@@ -552,25 +580,24 @@ def test_validation_train():
     assert len(losses[1]) == 4
 
 
-def test_nan_train_stop():
-    # create data with NaNs
+def test_nan_train_stop() -> None:
+    """Training on all-NaN data stops after the first epoch."""
     data = jnp.nan * jnp.ones((4, 2))
     data = pd.DataFrame(data, columns=["x", "y"])
 
-    # train the flow
     flow = Flow(data.columns, Reverse())
     losses = flow.train(data)
     assert len(losses) == 2
 
-def test_train_weights():
-    # load some training data
+
+def test_train_weights() -> None:
+    """Training with sample weights produces correct-length loss lists."""
     data = get_twomoons_data()[:10]
     train_set = data[:8]
     val_set = data[8:]
     train_weight = np.linspace(1, 2, len(train_set))
     val_weight = np.linspace(1, 2, len(val_set))
 
-    # train the default flow
     flow = Flow(train_set.columns, Reverse())
     losses = flow.train(
         train_set,
@@ -584,13 +611,13 @@ def test_train_weights():
     assert len(losses[0]) == 4
     assert len(losses[1]) == 4
 
-def test_no_initial_loss():
-    # load some training data
+
+def test_no_initial_loss() -> None:
+    """Training with initial_loss=False omits the initial loss from the returned list."""
     data = get_twomoons_data()[:10]
     train_set = data[:8]
     val_set = data[8:]
 
-    # train the default flow
     flow = Flow(train_set.columns, Reverse())
     losses = flow.train(
         train_set,

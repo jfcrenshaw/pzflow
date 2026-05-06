@@ -1,7 +1,7 @@
 """Define the bijectors used in the normalizing flows."""
 
+from collections.abc import Callable, Sequence
 from functools import update_wrapper
-from typing import Callable, Sequence, Tuple, Union
 
 import jax.numpy as jnp
 from jax import random
@@ -9,9 +9,9 @@ from jax.nn import softmax, softplus
 
 from pzflow.utils import DenseReluNetwork, RationalQuadraticSpline
 
-# define a type alias for Jax Pytrees
-Pytree = Union[tuple, list]
-Bijector_Info = Tuple[str, tuple]
+# Type aliases for Jax Pytrees and bijector metadata.
+Pytree = tuple | list
+Bijector_Info = tuple[str, tuple]
 
 
 class ForwardFunction:
@@ -41,7 +41,7 @@ class ForwardFunction:
 
     def __call__(
         self, params: Pytree, inputs: jnp.ndarray, **kwargs
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         return self._func(params, inputs, **kwargs)
 
 
@@ -72,7 +72,7 @@ class InverseFunction:
 
     def __call__(
         self, params: Pytree, inputs: jnp.ndarray, **kwargs
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         return self._func(params, inputs, **kwargs)
 
 
@@ -104,25 +104,25 @@ class InitFunction:
 
     def __call__(
         self, rng: jnp.ndarray, input_dim: int, **kwargs
-    ) -> Tuple[Pytree, ForwardFunction, InverseFunction]:
+    ) -> tuple[Pytree, ForwardFunction, InverseFunction]:
         return self._func(rng, input_dim, **kwargs)
 
 
 class Bijector:
-    """Wrapper class for bijector functions"""
+    """Wrapper class for bijector functions."""
 
     def __init__(self, func: Callable) -> None:
         self._func = func
         update_wrapper(self, func)
 
-    def __call__(self, *args, **kwargs) -> Tuple[InitFunction, Bijector_Info]:
+    def __call__(self, *args, **kwargs) -> tuple[InitFunction, Bijector_Info]:
         return self._func(*args, **kwargs)
 
 
 @Bijector
 def Chain(
-    *inputs: Sequence[Tuple[InitFunction, Bijector_Info]]
-) -> Tuple[InitFunction, Bijector_Info]:
+    *inputs: Sequence[tuple[InitFunction, Bijector_Info]]
+) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that chains multiple InitFunctions into a single InitFunction.
 
     Parameters
@@ -178,7 +178,7 @@ def Chain(
 @Bijector
 def ColorTransform(
     ref_idx: int, mag_idx: int
-) -> Tuple[InitFunction, Bijector_Info]:
+) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that calculates photometric colors from magnitudes.
 
     Using ColorTransform restricts and impacts the order of columns in the
@@ -315,7 +315,7 @@ def ColorTransform(
 @Bijector
 def InvSoftplus(
     column_idx: int, sharpness: float = 1
-) -> Tuple[InitFunction, Bijector_Info]:
+) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that applies inverse softplus to the specified column(s).
 
     Applying the inverse softplus ensures that samples from that column will
@@ -382,7 +382,7 @@ def NeuralSplineCoupling(
     transformed_dim: int = None,
     n_conditions: int = 0,
     periodic: bool = False,
-) -> Tuple[InitFunction, Bijector_Info]:
+) -> tuple[InitFunction, Bijector_Info]:
     """A coupling layer bijection with rational quadratic splines.
 
     This Bijector is a Coupling Layer [1,2], and as such only transforms
@@ -524,7 +524,7 @@ def NeuralSplineCoupling(
 
 
 @Bijector
-def Reverse() -> Tuple[InitFunction, Bijector_Info]:
+def Reverse() -> tuple[InitFunction, Bijector_Info]:
     """Bijector that reverses the order of inputs.
 
     Returns
@@ -558,7 +558,7 @@ def Reverse() -> Tuple[InitFunction, Bijector_Info]:
 
 
 @Bijector
-def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
+def Roll(shift: int = 1) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that rolls inputs along their last column using jnp.roll.
 
     Parameters
@@ -610,7 +610,7 @@ def RollingSplineCoupling(
     transformed_dim: int = None,
     n_conditions: int = 0,
     periodic: bool = False,
-) -> Tuple[InitFunction, Bijector_Info]:
+) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that alternates NeuralSplineCouplings and Roll bijections.
 
     Parameters
@@ -667,7 +667,7 @@ def RollingSplineCoupling(
 
 
 @Bijector
-def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
+def Scale(scale: float) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that multiplies inputs by a scalar.
 
     Parameters
@@ -718,7 +718,7 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
 @Bijector
 def ShiftBounds(
     min: float, max: float, B: float = 5
-) -> Tuple[InitFunction, Bijector_Info]:
+) -> tuple[InitFunction, Bijector_Info]:
     """Bijector shifts the bounds of inputs so the lie in the range (-B, B).
 
     Parameters
@@ -779,7 +779,7 @@ def ShiftBounds(
 
 
 @Bijector
-def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
+def Shuffle() -> tuple[InitFunction, Bijector_Info]:
     """Bijector that randomly permutes inputs.
 
     Returns
@@ -817,8 +817,8 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
 
 @Bijector
 def StandardScaler(
-    means: jnp.array, stds: jnp.array
-) -> Tuple[InitFunction, Bijector_Info]:
+    means: jnp.ndarray, stds: jnp.ndarray
+) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that applies standard scaling to each input.
 
     Each input dimension i has an associated mean u_i and standard dev s_i.
@@ -863,7 +863,7 @@ def StandardScaler(
 
 
 @Bijector
-def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
+def UniformDequantizer(column_idx: int) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that dequantizes discrete variables with uniform noise.
 
     Dequantizers are necessary for modeling discrete values with a flow.
@@ -913,7 +913,7 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
 
 
 @Bijector
-def Beta13Dequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
+def Beta13Dequantizer(column_idx: int) -> tuple[InitFunction, Bijector_Info]:
     """Bijector that dequantizes discrete variables with noise drawn from a Beta.
 
     The Beta distribution used has parameters alpha, beta = 13 meaning the
@@ -932,13 +932,13 @@ def Beta13Dequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     Returns
     -------
     InitFunction
-        The InitFunction of the UniformDequantizer Bijector.
+        The InitFunction of the Beta13Dequantizer Bijector.
     Bijector_Info
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
 
-    bijector_info = ("UniformDequantizer", (column_idx,))
+    bijector_info = ("Beta13Dequantizer", (column_idx,))
     column_idx = jnp.array(column_idx)
 
     @InitFunction
