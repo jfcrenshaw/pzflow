@@ -1,5 +1,6 @@
 """Define utility functions for use in other modules."""
-from typing import Callable, Tuple
+
+from collections.abc import Callable
 
 import jax.numpy as jnp
 from jax import random
@@ -9,8 +10,19 @@ from pzflow import bijectors
 
 
 def build_bijector_from_info(info: tuple) -> tuple:
-    """Build a Bijector from a Bijector_Info object"""
+    """Build a Bijector from a Bijector_Info object.
 
+    Parameters
+    ----------
+    info : tuple
+        A Bijector_Info tuple of the form (name, params).
+
+    Returns
+    -------
+    tuple
+        A (InitFunction, Bijector_Info) tuple, the same form returned by
+        any Bijector call.
+    """
     # recurse through chains
     if info[0] == "Chain":
         return bijectors.Chain(*(build_bijector_from_info(i) for i in info[1]))
@@ -21,8 +33,8 @@ def build_bijector_from_info(info: tuple) -> tuple:
 
 def DenseReluNetwork(
     out_dim: int, hidden_layers: int, hidden_dim: int
-) -> Tuple[Callable, Callable]:
-    """Create a dense neural network with Relu after hidden layers.
+) -> tuple[Callable, Callable]:
+    """Create a dense neural network with ReLU activations after hidden layers.
 
     Parameters
     ----------
@@ -35,11 +47,11 @@ def DenseReluNetwork(
 
     Returns
     -------
-    init_fun : function
+    init_fun : Callable
         The function that initializes the network. Note that this is the
         init_function defined in the Jax stax module, which is different
         from the functions of my InitFunction class.
-    forward_fun : function
+    forward_fun : Callable
         The function that passes the inputs through the neural network.
     """
     init_fun, forward_fun = serial(
@@ -50,14 +62,27 @@ def DenseReluNetwork(
 
 
 def gaussian_error_model(
-    key, X: jnp.ndarray, Xerr: jnp.ndarray, nsamples: int
+    key: jnp.ndarray, X: jnp.ndarray, Xerr: jnp.ndarray, nsamples: int
 ) -> jnp.ndarray:
-    """
-    Default Gaussian error model were X are the means and Xerr are the stds.
-    """
+    """Default Gaussian error model where X are the means and Xerr are the stds.
 
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        A JAX random key.
+    X : jnp.ndarray
+        Array of shape (n, d) containing the means.
+    Xerr : jnp.ndarray
+        Array of shape (n, d) containing the standard deviations.
+    nsamples : int
+        Number of samples to draw per row.
+
+    Returns
+    -------
+    jnp.ndarray
+        Array of shape (n, nsamples, d) containing the samples.
+    """
     eps = random.normal(key, shape=(X.shape[0], nsamples, X.shape[1]))
-
     return X[:, None, :] + eps * Xerr[:, None, :]
 
 
@@ -69,7 +94,7 @@ def RationalQuadraticSpline(
     B: float,
     periodic: bool = False,
     inverse: bool = False,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Apply rational quadratic spline to inputs and return outputs with log_det.
 
     Applies the piecewise rational quadratic spline developed in [1].
@@ -229,8 +254,19 @@ def RationalQuadraticSpline(
 
 def sub_diag_indices(
     inputs: jnp.ndarray,
-) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Return indices for diagonal of 2D blocks in 3D array"""
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Return indices for diagonal of 2D blocks in 3D array.
+
+    Parameters
+    ----------
+    inputs : jnp.ndarray
+        A 3D array of shape (nblocks, m, n).
+
+    Returns
+    -------
+    tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
+        Index arrays (block_idx, row_idx, col_idx) for the block diagonals.
+    """
     if inputs.ndim != 3:
         raise ValueError("Input must be a 3D array.")
     nblocks = inputs.shape[0]

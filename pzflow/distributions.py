@@ -1,7 +1,7 @@
 """Define the latent distributions used in the normalizing flows."""
+
 import sys
 from abc import ABC, abstractmethod
-from typing import Union
 
 import jax.numpy as jnp
 import numpy as np
@@ -17,7 +17,7 @@ epsilon = sys.float_info.epsilon
 class LatentDist(ABC):
     """Base class for latent distributions."""
 
-    info = ("LatentDist", ())
+    info: tuple[str, tuple] = ("LatentDist", ())
 
     @abstractmethod
     def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
@@ -25,12 +25,14 @@ class LatentDist(ABC):
 
     @abstractmethod
     def sample(
-        self, params: Pytree, nsamples: int, seed: int = None
+        self, params: Pytree, nsamples: int, seed: int | None = None
     ) -> jnp.ndarray:
         """Sample from the distribution."""
 
 
-def _mahalanobis_and_logdet(x: jnp.array, cov: jnp.array) -> tuple:
+def _mahalanobis_and_logdet(
+    x: jnp.ndarray, cov: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     # Calculate mahalanobis distance and log_det of cov.
     # Uses scipy method, explained here:
     # http://gregorygundersen.com/blog/2019/10/30/scipy-multivariate/
@@ -64,7 +66,7 @@ class CentBeta(LatentDist):
         self.B = B
 
         # save dist info
-        self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
+        self._params = tuple([(0.0, 0.0) for _ in range(input_dim)])
         self.info = ("CentBeta", (input_dim, B))
 
     def log_prob(self, params: Pytree, inputs: jnp.ndarray) -> jnp.ndarray:
@@ -83,23 +85,16 @@ class CentBeta(LatentDist):
         jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        log_prob = jnp.hstack(
-            [
-                beta.logpdf(
-                    inputs[:, i],
-                    a=jnp.exp(params[i][0]),
-                    b=jnp.exp(params[i][1]),
-                    loc=-self.B,
-                    scale=2 * self.B,
-                ).reshape(-1, 1)
-                for i in range(self.input_dim)
-            ]
-        ).sum(axis=1)
+        a = jnp.exp(jnp.array([p[0] for p in params]))
+        b = jnp.exp(jnp.array([p[1] for p in params]))
+        log_prob = beta.logpdf(inputs, a=a, b=b, loc=-self.B, scale=2 * self.B).sum(
+            axis=1
+        )
 
         return log_prob
 
     def sample(
-        self, params: Pytree, nsamples: int, seed: int = None
+        self, params: Pytree, nsamples: int, seed: int | None = None
     ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
@@ -119,17 +114,10 @@ class CentBeta(LatentDist):
             Device array of shape (nsamples, self.input_dim).
         """
         seed = np.random.randint(1e18) if seed is None else seed
-        seeds = random.split(random.PRNGKey(seed), self.input_dim)
-        samples = jnp.hstack(
-            [
-                random.beta(
-                    seeds[i],
-                    jnp.exp(params[i][0]),
-                    jnp.exp(params[i][1]),
-                    shape=(nsamples, 1),
-                )
-                for i in range(self.input_dim)
-            ]
+        a = jnp.exp(jnp.array([p[0] for p in params]))
+        b = jnp.exp(jnp.array([p[1] for p in params]))
+        samples = random.beta(
+            random.PRNGKey(seed), a, b, shape=(nsamples, self.input_dim)
         )
         return 2 * self.B * (samples - 0.5)
 
@@ -157,7 +145,7 @@ class CentBeta13(LatentDist):
         self.B = B
 
         # save dist info
-        self._params = tuple([(0.0, 0.0) for i in range(input_dim)])
+        self._params = tuple([(0.0, 0.0) for _ in range(input_dim)])
         self.info = ("CentBeta13", (input_dim, B))
         self.a = 13
         self.b = 13
@@ -178,23 +166,14 @@ class CentBeta13(LatentDist):
         jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        log_prob = jnp.hstack(
-            [
-                beta.logpdf(
-                    inputs[:, i],
-                    a=self.a,
-                    b=self.b,
-                    loc=-self.B,
-                    scale=2 * self.B,
-                ).reshape(-1, 1)
-                for i in range(self.input_dim)
-            ]
+        log_prob = beta.logpdf(
+            inputs, a=self.a, b=self.b, loc=-self.B, scale=2 * self.B
         ).sum(axis=1)
 
         return log_prob
 
     def sample(
-        self, params: Pytree, nsamples: int, seed: int = None
+        self, params: Pytree, nsamples: int, seed: int | None = None
     ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
@@ -214,17 +193,8 @@ class CentBeta13(LatentDist):
             Device array of shape (nsamples, self.input_dim).
         """
         seed = np.random.randint(1e18) if seed is None else seed
-        seeds = random.split(random.PRNGKey(seed), self.input_dim)
-        samples = jnp.hstack(
-            [
-                random.beta(
-                    seeds[i],
-                    self.a,
-                    self.b,
-                    shape=(nsamples, 1),
-                )
-                for i in range(self.input_dim)
-            ]
+        samples = random.beta(
+            random.PRNGKey(seed), self.a, self.b, shape=(nsamples, self.input_dim)
         )
         return 2 * self.B * (samples - 0.5)
 
@@ -275,7 +245,7 @@ class Normal(LatentDist):
         )
 
     def sample(
-        self, params: Pytree, nsamples: int, seed: int = None
+        self, params: Pytree, nsamples: int, seed: int | None = None
     ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
@@ -358,7 +328,7 @@ class Tdist(LatentDist):
         return A - B - C - D + E
 
     def sample(
-        self, params: Pytree, nsamples: int, seed: int = None
+        self, params: Pytree, nsamples: int, seed: int | None = None
     ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
@@ -430,18 +400,15 @@ class Uniform(LatentDist):
 
         # which inputs are inside the support of the distribution
         mask = jnp.prod((inputs >= -self.B) & (inputs <= self.B), axis=-1)
-
-        # calculate log_prob
         log_prob = jnp.where(
             mask,
             -self.input_dim * jnp.log(2 * self.B),
             -jnp.inf,
         )
-
         return log_prob
 
     def sample(
-        self, params: Pytree, nsamples: int, seed: int = None
+        self, params: Pytree, nsamples: int, seed: int | None = None
     ) -> jnp.ndarray:
         """Returns samples from the distribution.
 
@@ -461,13 +428,14 @@ class Uniform(LatentDist):
             Device array of shape (nsamples, self.input_dim).
         """
         seed = np.random.randint(1e18) if seed is None else seed
-        samples = random.uniform(
-            random.PRNGKey(seed),
-            shape=(nsamples, self.input_dim),
-            minval=-self.B,
-            maxval=self.B,
+        return jnp.array(
+            random.uniform(
+                random.PRNGKey(seed),
+                shape=(nsamples, self.input_dim),
+                minval=-self.B,
+                maxval=self.B,
+            )
         )
-        return jnp.array(samples)
 
 
 class Joint(LatentDist):
@@ -480,7 +448,7 @@ class Joint(LatentDist):
     CentBeta latent space.
     """
 
-    def __init__(self, *inputs: Union[LatentDist, tuple]) -> None:
+    def __init__(self, *inputs: "LatentDist | tuple") -> None:
         """
         Parameters
         ----------
@@ -541,7 +509,7 @@ class Joint(LatentDist):
         return log_prob
 
     def sample(
-        self, params: Pytree, nsamples: int, seed: int = None
+        self, params: Pytree, nsamples: int, seed: int | None = None
     ) -> jnp.ndarray:
         """Returns samples from the distribution.
 

@@ -1,6 +1,8 @@
 """Import modules and set version."""
 
-from pzflow.flow import Flow
-from pzflow.flowEnsemble import FlowEnsemble
+from importlib.metadata import version
 
-__version__ = "3.4.0"
+from pzflow.flow import Flow as Flow
+from pzflow.flowEnsemble import FlowEnsemble as FlowEnsemble
+
+__version__ = version("pzflow")

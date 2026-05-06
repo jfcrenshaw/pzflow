@@ -1,6 +1,7 @@
 """Define FlowEnsemble object that holds an ensemble of normalizing flows."""
 
-from typing import Any, Callable, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import pickle
 import jax.numpy as jnp
@@ -33,31 +34,28 @@ class FlowEnsemble:
         of __init__ for more details.
     info : Any
         Object containing any kind of info included with the ensemble.
-        Often Reverse the data the flows are trained on.
+        Often describes the data the flows are trained on.
     """
 
     def __init__(
         self,
-        data_columns: Sequence[str] = None,
-        bijector: Tuple[InitFunction, Bijector_Info] = None,
-        latent: distributions.LatentDist = None,
-        conditional_columns: Sequence[str] = None,
-        data_error_model: Callable = None,
-        condition_error_model: Callable = None,
+        data_columns: Sequence[str],
+        bijector: tuple[InitFunction, Bijector_Info] | None = None,
+        latent: distributions.LatentDist | None = None,
+        conditional_columns: Sequence[str] | None = None,
+        data_error_model: Callable | None = None,
+        condition_error_model: Callable | None = None,
         autoscale_conditions: bool = True,
         N: int = 1,
         info: Any = None,
-        file: str = None,
     ) -> None:
         """Instantiate an ensemble of normalizing flows.
 
-        Note that while all of the init parameters are technically optional,
-        you must provide either data_columns and bijector OR file.
-        In addition, if a file is provided, all other parameters must be None.
+        To load a pretrained ensemble from a file, use FlowEnsemble.from_file(file).
 
         Parameters
         ----------
-        data_columns : Sequence[str]; optional
+        data_columns : Sequence[str]
             Tuple, list, or other container of column names.
             These are the columns the flows expect/produce in DataFrames.
         bijector : Bijector Call; optional
@@ -108,70 +106,59 @@ class FlowEnsemble:
             The number of flows in the ensemble.
         info : Any; optional
             An object to attach to the info attribute.
-        file : str; optional
-            Path to file from which to load a pretrained flow ensemble.
-            If a file is provided, all other parameters must be None.
         """
+        if data_columns is None:
+            raise ValueError("data_columns is required.")
 
-        # validate parameters
-        if data_columns is None and file is None:
-            raise ValueError("You must provide data_columns OR file.")
-        if file is not None and any(
-            (
-                data_columns is not None,
-                bijector is not None,
-                conditional_columns is not None,
-                latent is not None,
-                data_error_model is not None,
-                condition_error_model is not None,
-                info is not None,
+        self._ensemble = {
+            f"Flow {i}": Flow(
+                data_columns=data_columns,
+                bijector=bijector,
+                conditional_columns=conditional_columns,
+                latent=latent,
+                data_error_model=data_error_model,
+                condition_error_model=condition_error_model,
+                autoscale_conditions=autoscale_conditions,
+                seed=i,
+                info=f"Flow {i}",
             )
-        ):
-            raise ValueError(
-                "If providing a file, please do not provide any other parameters."
-            )
+            for i in range(N)
+        }
+        self.data_columns = data_columns
+        self.conditional_columns = conditional_columns
+        self.latent = self._ensemble["Flow 0"].latent
+        self.data_error_model = data_error_model
+        self.condition_error_model = condition_error_model
+        self.info = info
 
-        # if file is provided, load everything from the file
-        if file is not None:
-            # load the file
-            with open(file, "rb") as handle:
-                state = pickle.load(handle)
-            if not isinstance(state, dict):
-                state = state.__getstate__()
+    @classmethod
+    def from_file(cls, file: str) -> "FlowEnsemble":
+        """Load a pretrained ensemble from a file.
 
-            self.__setstate__(state)
+        Parameters
+        ----------
+        file : str
+            Path to the file from which to load the ensemble.
 
-        # otherwise create a new ensemble from the provided parameters
-        else:
-            # save the ensemble of flows
-            self._ensemble = {
-                f"Flow {i}": Flow(
-                    data_columns=data_columns,
-                    bijector=bijector,
-                    conditional_columns=conditional_columns,
-                    latent=latent,
-                    data_error_model=data_error_model,
-                    condition_error_model=condition_error_model,
-                    autoscale_conditions=autoscale_conditions,
-                    seed=i,
-                    info=f"Flow {i}",
-                )
-                for i in range(N)
-            }
-            # save the metadata
-            self.data_columns = data_columns
-            self.conditional_columns = conditional_columns
-            self.latent = self._ensemble["Flow 0"].latent
-            self.data_error_model = data_error_model
-            self.condition_error_model = condition_error_model
-            self.info = info
+        Returns
+        -------
+        FlowEnsemble
+            The loaded ensemble.
+        """
+        with open(file, "rb") as handle:
+            state = pickle.load(handle)
+        if not isinstance(state, dict):
+            state = state.__getstate__()
+        ensemble = cls.__new__(cls)
+        ensemble.__setstate__(state)
+        return ensemble
 
     def log_prob(
         self,
         inputs: pd.DataFrame,
-        err_samples: int = None,
-        seed: int = None,
-        returnEnsemble: bool = False,
+        err_samples: int | None = None,
+        seed: int | None = None,
+        return_ensemble: bool = False,
     ) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
@@ -190,7 +177,7 @@ class FlowEnsemble:
             be `u_err`. Zero error assumed for any missing error columns.
         seed : int; default=None
             Random seed for drawing the samples with Gaussian errors.
-        returnEnsemble : bool; default=False
+        return_ensemble : bool; default=False
             If True, returns log_prob for each flow in the ensemble as an
             array of shape (inputs.shape[0], N flows in ensemble).
             If False, the prob is averaged over the flows in the ensemble,
@@ -200,7 +187,7 @@ class FlowEnsemble:
         Returns
         -------
         jnp.ndarray
-            For shape, see returnEnsemble description above.
+            For shape, see return_ensemble description above.
         """
 
         # calculate log_prob for each flow in the ensemble
@@ -214,12 +201,10 @@ class FlowEnsemble:
         # re-arrange so that (axis 0, axis 1) = (inputs, flows in ensemble)
         ensemble = jnp.rollaxis(ensemble, axis=1)
 
-        if returnEnsemble:
-            # return the ensemble of log_probs
+        if return_ensemble:
             return ensemble
         else:
-            # return mean over ensemble
-            # note we return log(mean prob) instead of just mean log_prob
+            # return log(mean prob) instead of mean log_prob
             return jnp.log(jnp.exp(ensemble).mean(axis=1))
 
     def posterior(
@@ -227,12 +212,12 @@ class FlowEnsemble:
         inputs: pd.DataFrame,
         column: str,
         grid: jnp.ndarray,
-        marg_rules: dict = None,
+        marg_rules: dict | None = None,
         normalize: bool = True,
-        err_samples: int = None,
-        seed: int = None,
-        batch_size: int = None,
-        returnEnsemble: bool = False,
+        err_samples: int | None = None,
+        seed: int | None = None,
+        batch_size: int | None = None,
+        return_ensemble: bool = False,
         nan_to_zero: bool = True,
     ) -> jnp.ndarray:
         """Calculates posterior distributions for the provided column.
@@ -279,7 +264,7 @@ class FlowEnsemble:
             Size of batches in which to calculate posteriors. If None, all
             posteriors are calculated simultaneously. Simultaneous calculation
             is faster, but memory intensive for large data sets.
-        returnEnsemble : bool; default=False
+        return_ensemble : bool; default=False
             If True, returns posterior for each flow in the ensemble as an
             array of shape (inputs.shape[0], N flows in ensemble, grid.size).
             If False, the posterior is averaged over the flows in the ensemble,
@@ -290,7 +275,7 @@ class FlowEnsemble:
         Returns
         -------
         jnp.ndarray
-            For shape, see returnEnsemble description above.
+            For shape, see return_ensemble description above.
         """
 
         # calculate posterior for each flow in the ensemble
@@ -314,8 +299,7 @@ class FlowEnsemble:
         # re-arrange so that (axis 0, axis 1) = (inputs, flows in ensemble)
         ensemble = jnp.rollaxis(ensemble, axis=1)
 
-        if returnEnsemble:
-            # return the ensemble of posteriors
+        if return_ensemble:
             if normalize:
                 ensemble = ensemble.reshape(-1, grid.size)
                 ensemble = ensemble / trapezoid(y=ensemble, x=grid).reshape(
@@ -324,7 +308,6 @@ class FlowEnsemble:
                 ensemble = ensemble.reshape(inputs.shape[0], -1, grid.size)
             return ensemble
         else:
-            # return mean over ensemble
             pdfs = ensemble.mean(axis=1)
             if normalize:
                 pdfs = pdfs / trapezoid(y=pdfs, x=grid).reshape(-1, 1)
@@ -333,10 +316,10 @@ class FlowEnsemble:
     def sample(
         self,
         nsamples: int = 1,
-        conditions: pd.DataFrame = None,
+        conditions: pd.DataFrame | None = None,
         save_conditions: bool = True,
-        seed: int = None,
-        returnEnsemble: bool = False,
+        seed: int | None = None,
+        return_ensemble: bool = False,
     ) -> pd.DataFrame:
         """Returns samples from the ensemble.
 
@@ -344,7 +327,7 @@ class FlowEnsemble:
         ----------
         nsamples : int; default=1
             The number of samples to be returned, either overall or per flow
-            in the ensemble (see returnEnsemble below).
+            in the ensemble (see return_ensemble below).
         conditions : pd.DataFrame; optional
             If this is a conditional flow, you must pass conditions for
             each sample. nsamples will be drawn for each row in conditions.
@@ -353,7 +336,7 @@ class FlowEnsemble:
             that is returned.
         seed : int; optional
             Sets the random seed for the samples.
-        returnEnsemble : bool; default=False
+        return_ensemble : bool; default=False
             If True, nsamples is drawn from each flow in the ensemble.
             If False, nsamples are drawn uniformly from the flows in the ensemble.
 
@@ -363,8 +346,7 @@ class FlowEnsemble:
             Pandas DataFrame of samples.
         """
 
-        if returnEnsemble:
-            # return nsamples for each flow in the ensemble
+        if return_ensemble:
             return pd.concat(
                 [
                     flow.sample(nsamples, conditions, save_conditions, seed)
@@ -372,86 +354,71 @@ class FlowEnsemble:
                 ],
                 keys=self._ensemble.keys(),
             )
-        else:
-            # if this isn't a conditional flow, sampling is straightforward
-            if conditions is None:
-                # return nsamples drawn uniformly from the flows in the ensemble
-                N = int(jnp.ceil(nsamples / len(self._ensemble)))
-                samples = pd.concat(
-                    [
-                        flow.sample(N, conditions, save_conditions, seed)
-                        for flow in self._ensemble.values()
-                    ]
-                )
-                return samples.sample(nsamples, random_state=seed).reset_index(
-                    drop=True
-                )
-            # if this is a conditional flow, it's a little more complicated...
-            else:
-                # if nsamples > 1, we duplicate the rows of the conditions
-                if nsamples > 1:
-                    conditions = pd.concat([conditions] * nsamples)
 
-                # now the main sampling algorithm
-                seed = np.random.randint(1e18) if seed is None else seed
-                # if we are drawing more samples than the number of flows in
-                # the ensemble, then we will shuffle the conditions and randomly
-                # assign them to one of the constituent flows
-                if conditions.shape[0] > len(self._ensemble):
-                    # shuffle the conditions
-                    conditions_shuffled = conditions.sample(
-                        frac=1.0, random_state=int(seed / 1e9)
-                    )
-                    # split conditions into ~equal sized chunks
-                    split_indices = np.array_split(
-                        np.arange(len(conditions_shuffled)), len(self._ensemble)
-                    )
-                    chunks = [
-                        conditions_shuffled.iloc[idx] for idx in split_indices
-                    ]
-                    # shuffle the chunks
-                    chunks = [
-                        chunks[i]
-                        for i in random.permutation(
-                            random.PRNGKey(seed), jnp.arange(len(chunks))
-                        )
-                    ]
-                    # sample from each flow, and return all the samples
-                    return pd.concat(
-                        [
-                            flow.sample(
-                                1, chunk, save_conditions, seed
-                            ).set_index(chunk.index)
-                            for flow, chunk in zip(
-                                self._ensemble.values(), chunks
-                            )
-                        ]
-                    ).sort_index()
-                # however, if there are more flows in the ensemble than samples
-                # being drawn, then we will randomly select flows for each condition
-                else:
-                    rng = np.random.default_rng(seed)
-                    # randomly select a flow to sample from for each condition
-                    flows = rng.choice(
-                        list(self._ensemble.values()),
-                        size=conditions.shape[0],
-                        replace=True,
-                    )
-                    # sample from each flow and return all the samples together
-                    seeds = rng.integers(1e18, size=conditions.shape[0])
-                    return pd.concat(
-                        [
-                            flow.sample(
-                                1,
-                                conditions[i : i + 1],
-                                save_conditions,
-                                new_seed,
-                            )
-                            for i, (flow, new_seed) in enumerate(
-                                zip(flows, seeds)
-                            )
-                        ],
-                    ).set_index(conditions.index)
+        if conditions is None:
+            return self._sample_unconditional(nsamples, save_conditions, seed)
+
+        if nsamples > 1:
+            conditions = pd.concat([conditions] * nsamples)
+
+        seed = np.random.randint(1e18) if seed is None else seed
+
+        if len(conditions) > len(self._ensemble):
+            return self._sample_split_conditions(conditions, save_conditions, seed)
+        else:
+            return self._sample_per_condition(conditions, save_conditions, seed)
+
+    def _sample_unconditional(
+        self, nsamples: int, save_conditions: bool, seed: int | None
+    ) -> pd.DataFrame:
+        N = int(jnp.ceil(nsamples / len(self._ensemble)))
+        samples = pd.concat(
+            [
+                flow.sample(N, None, save_conditions, seed)
+                for flow in self._ensemble.values()
+            ]
+        )
+        return samples.sample(nsamples, random_state=seed).reset_index(drop=True)
+
+    def _sample_split_conditions(
+        self, conditions: pd.DataFrame, save_conditions: bool, seed: int
+    ) -> pd.DataFrame:
+        """Shuffle conditions, split into chunks, assign one chunk per flow."""
+        conditions_shuffled = conditions.sample(
+            frac=1.0, random_state=int(seed / 1e9)
+        )
+        split_indices = np.array_split(
+            np.arange(len(conditions_shuffled)), len(self._ensemble)
+        )
+        chunks = [conditions_shuffled.iloc[idx] for idx in split_indices]
+        chunks = [
+            chunks[i]
+            for i in random.permutation(
+                random.PRNGKey(seed), jnp.arange(len(chunks))
+            )
+        ]
+        return pd.concat(
+            [
+                flow.sample(1, chunk, save_conditions, seed).set_index(chunk.index)
+                for flow, chunk in zip(self._ensemble.values(), chunks)
+            ]
+        ).sort_index()
+
+    def _sample_per_condition(
+        self, conditions: pd.DataFrame, save_conditions: bool, seed: int
+    ) -> pd.DataFrame:
+        """Randomly assign one flow per condition row and sample."""
+        rng = np.random.default_rng(seed)
+        flows = rng.choice(
+            list(self._ensemble.values()), size=len(conditions), replace=True
+        )
+        seeds = rng.integers(1e18, size=len(conditions))
+        return pd.concat(
+            [
+                flow.sample(1, conditions[i : i + 1], save_conditions, new_seed)
+                for i, (flow, new_seed) in enumerate(zip(flows, seeds))
+            ]
+        ).set_index(conditions.index)
 
     def __getstate__(self) -> dict:
         """Returns the state dictionary for pickling.
@@ -484,10 +451,11 @@ class FlowEnsemble:
             Dictionary containing all ensemble parameters.
         """
         # Validate class type
-        c = state.pop("class")
-        if c != self.__class__.__name__:
+        class_name = state["class"]
+        if class_name != self.__class__.__name__:
             raise TypeError(
-                f"This save file isn't a {self.__class__.__name__}. It is a {c}."
+                f"This save file isn't a {self.__class__.__name__}. "
+                f"It is a {class_name}."
             )
 
         # load the ensemble from the dictionary
@@ -504,16 +472,14 @@ class FlowEnsemble:
         self.condition_error_model = state["condition_error_model"]
         self.info = state["info"]
 
-        self._latent_info = state["latent_info"]
-        self.latent = getattr(distributions, self._latent_info[0])(
-            *self._latent_info[1]
+        self.latent = getattr(distributions, state["latent_info"][0])(
+            *state["latent_info"][1]
         )
 
     def save(self, file: str) -> None:
         """Saves the ensemble to a file.
 
-        Pickles the ensemble and saves it to a file that can be passed as
-        the `file` argument during flow instantiation.
+        Pickles the ensemble to a file that can be loaded with FlowEnsemble.from_file().
 
         WARNING: Currently, this method only works for bijectors that are
         implemented in the `bijectors` module. If you want to save a flow
@@ -532,15 +498,15 @@ class FlowEnsemble:
     def train(
         self,
         inputs: pd.DataFrame,
-        val_set: pd.DataFrame = None,
-        train_weight: np.ndarray = None,
-        val_weight: np.ndarray = None,
+        val_set: pd.DataFrame | None = None,
+        train_weight: np.ndarray | None = None,
+        val_weight: np.ndarray | None = None,
         epochs: int = 50,
         batch_size: int = 1024,
-        optimizer: Callable = None,
-        loss_fn: Callable = None,
+        optimizer: Callable | None = None,
+        loss_fn: Callable | None = None,
         convolve_errs: bool = False,
-        patience: int = None,
+        patience: int | None = None,
         best_params: bool = True,
         seed: int = 0,
         verbose: bool = False,
@@ -607,7 +573,7 @@ class FlowEnsemble:
         rng = np.random.default_rng(seed)
         seeds = rng.integers(1e9, size=len(self._ensemble))
 
-        loss_dict = dict()
+        loss_dict = {}
 
         for i, (name, flow) in enumerate(self._ensemble.items()):
             if verbose:

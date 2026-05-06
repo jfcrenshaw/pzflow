@@ -1,6 +1,7 @@
 """Define the Flow object that defines the normalizing flow."""
 
-from typing import Any, Callable, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import pickle
 import jax.numpy as jnp
@@ -48,27 +49,23 @@ class Flow:
 
     def __init__(
         self,
-        data_columns: Sequence[str] = None,
-        bijector: Tuple[InitFunction, Bijector_Info] = None,
-        latent: distributions.LatentDist = None,
-        conditional_columns: Sequence[str] = None,
-        data_error_model: Callable = None,
-        condition_error_model: Callable = None,
+        data_columns: Sequence[str],
+        bijector: tuple[InitFunction, Bijector_Info] | None = None,
+        latent: distributions.LatentDist | None = None,
+        conditional_columns: Sequence[str] | None = None,
+        data_error_model: Callable | None = None,
+        condition_error_model: Callable | None = None,
         autoscale_conditions: bool = True,
         seed: int = 0,
         info: Any = None,
-        file: str = None,
-        _dictionary: dict = None,
     ) -> None:
         """Instantiate a normalizing flow.
 
-        Note that while all of the init parameters are technically optional,
-        you must provide either data_columns OR file.
-        In addition, if a file is provided, all other parameters must be None.
+        To load a pretrained flow from a file, use Flow.from_file(file).
 
         Parameters
         ----------
-        data_columns : Sequence[str]; optional
+        data_columns : Sequence[str]
             Tuple, list, or other container of column names.
             These are the columns the flow expects/produces in DataFrames.
         bijector : Bijector Call; optional
@@ -118,102 +115,61 @@ class Flow:
             The random seed for initial parameters
         info : Any; optional
             An object to attach to the info attribute.
-        file : str; optional
-            Path to file from which to load a pretrained flow.
-            If a file is provided, all other parameters must be None.
         """
+        self.data_columns = tuple(data_columns)
+        self._input_dim = len(self.data_columns)
+        self.info = info
 
-        # validate parameters
-        if data_columns is None and file is None and _dictionary is None:
-            raise ValueError("You must provide data_columns OR file.")
-        if any(
-            (
-                data_columns is not None,
-                bijector is not None,
-                conditional_columns is not None,
-                latent is not None,
-                data_error_model is not None,
-                condition_error_model is not None,
-                info is not None,
-            )
-        ):
-            if file is not None:
-                raise ValueError(
-                    "If providing a file, please do not provide any other parameters."
-                )
-            if _dictionary is not None:
-                raise ValueError(
-                    "If providing a dictionary, please do not provide any other parameters."
-                )
-        if file is not None and _dictionary is not None:
-            raise ValueError("Only provide file or _dictionary, not both.")
-
-        # if file or dictionary is provided, load everything from it
-        if file is not None or _dictionary is not None:
-            if file is not None:
-                with open(file, "rb") as handle:
-                    state = pickle.load(handle)
-                if not isinstance(state, dict):
-                    state = state.__getstate__()
-            else:
-                state = _dictionary  # pragma: no cover
-
-            self.__setstate__(state)
-
-
-        # if no file is provided, use provided parameters
+        if conditional_columns is not None:
+            self.conditional_columns = tuple(conditional_columns)
+            self._condition_means = jnp.zeros(len(self.conditional_columns))
+            self._condition_stds = jnp.ones(len(self.conditional_columns))
         else:
-            self.data_columns = tuple(data_columns)
-            self._input_dim = len(self.data_columns)
-            self.info = info
+            self.conditional_columns = None
+            self._condition_means = None
+            self._condition_stds = None
 
-            if conditional_columns is None:
-                self.conditional_columns = None
-                self._condition_means = None
-                self._condition_stds = None
-            else:
-                self.conditional_columns = tuple(conditional_columns)
-                self._condition_means = jnp.zeros(
-                    len(self.conditional_columns)
-                )
-                self._condition_stds = jnp.ones(len(self.conditional_columns))
+        self._autoscale_conditions = autoscale_conditions
 
-            # set whether or not to automatically standard scale any
-            # conditions passed to the normalizing flow
-            self._autoscale_conditions = autoscale_conditions
+        self.latent = latent or distributions.CentBeta13(self._input_dim, 5)
+        if self.latent.input_dim != self._input_dim:
+            raise ValueError(
+                f"The latent distribution has {self.latent.input_dim} "
+                f"dimensions, but data_columns has {self._input_dim} "
+                "dimensions. They must match!"
+            )
 
-            # set up the latent distribution
-            if latent is None:
-                self.latent = distributions.CentBeta13(self._input_dim, 5)
-            else:
-                self.latent = latent
-            self._latent_info = self.latent.info
+        self.data_error_model = data_error_model or gaussian_error_model
+        self.condition_error_model = (
+            condition_error_model or gaussian_error_model
+        )
 
-            # make sure the latent distribution and data_columns have the
-            # same number of dimensions
-            if self.latent.input_dim != len(data_columns):
-                raise ValueError(
-                    f"The latent distribution has {self.latent.input_dim} "
-                    f"dimensions, but data_columns has {len(data_columns)} "
-                    "dimensions. They must match!"
-                )
+        if bijector is not None:
+            self.set_bijector(bijector, seed=seed)
+        else:
+            self._bijector_info = None
 
-            # set up the error models
-            if data_error_model is None:
-                self.data_error_model = gaussian_error_model
-            else:
-                self.data_error_model = data_error_model
-            if condition_error_model is None:
-                self.condition_error_model = gaussian_error_model
-            else:
-                self.condition_error_model = condition_error_model
+    @classmethod
+    def from_file(cls, file: str) -> "Flow":
+        """Load a pretrained flow from a file.
 
-            # set up the bijector
-            if bijector is not None:
-                self.set_bijector(bijector, seed=seed)
-            # if no bijector was provided, set bijector_info to None
-            else:
-                self._bijector_info = None
+        Parameters
+        ----------
+        file : str
+            Path to the file from which to load the flow.
+
+        Returns
+        -------
+        Flow
+            The loaded flow.
+        """
+        with open(file, "rb") as handle:
+            state = pickle.load(handle)
+        if not isinstance(state, dict):
+            state = state.__getstate__()
+        flow = cls.__new__(cls)
+        flow.__setstate__(state)
+        return flow
 
     def _check_bijector(self) -> None:
         if self._bijector_info is None:
@@ -227,8 +183,8 @@ class Flow:
 
     def set_bijector(
         self,
-        bijector: Tuple[InitFunction, Bijector_Info],
-        params: Pytree = None,
+        bijector: tuple[InitFunction, Bijector_Info],
+        params: Pytree | None = None,
         seed: int = 0,
     ) -> None:
         """Set the bijector.
@@ -258,11 +214,14 @@ class Flow:
         # save the bijector params along with the latent params
         self._params = (self.latent._params, bijector_params)
 
+        # cache JIT-compiled versions for inference paths
+        self._log_prob_jitted = jit(self._log_prob)
+        self._inverse_jitted = jit(self._inverse)
+
     def _set_default_bijector(
         self, inputs: pd.DataFrame, seed: int = 0
     ) -> None:
-        # Set the default bijector
-        # which is ShiftBounds -> RollingSplineCoupling
+        # Set the default bijector: ShiftBounds -> RollingSplineCoupling.
 
         # get the min/max for each data column
         data = inputs[list(self.data_columns)].to_numpy()
@@ -303,28 +262,28 @@ class Flow:
 
     def _get_err_samples(
         self,
-        key,
+        key: jnp.ndarray,
         inputs: pd.DataFrame,
         err_samples: int,
-        type: str = "data",
-        skip: str = None,
+        kind: str = "data",
+        skip: str | None = None,
     ) -> jnp.ndarray:
         # Draw error samples for each row of inputs.
 
         X = inputs.copy()
 
         # get list of columns
-        if type == "data":
+        if kind == "data":
             columns = list(self.data_columns)
             error_model = self.data_error_model
-        elif type == "conditions":
+        elif kind == "conditions":
             if self.conditional_columns is None:
                 return jnp.zeros((err_samples * X.shape[0], 1))
             else:
                 columns = list(self.conditional_columns)
                 error_model = self.condition_error_model
         else:
-            raise ValueError("type must be `data` or `conditions`.")
+            raise ValueError("kind must be `data` or `conditions`.")
 
         # make sure all relevant variables have error columns
         for col in columns:
@@ -352,7 +311,7 @@ class Flow:
             Xsamples = jnp.delete(Xsamples, idx, axis=1)
 
         # if these are samples of conditions, standard scale them!
-        if type == "conditions":
+        if kind == "conditions":
             Xsamples = (
                 Xsamples - self._condition_means
             ) / self._condition_stds
@@ -372,7 +331,10 @@ class Flow:
         return log_prob
 
     def log_prob(
-        self, inputs: pd.DataFrame, err_samples: int = None, seed: int = None
+        self,
+        inputs: pd.DataFrame,
+        err_samples: int | None = None,
+        seed: int | None = None,
     ) -> jnp.ndarray:
         """Calculates log probability density of inputs.
 
@@ -408,36 +370,219 @@ class Flow:
             # get conditions
             conditions = self._get_conditions(inputs)
             # calculate log_prob
-            return self._log_prob(self._params, X, conditions)
+            return self._log_prob_jitted(self._params, X, conditions)
 
         else:
-            # validate nsamples
-            assert isinstance(
-                err_samples, int
-            ), "err_samples must be a positive integer."
-            assert err_samples > 0, "err_samples must be a positive integer."
+            if (
+                not isinstance(err_samples, int) or err_samples <= 0
+            ):  # pragma: no cover
+                raise ValueError("err_samples must be a positive integer.")
             # get Gaussian samples
             seed = np.random.randint(1e18) if seed is None else seed
             key = random.PRNGKey(seed)
-            X = self._get_err_samples(key, inputs, err_samples, type="data")
+            X = self._get_err_samples(key, inputs, err_samples, kind="data")
             C = self._get_err_samples(
-                key, inputs, err_samples, type="conditions"
+                key, inputs, err_samples, kind="conditions"
             )
             # calculate log_probs
-            log_probs = self._log_prob(self._params, X, C)
+            log_probs = self._log_prob_jitted(self._params, X, C)
             probs = jnp.exp(log_probs.reshape(-1, err_samples))
             return jnp.log(probs.mean(axis=1))
+
+    def _posterior_marg(
+        self,
+        inputs: pd.DataFrame,
+        columns: list[str],
+        column: str,
+        grid: jnp.ndarray,
+        marg_rules: dict,
+        err_samples: int | None,
+        seed: int | None,
+        batch_size: int,
+        nan_to_zero: bool,
+    ) -> jnp.ndarray:
+        flag = marg_rules["flag"]
+        # if the flag is NaN, we must use np.isnan to check for flags,
+        # else we use np.isclose
+        check_flags = (
+            np.isnan if np.isnan(flag) else lambda data: np.isclose(data, flag)
+        )
+
+        # empty array to hold pdfs
+        pdfs = jnp.zeros((inputs.shape[0], len(grid)))
+
+        # first calculate pdfs for unflagged rows
+        unflagged_idx = inputs[
+            ~check_flags(inputs[columns]).any(axis=1)
+        ].index.tolist()
+        unflagged_pdfs = self.posterior(
+            inputs=inputs.iloc[unflagged_idx],
+            column=column,
+            grid=grid,
+            err_samples=err_samples,
+            seed=seed,
+            batch_size=batch_size,
+            normalize=False,
+            nan_to_zero=nan_to_zero,
+        )
+        # save these pdfs in the big array
+        pdfs = pdfs.at[unflagged_idx, :].set(
+            unflagged_pdfs, indices_are_sorted=True, unique_indices=True
+        )
+
+        # we will keep track of all the rows we've already calculated
+        # posteriors for
+        already_done = set(unflagged_idx)
+
+        # now we will loop over the rules in marg_rules
+        for name, rule in marg_rules.items():
+            # ignore the flag, because that's not a column in the data
+            if name == "flag":
+                continue
+
+            # get the list of new rows for which we need to calculate posteriors
+            flagged_idx = list(
+                set(inputs[check_flags(inputs[name])].index.tolist())
+                - already_done
+            )
+            # if flagged_idx is empty, move on!
+            if not flagged_idx:
+                continue
+
+            # get the marginalization grid for each row
+            marg_grids = (
+                inputs.iloc[flagged_idx]
+                .apply(rule, axis=1, result_type="expand")
+                .to_numpy()
+            )
+            # make a new data frame with the marginalization grids replacing
+            # the values of the flag in the column
+            marg_inputs = pd.DataFrame(
+                np.repeat(
+                    inputs.iloc[flagged_idx].to_numpy(),
+                    marg_grids.shape[1],
+                    axis=0,
+                ),
+                columns=inputs.columns,
+            )
+            marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
+            # remove the error column if it's present
+            marg_inputs.drop(
+                f"{name}_err", axis=1, inplace=True, errors="ignore"
+            )
+
+            # calculate posteriors for these
+            marg_pdfs = self.posterior(
+                inputs=marg_inputs,
+                column=column,
+                grid=grid,
+                marg_rules=marg_rules,
+                err_samples=err_samples,
+                seed=seed,
+                batch_size=batch_size,
+                normalize=False,
+                nan_to_zero=nan_to_zero,
+            )
+            # sum over the marginalized dimension
+            marg_pdfs = marg_pdfs.reshape(
+                len(flagged_idx), marg_grids.shape[1], grid.size
+            ).sum(axis=1)
+            # save the new pdfs in the big array
+            pdfs = pdfs.at[flagged_idx, :].set(
+                marg_pdfs, indices_are_sorted=True, unique_indices=True
+            )
+            # add these flagged indices to the list of rows already done
+            already_done.update(flagged_idx)
+
+        return pdfs
+
+    def _posterior_batched(
+        self,
+        inputs: pd.DataFrame,
+        columns: list[str],
+        column: str,
+        idx: int,
+        grid: jnp.ndarray,
+        err_samples: int | None,
+        key: jnp.ndarray | None,
+        batch_size: int,
+        nrows: int,
+    ) -> jnp.ndarray:
+        # empty array to hold pdfs
+        pdfs = jnp.zeros((nrows, len(grid)))
+
+        # precompute JAX arrays for the no-error-sampling path to avoid
+        # pandas overhead inside the batch loop
+        if err_samples is None:
+            X_all = jnp.array(inputs[columns].to_numpy())
+            C_all = self._get_conditions(inputs)
+
+        # loop through batches
+        for batch_idx in range(0, nrows, batch_size):
+            sl = slice(batch_idx, batch_idx + batch_size)
+
+            # if not drawing samples, slice precomputed JAX arrays directly
+            if err_samples is None:
+                batch = X_all[sl]
+                conditions = C_all[sl]
+            else:
+                # error-sampling paths still need the pandas DataFrame
+                batch = inputs.iloc[sl]
+                # if only drawing condition samples...
+                if len(self.data_columns) == 1:
+                    conditions = self._get_err_samples(
+                        key, batch, err_samples, kind="conditions"
+                    )
+                    batch = jnp.repeat(
+                        batch[columns].to_numpy(), err_samples, axis=0
+                    )
+                # if drawing data and condition samples...
+                else:
+                    conditions = self._get_err_samples(
+                        key, batch, err_samples, kind="conditions"
+                    )
+                    batch = self._get_err_samples(
+                        key, batch, err_samples, skip=column, kind="data"
+                    )
+
+            # make a new copy of each row for each value of the column
+            # for which we are calculating the posterior
+            batch = jnp.hstack(
+                (
+                    jnp.repeat(batch[:, :idx], len(grid), axis=0),
+                    jnp.tile(grid, len(batch))[:, None],
+                    jnp.repeat(batch[:, idx:], len(grid), axis=0),
+                )
+            )
+
+            # make similar copies of the conditions
+            conditions = jnp.repeat(conditions, len(grid), axis=0)
+
+            # calculate probability densities
+            log_prob = self._log_prob_jitted(
+                self._params, batch, conditions
+            ).reshape((-1, len(grid)))
+            prob = jnp.exp(log_prob)
+            # if we were Gaussian sampling, average over the samples
+            if err_samples is not None:
+                prob = prob.reshape(-1, err_samples, len(grid)).mean(axis=1)
+            # add the pdfs to the bigger list
+            pdfs = pdfs.at[sl, :].set(
+                prob, indices_are_sorted=True, unique_indices=True
+            )
+
+        return pdfs
 
     def posterior(
         self,
         inputs: pd.DataFrame,
         column: str,
         grid: jnp.ndarray,
-        marg_rules: dict = None,
+        marg_rules: dict | None = None,
         normalize: bool = True,
-        err_samples: int = None,
-        seed: int = None,
-        batch_size: int = None,
+        err_samples: int | None = None,
+        seed: int | None = None,
+        batch_size: int | None = None,
         nan_to_zero: bool = True,
     ) -> jnp.ndarray:
         """Calculates posterior distributions for the provided column.
@@ -508,191 +653,41 @@ class Flow:
         inputs = inputs.reset_index(drop=True)
 
         if err_samples is not None:
-            # validate nsamples
-            assert isinstance(
-                err_samples, int
-            ), "err_samples must be a positive integer."
-            assert err_samples > 0, "err_samples must be a positive integer."
+            if (
+                not isinstance(err_samples, int) or err_samples <= 0
+            ):  # pragma: no cover
+                raise ValueError("err_samples must be a positive integer.")
             # set the seed
             seed = np.random.randint(1e18) if seed is None else seed
-            key = random.PRNGKey(seed)
-
-        # empty array to hold pdfs
-        pdfs = jnp.zeros((nrows, len(grid)))
 
         # if marginalization rules were passed, we will loop over the rules
         # and repeatedly call this method
         if marg_rules is not None:
-            # if the flag is NaN, we must use jnp.isnan to check for flags
-            if np.isnan(marg_rules["flag"]):
-
-                def check_flags(data):
-                    return np.isnan(data)
-
-            # else we use jnp.isclose to check for flags
-            else:
-
-                def check_flags(data):
-                    return np.isclose(data, marg_rules["flag"])
-
-            # first calculate pdfs for unflagged rows
-            unflagged_idx = inputs[
-                ~check_flags(inputs[columns]).any(axis=1)
-            ].index.tolist()
-            unflagged_pdfs = self.posterior(
-                inputs=inputs.iloc[unflagged_idx],
-                column=column,
-                grid=grid,
-                err_samples=err_samples,
-                seed=seed,
-                batch_size=batch_size,
-                normalize=False,
-                nan_to_zero=nan_to_zero,
+            pdfs = self._posterior_marg(
+                inputs,
+                columns,
+                column,
+                grid,
+                marg_rules,
+                err_samples,
+                seed,
+                batch_size,
+                nan_to_zero,
             )
-
-            # save these pdfs in the big array
-            pdfs = pdfs.at[unflagged_idx, :].set(
-                unflagged_pdfs,
-                indices_are_sorted=True,
-                unique_indices=True,
-            )
-
-            # we will keep track of all the rows we've already calculated
-            # posteriors for
-            already_done = unflagged_idx
-
-            # now we will loop over the rules in marg_rules
-            for name, rule in marg_rules.items():
-                # ignore the flag, because that's not a column in the data
-                if name == "flag":
-                    continue
-
-                # get the list of new rows for which we need to calculate posteriors
-                flagged_idx = inputs[check_flags(inputs[name])].index.tolist()
-                flagged_idx = list(set(flagged_idx).difference(already_done))
-
-                # if flagged_idx is empty, move on!
-                if len(flagged_idx) == 0:
-                    continue
-
-                # get the marginalization grid for each row
-                marg_grids = (
-                    inputs.iloc[flagged_idx]
-                    .apply(rule, axis=1, result_type="expand")
-                    .to_numpy()
-                )
-
-                # make a new data frame with the marginalization grids replacing
-                # the values of the flag in the column
-                marg_inputs = pd.DataFrame(
-                    np.repeat(
-                        inputs.iloc[flagged_idx].to_numpy(),
-                        marg_grids.shape[1],
-                        axis=0,
-                    ),
-                    columns=inputs.columns,
-                )
-                marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
-
-                # remove the error column if it's present
-                marg_inputs.drop(
-                    f"{name}_err", axis=1, inplace=True, errors="ignore"
-                )
-
-                # calculate posteriors for these
-                marg_pdfs = self.posterior(
-                    inputs=marg_inputs,
-                    column=column,
-                    grid=grid,
-                    marg_rules=marg_rules,
-                    err_samples=err_samples,
-                    seed=seed,
-                    batch_size=batch_size,
-                    normalize=False,
-                    nan_to_zero=nan_to_zero,
-                )
-
-                # sum over the marginalized dimension
-                marg_pdfs = marg_pdfs.reshape(
-                    len(flagged_idx), marg_grids.shape[1], grid.size
-                )
-                marg_pdfs = marg_pdfs.sum(axis=1)
-
-                # save the new pdfs in the big array
-                pdfs = pdfs.at[flagged_idx, :].set(
-                    marg_pdfs,
-                    indices_are_sorted=True,
-                    unique_indices=True,
-                )
-
-                # add these flagged indices to the list of rows already done
-                already_done += flagged_idx
-
         # now for the main posterior calculation loop
         else:
-            # loop through batches
-            for batch_idx in range(0, nrows, batch_size):
-                # get the data batch
-                # and, if this is a conditional flow, the correpsonding conditions
-                batch = inputs.iloc[batch_idx : batch_idx + batch_size]
-
-                # if not drawing samples, just grab batch and conditions
-                if err_samples is None:
-                    conditions = self._get_conditions(batch)
-                    batch = jnp.array(batch[columns].to_numpy())
-                # if only drawing condition samples...
-                elif len(self.data_columns) == 1:
-                    conditions = self._get_err_samples(
-                        key, batch, err_samples, type="conditions"
-                    )
-                    batch = jnp.repeat(
-                        batch[columns].to_numpy(), err_samples, axis=0
-                    )
-                # if drawing data and condition samples...
-                else:
-                    conditions = self._get_err_samples(
-                        key, batch, err_samples, type="conditions"
-                    )
-                    batch = self._get_err_samples(
-                        key, batch, err_samples, skip=column, type="data"
-                    )
-
-                # make a new copy of each row for each value of the column
-                # for which we are calculating the posterior
-                batch = jnp.hstack(
-                    (
-                        jnp.repeat(
-                            batch[:, :idx],
-                            len(grid),
-                            axis=0,
-                        ),
-                        jnp.tile(grid, len(batch))[:, None],
-                        jnp.repeat(
-                            batch[:, idx:],
-                            len(grid),
-                            axis=0,
-                        ),
-                    )
-                )
-
-                # make similar copies of the conditions
-                conditions = jnp.repeat(conditions, len(grid), axis=0)
-
-                # calculate probability densities
-                log_prob = self._log_prob(
-                    self._params, batch, conditions
-                ).reshape((-1, len(grid)))
-                prob = jnp.exp(log_prob)
-                # if we were Gaussian sampling, average over the samples
-                if err_samples is not None:
-                    prob = prob.reshape(-1, err_samples, len(grid))
-                    prob = prob.mean(axis=1)
-                # add the pdfs to the bigger list
-                pdfs = pdfs.at[batch_idx : batch_idx + batch_size, :].set(
-                    prob,
-                    indices_are_sorted=True,
-                    unique_indices=True,
-                )
+            key = random.PRNGKey(seed) if err_samples is not None else None
+            pdfs = self._posterior_batched(
+                inputs,
+                columns,
+                column,
+                idx,
+                grid,
+                err_samples,
+                key,
+                batch_size,
+                nrows,
+            )
 
         if normalize:
             # normalize so they integrate to one
@@ -705,9 +700,9 @@ class Flow:
     def sample(
         self,
         nsamples: int = 1,
-        conditions: pd.DataFrame = None,
+        conditions: pd.DataFrame | None = None,
         save_conditions: bool = True,
-        seed: int = None,
+        seed: int | None = None,
     ) -> pd.DataFrame:
         """Returns samples from the normalizing flow.
 
@@ -733,11 +728,8 @@ class Flow:
         # check that the bijector exists
         self._check_bijector()
 
-        # validate nsamples
-        assert isinstance(
-            nsamples, int
-        ), "nsamples must be a positive integer."
-        assert nsamples > 0, "nsamples must be a positive integer."
+        if not isinstance(nsamples, int) or nsamples <= 0:  # pragma: no cover
+            raise ValueError("nsamples must be a positive integer.")
 
         if self.conditional_columns is not None and conditions is None:
             raise ValueError(
@@ -757,7 +749,7 @@ class Flow:
         # draw from latent distribution
         u = self.latent.sample(self._params[0], conditions.shape[0], seed)
         # take the inverse back to the data distribution
-        x = self._inverse(self._params[1], u, conditions=conditions)[0]
+        x = self._inverse_jitted(self._params[1], u, conditions=conditions)[0]
         # if not conditional, this is all we need
         if self.conditional_columns is None:
             x = pd.DataFrame(np.array(x), columns=self.data_columns)
@@ -778,7 +770,6 @@ class Flow:
                     np.array(x), columns=self.data_columns
                 ).set_index(conditions_idx)
 
-        # return the samples!
         return x
 
     def __getstate__(self) -> dict:
@@ -789,7 +780,7 @@ class Flow:
         dict
             Dictionary containing all flow parameters to be saved.
         """
-        state = {"class": self.__class__.__name__}
+        state: dict[str, Any] = {"class": self.__class__.__name__}
         keys = [
             "data_columns",
             "conditional_columns",
@@ -799,7 +790,6 @@ class Flow:
             "condition_error_model",
             "autoscale_conditions",
             "info",
-            "latent_info",
             "bijector_info",
             "params",
         ]
@@ -809,9 +799,9 @@ class Flow:
             except AttributeError:
                 try:
                     state[key] = getattr(self, "_" + key)
-                except AttributeError: # pragma: no cover
+                except AttributeError:  # pragma: no cover
                     state[key] = None
-
+        state["latent_info"] = self.latent.info
         return state
 
     def __setstate__(self, state: dict) -> None:
@@ -836,9 +826,8 @@ class Flow:
         self.info = state["info"]
 
         # load the latent distribution
-        self._latent_info = state["latent_info"]
-        self.latent = getattr(distributions, self._latent_info[0])(
-            *self._latent_info[1]
+        self.latent = getattr(distributions, state["latent_info"][0])(
+            *state["latent_info"][1]
         )
 
         # load the error models
@@ -852,6 +841,8 @@ class Flow:
             _, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
             )
+            self._log_prob_jitted = jit(self._log_prob)
+            self._inverse_jitted = jit(self._inverse)
         self._params = state["params"]
 
         # load the conditional means and stds
@@ -864,8 +855,7 @@ class Flow:
     def save(self, file: str) -> None:
         """Saves the flow to a file.
 
-        Pickles the flow and saves it to a file that can be passed as
-        the `file` argument during flow instantiation.
+        Pickles the flow to a file that can be loaded with Flow.from_file().
 
         WARNING: Currently, this method only works for bijectors that are
         implemented in the `bijectors` module. If you want to save a flow
@@ -884,15 +874,15 @@ class Flow:
     def train(
         self,
         inputs: pd.DataFrame,
-        val_set: pd.DataFrame = None,
-        train_weight: np.ndarray = None,
-        val_weight: np.ndarray = None,
+        val_set: pd.DataFrame | None = None,
+        train_weight: np.ndarray | None = None,
+        val_weight: np.ndarray | None = None,
         epochs: int = 100,
         batch_size: int = 1024,
-        optimizer: Callable = None,
-        loss_fn: Callable = None,
+        optimizer: Callable | None = None,
+        loss_fn: Callable | None = None,
         convolve_errs: bool = False,
-        patience: int = None,
+        patience: int | None = None,
         best_params: bool = True,
         seed: int = 0,
         verbose: bool = False,
@@ -970,7 +960,7 @@ class Flow:
             self._set_default_bijector(inputs, seed=bijector_seed)
 
         # validate epochs
-        if not isinstance(epochs, int) or epochs <= 0:
+        if not isinstance(epochs, int) or epochs <= 0:  # pragma: no cover
             raise ValueError("epochs must be a positive integer.")
 
         # if no loss_fn is provided, use the default loss function
@@ -1016,16 +1006,12 @@ class Flow:
         # define a function to return batches
         if convolve_errs:
 
-            def get_batch(sample_key, x, type):
-                return self._get_err_samples(sample_key, x, 1, type=type)
+            def get_batch(sample_key, x, kind):
+                return self._get_err_samples(sample_key, x, 1, kind=kind)
 
-        else:
 
-            def get_batch(sample_key, x, type):
-                if type == "conditions":
-                    return self._get_conditions(x)
-                else:
-                    return jnp.array(x[columns].to_numpy())
+        # number of training rows (used throughout the epoch loop)
+        n_train = len(inputs)
 
         # get random seed for training loop
         key = random.PRNGKey(batch_seed)
@@ -1033,33 +1019,49 @@ class Flow:
         if verbose:
             print(f"Training {epochs} epochs \nLoss:")
 
-        # save the initial loss
-        W = jnp.ones(len(inputs)) if train_weight is None else train_weight
-        W /= W.mean()
-        if initial_loss:
-            X = jnp.array(inputs[columns].to_numpy())
-            C = self._get_conditions(inputs)
-            losses = [loss_fn(model_params, X, C, W).item()]
-        else:
-            losses = []
+        # normalize the weights
+        W = (
+            jnp.ones(len(inputs))
+            if train_weight is None
+            else jnp.array(train_weight)
+        )
+        W = W / W.mean()
+
+        # precompute full training arrays (reused for epoch-end loss)
+        X_train = jnp.array(inputs[columns].to_numpy())
+        C_train = self._get_conditions(inputs)
+        losses = (
+            [loss_fn(model_params, X_train, C_train, W).item()]
+            if initial_loss
+            else []
+        )
 
         if val_set is not None:
             Xval = jnp.array(val_set[columns].to_numpy())
             Cval = self._get_conditions(val_set)
-            Wval = jnp.ones(len(val_set)) if val_weight is None else val_weight
-            Wval /= Wval.mean()
-            if initial_loss:
-                val_losses = [loss_fn(model_params, Xval, Cval, Wval).item()]
+            Wval = (
+                jnp.ones(len(val_set))
+                if val_weight is None
+                else jnp.array(val_weight)
+            )
+            Wval = Wval / Wval.mean()
+            val_losses = (
+                [loss_fn(model_params, Xval, Cval, Wval).item()]
+                if initial_loss
+                else []
+            )
+
+        def log_verbose(epoch):
+            train_str = f"({epoch}) {losses[-1]:.4f}"
+            if val_set is None:
+                print(train_str)
             else:
-                val_losses = []
+                print(f"{train_str}  {val_losses[-1]:.4f}")
 
         if verbose and initial_loss:
-            if val_set is None:
-                print(f"(0) {losses[-1]:.4f}")
-            else:
-                print(f"(0) {losses[-1]:.4f}  {val_losses[-1]:.4f}")
+            log_verbose(0)
 
-        # initialize variables for early stopping
+        # initialize variables for early stopping / best-param tracking
         best_loss = jnp.inf
         best_param_vals = model_params
         early_stopping_counter = 0
@@ -1069,73 +1071,67 @@ class Flow:
         for epoch in loop:
             # new permutation of batches
             permute_key, sample_key, key = random.split(key, num=3)
-            idx = random.permutation(permute_key, inputs.shape[0])
-            X = inputs.iloc[idx]
+            idx = random.permutation(permute_key, n_train)
+            idx_np = np.array(idx)
+            W_shuf = W[idx]
 
             # loop through batches and step optimizer
-            for batch_idx in range(0, len(X), batch_size):
-                # if sampling from the error distribution, this returns a
-                # Gaussian sample of the batch. Else just returns batch as a
-                # jax array
-                batch = get_batch(
-                    sample_key,
-                    X.iloc[batch_idx : batch_idx + batch_size],
-                    type="data",
-                )
-                batch_conditions = get_batch(
-                    sample_key,
-                    X.iloc[batch_idx : batch_idx + batch_size],
-                    type="conditions",
-                )
-                batch_weights = jnp.asarray(
-                    W[idx][batch_idx : batch_idx + batch_size]
-                )
+            if convolve_errs:
+                X_shuffled = inputs.iloc[idx_np]
+                for batch_idx in range(0, n_train, batch_size):
+                    sl = slice(batch_idx, batch_idx + batch_size)
+                    batch = get_batch(
+                        sample_key, X_shuffled.iloc[sl], kind="data"
+                    )
+                    batch_conditions = get_batch(
+                        sample_key, X_shuffled.iloc[sl], kind="conditions"
+                    )
+                    model_params, opt_state = step(
+                        model_params,
+                        opt_state,
+                        batch,
+                        batch_conditions,
+                        W_shuf[sl],
+                    )
+            else:
+                X_shuf = X_train[idx_np]
+                C_shuf = C_train[idx_np]
+                for batch_idx in range(0, n_train, batch_size):
+                    sl = slice(batch_idx, batch_idx + batch_size)
+                    model_params, opt_state = step(
+                        model_params,
+                        opt_state,
+                        X_shuf[sl],
+                        C_shuf[sl],
+                        W_shuf[sl],
+                    )
 
-                model_params, opt_state = step(
-                    model_params,
-                    opt_state,
-                    batch,
-                    batch_conditions,
-                    batch_weights
-                )
-
-            # save end-of-epoch training loss
-            losses.append(
-                loss_fn(
-                    model_params,
-                    jnp.array(X[columns].to_numpy()),
-                    self._get_conditions(X),
-                    jnp.asarray(W),
-                ).item()
-            )
+            # save end-of-epoch training loss on the full training set
+            losses.append(loss_fn(model_params, X_train, C_train, W).item())
 
             # and validation loss
             if val_set is not None:
-                val_losses.append(loss_fn(model_params, Xval, Cval, Wval).item())
+                val_losses.append(
+                    loss_fn(model_params, Xval, Cval, Wval).item()
+                )
 
             # if verbose, print current loss
             if verbose and (
                 epoch % max(int(0.05 * epochs), 1) == 0
                 or (epoch + 1) == epochs
             ):
-                if val_set is None:
-                    print(f"({epoch+1}) {losses[-1]:.4f}")
-                else:
-                    print(
-                        f"({epoch+1}) {losses[-1]:.4f}  {val_losses[-1]:.4f}"
-                    )
+                log_verbose(epoch + 1)
 
-            # if patience provided, we need to check for early stopping
-            if patience is not None or best_loss:
-                if val_set is None:
-                    tracked_losses = losses
-                else:
-                    tracked_losses = val_losses
+            # track best params, and check for early stopping if requested
+            if patience is not None or best_params:
+                tracked_loss = (
+                    val_losses[-1] if val_set is not None else losses[-1]
+                )
 
                 # if loss didn't improve, increase counter
                 # and check early stopping criterion
-                if tracked_losses[-1] >= best_loss or jnp.isclose(
-                    tracked_losses[-1], best_loss
+                if tracked_loss >= best_loss or jnp.isclose(
+                    tracked_loss, best_loss
                 ):
                     early_stopping_counter += 1
 
@@ -1151,7 +1147,7 @@ class Flow:
                         break
                 # if this is the best loss, reset the counter
                 else:
-                    best_loss = tracked_losses[-1]
+                    best_loss = tracked_loss
                     best_param_vals = model_params
                     early_stopping_counter = 0
 
@@ -1164,10 +1160,7 @@ class Flow:
                 break
 
         # update the flow parameters with the final training state
-        if best_params:
-            self._params = best_param_vals
-        else:
-            self._params = model_params
+        self._params = best_param_vals if best_params else model_params
 
         if val_set is None:
             return losses

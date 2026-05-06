@@ -1,4 +1,8 @@
+"""Tests for pzflow.FlowEnsemble."""
+
 import pickle
+from typing import Any
+
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -17,8 +21,9 @@ xarray = np.arange(6).reshape(3, 2) / 10
 x = pd.DataFrame(xarray, columns=("x", "y"))
 
 
-def test_log_prob():
-    lpEns = flowEns.log_prob(x, returnEnsemble=True)
+def test_log_prob() -> None:
+    """log_prob returns correct shapes and matches individual flow outputs."""
+    lpEns = flowEns.log_prob(x, return_ensemble=True)
     assert lpEns.shape == (3, 2)
 
     lp0 = flow0.log_prob(x)
@@ -35,10 +40,11 @@ def test_log_prob():
     assert jnp.allclose(lpEnsMean, manualMean)
 
 
-def test_posterior():
+def test_posterior() -> None:
+    """posterior returns correct shapes and matches individual flow outputs."""
     grid = jnp.linspace(-1, 1, 5)
 
-    pEns = flowEns.posterior(x, "x", grid, returnEnsemble=True)
+    pEns = flowEns.posterior(x, "x", grid, return_ensemble=True)
     assert pEns.shape == (3, 2, grid.size)
 
     p0 = flow0.posterior(x, "x", grid)
@@ -56,8 +62,9 @@ def test_posterior():
     assert jnp.allclose(pEnsMean, manualMean)
 
 
-def test_sample():
-    # first test everything with returnEnsemble=False
+def test_sample() -> None:
+    """sample returns correct shapes and matches individual flow outputs."""
+    # first test everything with return_ensemble=False
     sEns = flowEns.sample(10, seed=0).values
     assert sEns.shape == (10, 2)
 
@@ -68,8 +75,8 @@ def test_sample():
         sEns[sEns[:, 0].argsort()], sManual[sManual[:, 0].argsort()]
     )
 
-    # now test everything with returnEnsemble=True
-    sEns = flowEns.sample(10, seed=0, returnEnsemble=True).values
+    # now test everything with return_ensemble=True
+    sEns = flowEns.sample(10, seed=0, return_ensemble=True).values
     assert sEns.shape == (20, 2)
 
     s0 = flow0.sample(10, seed=0)
@@ -78,7 +85,8 @@ def test_sample():
     assert jnp.allclose(sEns, sManual)
 
 
-def test_conditional_sample():
+def test_conditional_sample() -> None:
+    """Conditional sampling returns the correct number of samples."""
     cEns = FlowEnsemble(
         ("x", "y"),
         RollingSplineCoupling(nlayers=2, n_conditions=2),
@@ -107,18 +115,19 @@ def test_conditional_sample():
     )
     assert samples.shape == (10, 2)
 
-    # test with returnEnsemble=True
+    # test with return_ensemble=True
     conditions = pd.DataFrame(np.arange(10).reshape(-1, 2), columns=("a", "b"))
     samples = cEns.sample(
         nsamples=1,
         conditions=conditions,
         save_conditions=False,
-        returnEnsemble=True,
+        return_ensemble=True,
     )
     assert samples.shape == (10, 2)
 
 
-def test_train():
+def test_train() -> None:
+    """train produces losses consistent with training each flow independently."""
     data = random.normal(random.PRNGKey(0), shape=(100, 2))
     data = pd.DataFrame(np.array(data), columns=("x", "y"))
 
@@ -133,7 +142,8 @@ def test_train():
     assert jnp.allclose(jnp.array(loss_dict["Flow 1"]), jnp.array(losses1))
 
 
-def test_load_ensemble(tmp_path):
+def test_load_ensemble(tmp_path: Any) -> None:
+    """Ensemble can be saved and loaded with identical outputs."""
     flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
 
     preSave = flowEns.sample(10, seed=0)
@@ -142,7 +152,7 @@ def test_load_ensemble(tmp_path):
     flowEns.save(str(file))
 
     file = tmp_path / "test-ensemble.pzflow.pkl"
-    flowEns = FlowEnsemble(file=str(file))
+    flowEns = FlowEnsemble.from_file(str(file))
 
     postSave = flowEns.sample(10, seed=0)
 
@@ -154,10 +164,11 @@ def test_load_ensemble(tmp_path):
     with open(str(file), "wb") as handle:
         pickle.dump(save_dict, handle)
     with pytest.raises(TypeError):
-        FlowEnsemble(file=str(file))
+        FlowEnsemble.from_file(str(file))
 
 
-def test_pickle_ensemble(tmp_path):
+def test_pickle_ensemble(tmp_path: Any) -> None:
+    """Ensemble can be pickled and unpickled with identical outputs."""
     flowEns = FlowEnsemble(("x", "y"), RollingSplineCoupling(nlayers=2), N=2)
 
     preSave = flowEns.sample(10, seed=0)
@@ -175,15 +186,13 @@ def test_pickle_ensemble(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "data_columns,bijector,info,file",
+    "data_columns,bijector",
     [
-        (None, None, None, None),
-        (None, Reverse(), None, None),
-        (("x", "y"), None, None, "file"),
-        (None, Reverse(), None, "file"),
-        (None, None, "fake", "file"),
+        (None, None),
+        (None, Reverse()),
     ],
 )
-def test_bad_inputs(data_columns, bijector, info, file):
+def test_bad_inputs(data_columns: Any, bijector: Any) -> None:
+    """Invalid constructor arguments raise ValueError."""
     with pytest.raises(ValueError):
-        FlowEnsemble(data_columns, bijector=bijector, info=info, file=file)
+        FlowEnsemble(data_columns, bijector=bijector)
