@@ -3,17 +3,7 @@ repo_url: https://github.com/jfcrenshaw/pzflow
 nav:
   - Home: index.md
   - Install: install.md
-  - Tutorials:
-      - tutorials/index.md
-      - Introduction: tutorials/intro.ipynb
-      - Conditional Flows: tutorials/conditional_demo.ipynb
-      - Convolving Gaussian Errors: tutorials/gaussian_errors.ipynb
-      - Flow Ensembles: tutorials/ensemble_demo.ipynb
-      - Training Weights: tutorials/weighted.ipynb
-      - Customizing the flow: tutorials/customizing_example.ipynb
-      - Modeling Variables with Periodic Topology: tutorials/spherical_flow_example.ipynb
-      - Marginalizing Variables: tutorials/marginalization.ipynb
-      - Convolving Non-Gaussian Errors: tutorials/nongaussian_errors.ipynb
+  - Tutorials: tutorials/index.md
   - Common gotchas: gotchas.md
   - API: API/
 
