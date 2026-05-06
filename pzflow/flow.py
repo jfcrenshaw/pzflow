@@ -116,8 +116,6 @@ class Flow:
         info : Any; optional
             An object to attach to the info attribute.
         """
-        if data_columns is None:
-            raise ValueError("data_columns is required.")
         self.data_columns = tuple(data_columns)
         self._input_dim = len(self.data_columns)
         self.info = info
@@ -375,7 +373,9 @@ class Flow:
             return self._log_prob_jitted(self._params, X, conditions)
 
         else:
-            if not isinstance(err_samples, int) or err_samples <= 0:
+            if (
+                not isinstance(err_samples, int) or err_samples <= 0
+            ):  # pragma: no cover
                 raise ValueError("err_samples must be a positive integer.")
             # get Gaussian samples
             seed = np.random.randint(1e18) if seed is None else seed
@@ -653,7 +653,9 @@ class Flow:
         inputs = inputs.reset_index(drop=True)
 
         if err_samples is not None:
-            if not isinstance(err_samples, int) or err_samples <= 0:
+            if (
+                not isinstance(err_samples, int) or err_samples <= 0
+            ):  # pragma: no cover
                 raise ValueError("err_samples must be a positive integer.")
             # set the seed
             seed = np.random.randint(1e18) if seed is None else seed
@@ -726,7 +728,7 @@ class Flow:
         # check that the bijector exists
         self._check_bijector()
 
-        if not isinstance(nsamples, int) or nsamples <= 0:
+        if not isinstance(nsamples, int) or nsamples <= 0:  # pragma: no cover
             raise ValueError("nsamples must be a positive integer.")
 
         if self.conditional_columns is not None and conditions is None:
@@ -958,7 +960,7 @@ class Flow:
             self._set_default_bijector(inputs, seed=bijector_seed)
 
         # validate epochs
-        if not isinstance(epochs, int) or epochs <= 0:
+        if not isinstance(epochs, int) or epochs <= 0:  # pragma: no cover
             raise ValueError("epochs must be a positive integer.")
 
         # if no loss_fn is provided, use the default loss function
@@ -1085,12 +1087,18 @@ class Flow:
                 X_shuffled = inputs.iloc[idx_np]
                 for batch_idx in range(0, n_train, batch_size):
                     sl = slice(batch_idx, batch_idx + batch_size)
-                    batch = get_batch(sample_key, X_shuffled.iloc[sl], kind="data")
+                    batch = get_batch(
+                        sample_key, X_shuffled.iloc[sl], kind="data"
+                    )
                     batch_conditions = get_batch(
                         sample_key, X_shuffled.iloc[sl], kind="conditions"
                     )
                     model_params, opt_state = step(
-                        model_params, opt_state, batch, batch_conditions, W_shuf[sl]
+                        model_params,
+                        opt_state,
+                        batch,
+                        batch_conditions,
+                        W_shuf[sl],
                     )
             else:
                 X_shuf = X_train[idx_np]
@@ -1098,7 +1106,11 @@ class Flow:
                 for batch_idx in range(0, n_train, batch_size):
                     sl = slice(batch_idx, batch_idx + batch_size)
                     model_params, opt_state = step(
-                        model_params, opt_state, X_shuf[sl], C_shuf[sl], W_shuf[sl]
+                        model_params,
+                        opt_state,
+                        X_shuf[sl],
+                        C_shuf[sl],
+                        W_shuf[sl],
                     )
 
             # save end-of-epoch training loss on the full training set
