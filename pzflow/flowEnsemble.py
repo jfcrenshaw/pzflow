@@ -347,7 +347,6 @@ class FlowEnsemble:
         """
 
         if return_ensemble:
-            # return nsamples for each flow in the ensemble
             return pd.concat(
                 [
                     flow.sample(nsamples, conditions, save_conditions, seed)
@@ -355,86 +354,71 @@ class FlowEnsemble:
                 ],
                 keys=self._ensemble.keys(),
             )
-        else:
-            # if this isn't a conditional flow, sampling is straightforward
-            if conditions is None:
-                # return nsamples drawn uniformly from the flows in the ensemble
-                N = int(jnp.ceil(nsamples / len(self._ensemble)))
-                samples = pd.concat(
-                    [
-                        flow.sample(N, conditions, save_conditions, seed)
-                        for flow in self._ensemble.values()
-                    ]
-                )
-                return samples.sample(nsamples, random_state=seed).reset_index(
-                    drop=True
-                )
-            # if this is a conditional flow, it's a little more complicated...
-            else:
-                # if nsamples > 1, we duplicate the rows of the conditions
-                if nsamples > 1:
-                    conditions = pd.concat([conditions] * nsamples)
 
-                # now the main sampling algorithm
-                seed = np.random.randint(1e18) if seed is None else seed
-                # if we are drawing more samples than the number of flows in
-                # the ensemble, then we will shuffle the conditions and randomly
-                # assign them to one of the constituent flows
-                if conditions.shape[0] > len(self._ensemble):
-                    # shuffle the conditions
-                    conditions_shuffled = conditions.sample(
-                        frac=1.0, random_state=int(seed / 1e9)
-                    )
-                    # split conditions into ~equal sized chunks
-                    split_indices = np.array_split(
-                        np.arange(len(conditions_shuffled)), len(self._ensemble)
-                    )
-                    chunks = [
-                        conditions_shuffled.iloc[idx] for idx in split_indices
-                    ]
-                    # shuffle the chunks
-                    chunks = [
-                        chunks[i]
-                        for i in random.permutation(
-                            random.PRNGKey(seed), jnp.arange(len(chunks))
-                        )
-                    ]
-                    # sample from each flow, and return all the samples
-                    return pd.concat(
-                        [
-                            flow.sample(
-                                1, chunk, save_conditions, seed
-                            ).set_index(chunk.index)
-                            for flow, chunk in zip(
-                                self._ensemble.values(), chunks
-                            )
-                        ]
-                    ).sort_index()
-                # however, if there are more flows in the ensemble than samples
-                # being drawn, then we will randomly select flows for each condition
-                else:
-                    rng = np.random.default_rng(seed)
-                    # randomly select a flow to sample from for each condition
-                    flows = rng.choice(
-                        list(self._ensemble.values()),
-                        size=conditions.shape[0],
-                        replace=True,
-                    )
-                    # sample from each flow and return all the samples together
-                    seeds = rng.integers(1e18, size=conditions.shape[0])
-                    return pd.concat(
-                        [
-                            flow.sample(
-                                1,
-                                conditions[i : i + 1],
-                                save_conditions,
-                                new_seed,
-                            )
-                            for i, (flow, new_seed) in enumerate(
-                                zip(flows, seeds)
-                            )
-                        ],
-                    ).set_index(conditions.index)
+        if conditions is None:
+            return self._sample_unconditional(nsamples, save_conditions, seed)
+
+        if nsamples > 1:
+            conditions = pd.concat([conditions] * nsamples)
+
+        seed = np.random.randint(1e18) if seed is None else seed
+
+        if len(conditions) > len(self._ensemble):
+            return self._sample_split_conditions(conditions, save_conditions, seed)
+        else:
+            return self._sample_per_condition(conditions, save_conditions, seed)
+
+    def _sample_unconditional(
+        self, nsamples: int, save_conditions: bool, seed: int | None
+    ) -> pd.DataFrame:
+        N = int(jnp.ceil(nsamples / len(self._ensemble)))
+        samples = pd.concat(
+            [
+                flow.sample(N, None, save_conditions, seed)
+                for flow in self._ensemble.values()
+            ]
+        )
+        return samples.sample(nsamples, random_state=seed).reset_index(drop=True)
+
+    def _sample_split_conditions(
+        self, conditions: pd.DataFrame, save_conditions: bool, seed: int
+    ) -> pd.DataFrame:
+        """Shuffle conditions, split into chunks, assign one chunk per flow."""
+        conditions_shuffled = conditions.sample(
+            frac=1.0, random_state=int(seed / 1e9)
+        )
+        split_indices = np.array_split(
+            np.arange(len(conditions_shuffled)), len(self._ensemble)
+        )
+        chunks = [conditions_shuffled.iloc[idx] for idx in split_indices]
+        chunks = [
+            chunks[i]
+            for i in random.permutation(
+                random.PRNGKey(seed), jnp.arange(len(chunks))
+            )
+        ]
+        return pd.concat(
+            [
+                flow.sample(1, chunk, save_conditions, seed).set_index(chunk.index)
+                for flow, chunk in zip(self._ensemble.values(), chunks)
+            ]
+        ).sort_index()
+
+    def _sample_per_condition(
+        self, conditions: pd.DataFrame, save_conditions: bool, seed: int
+    ) -> pd.DataFrame:
+        """Randomly assign one flow per condition row and sample."""
+        rng = np.random.default_rng(seed)
+        flows = rng.choice(
+            list(self._ensemble.values()), size=len(conditions), replace=True
+        )
+        seeds = rng.integers(1e18, size=len(conditions))
+        return pd.concat(
+            [
+                flow.sample(1, conditions[i : i + 1], save_conditions, new_seed)
+                for i, (flow, new_seed) in enumerate(zip(flows, seeds))
+            ]
+        ).set_index(conditions.index)
 
     def __getstate__(self) -> dict:
         """Returns the state dictionary for pickling.
