@@ -142,7 +142,9 @@ class Flow:
             )
 
         self.data_error_model = data_error_model or gaussian_error_model
-        self.condition_error_model = condition_error_model or gaussian_error_model
+        self.condition_error_model = (
+            condition_error_model or gaussian_error_model
+        )
 
         if bijector is not None:
             self.set_bijector(bijector, seed=seed)
@@ -398,13 +400,17 @@ class Flow:
         flag = marg_rules["flag"]
         # if the flag is NaN, we must use np.isnan to check for flags,
         # else we use np.isclose
-        check_flags = np.isnan if np.isnan(flag) else lambda data: np.isclose(data, flag)
+        check_flags = (
+            np.isnan if np.isnan(flag) else lambda data: np.isclose(data, flag)
+        )
 
         # empty array to hold pdfs
         pdfs = jnp.zeros((inputs.shape[0], len(grid)))
 
         # first calculate pdfs for unflagged rows
-        unflagged_idx = inputs[~check_flags(inputs[columns]).any(axis=1)].index.tolist()
+        unflagged_idx = inputs[
+            ~check_flags(inputs[columns]).any(axis=1)
+        ].index.tolist()
         unflagged_pdfs = self.posterior(
             inputs=inputs.iloc[unflagged_idx],
             column=column,
@@ -432,7 +438,8 @@ class Flow:
 
             # get the list of new rows for which we need to calculate posteriors
             flagged_idx = list(
-                set(inputs[check_flags(inputs[name])].index.tolist()) - already_done
+                set(inputs[check_flags(inputs[name])].index.tolist())
+                - already_done
             )
             # if flagged_idx is empty, move on!
             if not flagged_idx:
@@ -448,13 +455,17 @@ class Flow:
             # the values of the flag in the column
             marg_inputs = pd.DataFrame(
                 np.repeat(
-                    inputs.iloc[flagged_idx].to_numpy(), marg_grids.shape[1], axis=0
+                    inputs.iloc[flagged_idx].to_numpy(),
+                    marg_grids.shape[1],
+                    axis=0,
                 ),
                 columns=inputs.columns,
             )
             marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
             # remove the error column if it's present
-            marg_inputs.drop(f"{name}_err", axis=1, inplace=True, errors="ignore")
+            marg_inputs.drop(
+                f"{name}_err", axis=1, inplace=True, errors="ignore"
+            )
 
             # calculate posteriors for these
             marg_pdfs = self.posterior(
@@ -511,7 +522,9 @@ class Flow:
                 conditions = self._get_err_samples(
                     key, batch, err_samples, kind="conditions"
                 )
-                batch = jnp.repeat(batch[columns].to_numpy(), err_samples, axis=0)
+                batch = jnp.repeat(
+                    batch[columns].to_numpy(), err_samples, axis=0
+                )
             # if drawing data and condition samples...
             else:
                 conditions = self._get_err_samples(
@@ -638,15 +651,29 @@ class Flow:
         # and repeatedly call this method
         if marg_rules is not None:
             pdfs = self._posterior_marg(
-                inputs, columns, column, grid, marg_rules,
-                err_samples, seed, batch_size, nan_to_zero,
+                inputs,
+                columns,
+                column,
+                grid,
+                marg_rules,
+                err_samples,
+                seed,
+                batch_size,
+                nan_to_zero,
             )
         # now for the main posterior calculation loop
         else:
             key = random.PRNGKey(seed) if err_samples is not None else None
             pdfs = self._posterior_batched(
-                inputs, columns, column, idx, grid,
-                err_samples, key, batch_size, nrows,
+                inputs,
+                columns,
+                column,
+                idx,
+                grid,
+                err_samples,
+                key,
+                batch_size,
+                nrows,
             )
 
         if normalize:
@@ -981,15 +1008,22 @@ class Flow:
         if verbose:
             print(f"Training {epochs} epochs \nLoss:")
 
-        # save the initial loss
-        W = jnp.ones(len(inputs)) if train_weight is None else jnp.array(train_weight)
+        # normalize the weights
+        W = (
+            jnp.ones(len(inputs))
+            if train_weight is None
+            else jnp.array(train_weight)
+        )
         W = W / W.mean()
-        if initial_loss:
-            X = jnp.array(inputs[columns].to_numpy())
-            C = self._get_conditions(inputs)
-            losses = [loss_fn(model_params, X, C, W).item()]
-        else:
-            losses = []
+
+        # precompute full training arrays (reused for epoch-end loss)
+        X_train = jnp.array(inputs[columns].to_numpy())
+        C_train = self._get_conditions(inputs)
+        losses = (
+            [loss_fn(model_params, X_train, C_train, W).item()]
+            if initial_loss
+            else []
+        )
 
         if val_set is not None:
             Xval = jnp.array(val_set[columns].to_numpy())
@@ -1000,16 +1034,21 @@ class Flow:
                 else jnp.array(val_weight)
             )
             Wval = Wval / Wval.mean()
-            if initial_loss:
-                val_losses = [loss_fn(model_params, Xval, Cval, Wval).item()]
+            val_losses = (
+                [loss_fn(model_params, Xval, Cval, Wval).item()]
+                if initial_loss
+                else []
+            )
+
+        def log_verbose(epoch):
+            train_str = f"({epoch}) {losses[-1]:.4f}"
+            if val_set is None:
+                print(train_str)
             else:
-                val_losses = []
+                print(f"{train_str}  {val_losses[-1]:.4f}")
 
         if verbose and initial_loss:
-            if val_set is None:
-                print(f"(0) {losses[-1]:.4f}")
-            else:
-                print(f"(0) {losses[-1]:.4f}  {val_losses[-1]:.4f}")
+            log_verbose(0)
 
         # initialize variables for early stopping / best-param tracking
         best_loss = jnp.inf
@@ -1022,26 +1061,24 @@ class Flow:
             # new permutation of batches
             permute_key, sample_key, key = random.split(key, num=3)
             idx = random.permutation(permute_key, inputs.shape[0])
-            X = inputs.iloc[idx]
+            X_shuffled = inputs.iloc[idx]
 
             # loop through batches and step optimizer
-            for batch_idx in range(0, len(X), batch_size):
+            for batch_idx in range(0, len(X_shuffled), batch_size):
                 # if sampling from the error distribution, this returns a
                 # Gaussian sample of the batch. Else just returns batch as a
                 # jax array
                 batch = get_batch(
                     sample_key,
-                    X.iloc[batch_idx : batch_idx + batch_size],
+                    X_shuffled.iloc[batch_idx : batch_idx + batch_size],
                     kind="data",
                 )
                 batch_conditions = get_batch(
                     sample_key,
-                    X.iloc[batch_idx : batch_idx + batch_size],
+                    X_shuffled.iloc[batch_idx : batch_idx + batch_size],
                     kind="conditions",
                 )
-                batch_weights = jnp.asarray(
-                    W[idx][batch_idx : batch_idx + batch_size]
-                )
+                batch_weights = W[idx][batch_idx : batch_idx + batch_size]
 
                 model_params, opt_state = step(
                     model_params,
@@ -1051,43 +1088,32 @@ class Flow:
                     batch_weights,
                 )
 
-            # save end-of-epoch training loss
-            losses.append(
-                loss_fn(
-                    model_params,
-                    jnp.array(X[columns].to_numpy()),
-                    self._get_conditions(X),
-                    jnp.asarray(W),
-                ).item()
-            )
+            # save end-of-epoch training loss on the full training set
+            losses.append(loss_fn(model_params, X_train, C_train, W).item())
 
             # and validation loss
             if val_set is not None:
-                val_losses.append(loss_fn(model_params, Xval, Cval, Wval).item())
+                val_losses.append(
+                    loss_fn(model_params, Xval, Cval, Wval).item()
+                )
 
             # if verbose, print current loss
             if verbose and (
                 epoch % max(int(0.05 * epochs), 1) == 0
                 or (epoch + 1) == epochs
             ):
-                if val_set is None:
-                    print(f"({epoch+1}) {losses[-1]:.4f}")
-                else:
-                    print(
-                        f"({epoch+1}) {losses[-1]:.4f}  {val_losses[-1]:.4f}"
-                    )
+                log_verbose(epoch + 1)
 
             # track best params, and check for early stopping if requested
             if patience is not None or best_params:
-                if val_set is None:
-                    tracked_losses = losses
-                else:
-                    tracked_losses = val_losses
+                tracked_loss = (
+                    val_losses[-1] if val_set is not None else losses[-1]
+                )
 
                 # if loss didn't improve, increase counter
                 # and check early stopping criterion
-                if tracked_losses[-1] >= best_loss or jnp.isclose(
-                    tracked_losses[-1], best_loss
+                if tracked_loss >= best_loss or jnp.isclose(
+                    tracked_loss, best_loss
                 ):
                     early_stopping_counter += 1
 
@@ -1103,7 +1129,7 @@ class Flow:
                         break
                 # if this is the best loss, reset the counter
                 else:
-                    best_loss = tracked_losses[-1]
+                    best_loss = tracked_loss
                     best_param_vals = model_params
                     early_stopping_counter = 0
 
@@ -1116,10 +1142,7 @@ class Flow:
                 break
 
         # update the flow parameters with the final training state
-        if best_params:
-            self._params = best_param_vals
-        else:
-            self._params = model_params
+        self._params = best_param_vals if best_params else model_params
 
         if val_set is None:
             return losses
