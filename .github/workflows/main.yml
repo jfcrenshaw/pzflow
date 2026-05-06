@@ -15,7 +15,6 @@ jobs:
     #  test linux and mac; several python versions
     # ----------------------------------------------
     strategy:
-      fail-fast: true
       matrix:
         os: [ ubuntu-latest ]
         python-version: [ "3.12", "3.13", "3.14" ]
