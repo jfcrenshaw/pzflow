@@ -216,6 +216,10 @@ class Flow:
         # save the bijector params along with the latent params
         self._params = (self.latent._params, bijector_params)
 
+        # cache JIT-compiled versions for inference paths
+        self._log_prob_jitted = jit(self._log_prob)
+        self._inverse_jitted = jit(self._inverse)
+
     def _set_default_bijector(
         self, inputs: pd.DataFrame, seed: int = 0
     ) -> None:
@@ -368,7 +372,7 @@ class Flow:
             # get conditions
             conditions = self._get_conditions(inputs)
             # calculate log_prob
-            return self._log_prob(self._params, X, conditions)
+            return self._log_prob_jitted(self._params, X, conditions)
 
         else:
             if not isinstance(err_samples, int) or err_samples <= 0:
@@ -381,7 +385,7 @@ class Flow:
                 key, inputs, err_samples, kind="conditions"
             )
             # calculate log_probs
-            log_probs = self._log_prob(self._params, X, C)
+            log_probs = self._log_prob_jitted(self._params, X, C)
             probs = jnp.exp(log_probs.reshape(-1, err_samples))
             return jnp.log(probs.mean(axis=1))
 
@@ -555,9 +559,9 @@ class Flow:
             conditions = jnp.repeat(conditions, len(grid), axis=0)
 
             # calculate probability densities
-            log_prob = self._log_prob(self._params, batch, conditions).reshape(
-                (-1, len(grid))
-            )
+            log_prob = self._log_prob_jitted(
+                self._params, batch, conditions
+            ).reshape((-1, len(grid)))
             prob = jnp.exp(log_prob)
             # if we were Gaussian sampling, average over the samples
             if err_samples is not None:
@@ -743,7 +747,7 @@ class Flow:
         # draw from latent distribution
         u = self.latent.sample(self._params[0], conditions.shape[0], seed)
         # take the inverse back to the data distribution
-        x = self._inverse(self._params[1], u, conditions=conditions)[0]
+        x = self._inverse_jitted(self._params[1], u, conditions=conditions)[0]
         # if not conditional, this is all we need
         if self.conditional_columns is None:
             x = pd.DataFrame(np.array(x), columns=self.data_columns)
@@ -835,6 +839,8 @@ class Flow:
             _, self._forward, self._inverse = init_fun(
                 random.PRNGKey(0), self._input_dim
             )
+            self._log_prob_jitted = jit(self._log_prob)
+            self._inverse_jitted = jit(self._inverse)
         self._params = state["params"]
 
         # load the conditional means and stds
