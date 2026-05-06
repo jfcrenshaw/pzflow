@@ -131,8 +131,11 @@ def test_bad_inputs(bijector, args):
         bijector(*args)
 
 
-def test_uniform_dequantizer_returns_correct_shape():
-    init_fun, bijector_info = UniformDequantizer([1, 3, 4])
+@pytest.mark.parametrize(
+    "Dequantizer", [UniformDequantizer, Beta13Dequantizer]
+)
+def test_dequantizer_returns_correct_shape(Dequantizer):
+    init_fun, bijector_info = Dequantizer([1, 3, 4])
     params, forward_fun, inverse_fun = init_fun(random.PRNGKey(0), x.shape[-1])
 
     conditions = jnp.zeros((3, 1))
@@ -143,3 +146,26 @@ def test_uniform_dequantizer_returns_correct_shape():
     inv_outputs, inv_log_det = inverse_fun(params, x, conditions=conditions)
     assert inv_outputs.shape == x.shape
     assert inv_log_det.shape == x.shape[:1]
+
+
+@pytest.mark.parametrize(
+    "Dequantizer", [UniformDequantizer, Beta13Dequantizer]
+)
+def test_dequantizer_adds_noise(Dequantizer):
+    col_idx = [1, 3]
+    other_idx = [0, 2, 4, 5, 6]
+    x_int = jnp.zeros((100, 7), dtype=float)
+
+    init_fun, _ = Dequantizer(col_idx)
+    params, forward_fun, _ = init_fun(random.PRNGKey(0), x_int.shape[-1])
+
+    conditions = jnp.zeros((100, 1))
+    outputs, _ = forward_fun(params, x_int, conditions=conditions)
+
+    # dequantized columns must be shifted into (0, 1)
+    assert jnp.all(outputs[:, jnp.array(col_idx)] > 0)
+    assert jnp.all(outputs[:, jnp.array(col_idx)] < 1)
+    # non-target columns must be unchanged
+    assert jnp.allclose(
+        outputs[:, jnp.array(other_idx)], x_int[:, jnp.array(other_idx)]
+    )

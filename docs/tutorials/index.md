@@ -14,6 +14,7 @@ Each contains a link to open the notebook on Google Colab, as well as a link to 
 ### Intermediate
 
 - [Customizing the flow](customizing_example.ipynb) - Customizing the bijector and latent space
+- [Modeling discrete variables](dequantization.ipynb) - using a *dequantizer* to model discrete variables (potentially alongside continuous variables!)
 - [Modeling Variables with Periodic Topology](spherical_flow_example.ipynb) - using circular splines to model data with periodic topology, e.g. positions on a sphere
 
 ### Advanced

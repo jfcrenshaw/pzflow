@@ -1,4 +1,5 @@
 """Define the bijectors used in the normalizing flows."""
+
 from functools import update_wrapper
 from typing import Callable, Sequence, Tuple, Union
 
@@ -894,7 +895,64 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
                 random.PRNGKey(0), shape=inputs[:, column_idx].shape
             )
             outputs = inputs.astype(float)
-            outputs.at[:, column_idx].set(outputs[:, column_idx] + u)
+            outputs = outputs.at[:, column_idx].add(u)
+            log_det = jnp.zeros(inputs.shape[0])
+            return outputs, log_det
+
+        @InverseFunction
+        def inverse_fun(params, inputs, **kwargs):
+            outputs = inputs.at[:, column_idx].set(
+                jnp.floor(inputs[:, column_idx])
+            )
+            log_det = jnp.zeros(inputs.shape[0])
+            return outputs, log_det
+
+        return (), forward_fun, inverse_fun
+
+    return init_fun, bijector_info
+
+
+@Bijector
+def Beta13Dequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
+    """Bijector that dequantizes discrete variables with noise drawn from a Beta.
+
+    The Beta distribution used has parameters alpha, beta = 13 meaning the
+    distribution looks like a Gaussian distribution, but with hard cutoffs
+    at 0 and 1.
+
+    Dequantizers are necessary for modeling discrete values with a flow.
+    Note that this isn't technically a bijector.
+
+    Parameters
+    ----------
+    column_idx : int
+        An index or iterable of indices corresponding to the column(s) with
+        discrete values.
+
+    Returns
+    -------
+    InitFunction
+        The InitFunction of the UniformDequantizer Bijector.
+    Bijector_Info
+        Tuple of the Bijector name and the input parameters.
+        This allows it to be recreated later.
+    """
+
+    bijector_info = ("UniformDequantizer", (column_idx,))
+    column_idx = jnp.array(column_idx)
+
+    @InitFunction
+    def init_fun(rng, input_dim, **kwargs):
+        @ForwardFunction
+        def forward_fun(params, inputs, **kwargs):
+            u = random.beta(
+                random.PRNGKey(0),
+                13,
+                13,
+                shape=inputs[:, column_idx].shape,
+            )
+            outputs = inputs.astype(float)
+            outputs = outputs.at[:, column_idx].add(u)
             log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 
