@@ -507,32 +507,39 @@ class Flow:
         # empty array to hold pdfs
         pdfs = jnp.zeros((nrows, len(grid)))
 
+        # precompute JAX arrays for the no-error-sampling path to avoid
+        # pandas overhead inside the batch loop
+        if err_samples is None:
+            X_all = jnp.array(inputs[columns].to_numpy())
+            C_all = self._get_conditions(inputs)
+
         # loop through batches
         for batch_idx in range(0, nrows, batch_size):
-            # get the data batch
-            # and, if this is a conditional flow, the corresponding conditions
-            batch = inputs.iloc[batch_idx : batch_idx + batch_size]
+            sl = slice(batch_idx, batch_idx + batch_size)
 
-            # if not drawing samples, just grab batch and conditions
+            # if not drawing samples, slice precomputed JAX arrays directly
             if err_samples is None:
-                conditions = self._get_conditions(batch)
-                batch = jnp.array(batch[columns].to_numpy())
-            # if only drawing condition samples...
-            elif len(self.data_columns) == 1:
-                conditions = self._get_err_samples(
-                    key, batch, err_samples, kind="conditions"
-                )
-                batch = jnp.repeat(
-                    batch[columns].to_numpy(), err_samples, axis=0
-                )
-            # if drawing data and condition samples...
+                batch = X_all[sl]
+                conditions = C_all[sl]
             else:
-                conditions = self._get_err_samples(
-                    key, batch, err_samples, kind="conditions"
-                )
-                batch = self._get_err_samples(
-                    key, batch, err_samples, skip=column, kind="data"
-                )
+                # error-sampling paths still need the pandas DataFrame
+                batch = inputs.iloc[sl]
+                # if only drawing condition samples...
+                if len(self.data_columns) == 1:
+                    conditions = self._get_err_samples(
+                        key, batch, err_samples, kind="conditions"
+                    )
+                    batch = jnp.repeat(
+                        batch[columns].to_numpy(), err_samples, axis=0
+                    )
+                # if drawing data and condition samples...
+                else:
+                    conditions = self._get_err_samples(
+                        key, batch, err_samples, kind="conditions"
+                    )
+                    batch = self._get_err_samples(
+                        key, batch, err_samples, skip=column, kind="data"
+                    )
 
             # make a new copy of each row for each value of the column
             # for which we are calculating the posterior
@@ -556,7 +563,7 @@ class Flow:
             if err_samples is not None:
                 prob = prob.reshape(-1, err_samples, len(grid)).mean(axis=1)
             # add the pdfs to the bigger list
-            pdfs = pdfs.at[batch_idx : batch_idx + batch_size, :].set(
+            pdfs = pdfs.at[sl, :].set(
                 prob, indices_are_sorted=True, unique_indices=True
             )
 
