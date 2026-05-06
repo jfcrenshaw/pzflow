@@ -383,6 +383,172 @@ class Flow:
             probs = jnp.exp(log_probs.reshape(-1, err_samples))
             return jnp.log(probs.mean(axis=1))
 
+    def _posterior_marg(
+        self,
+        inputs: pd.DataFrame,
+        columns: list[str],
+        column: str,
+        grid: jnp.ndarray,
+        marg_rules: dict,
+        err_samples: int | None,
+        seed: int | None,
+        batch_size: int,
+        nan_to_zero: bool,
+    ) -> jnp.ndarray:
+        flag = marg_rules["flag"]
+        # if the flag is NaN, we must use np.isnan to check for flags,
+        # else we use np.isclose
+        check_flags = np.isnan if np.isnan(flag) else lambda data: np.isclose(data, flag)
+
+        # empty array to hold pdfs
+        pdfs = jnp.zeros((inputs.shape[0], len(grid)))
+
+        # first calculate pdfs for unflagged rows
+        unflagged_idx = inputs[~check_flags(inputs[columns]).any(axis=1)].index.tolist()
+        unflagged_pdfs = self.posterior(
+            inputs=inputs.iloc[unflagged_idx],
+            column=column,
+            grid=grid,
+            err_samples=err_samples,
+            seed=seed,
+            batch_size=batch_size,
+            normalize=False,
+            nan_to_zero=nan_to_zero,
+        )
+        # save these pdfs in the big array
+        pdfs = pdfs.at[unflagged_idx, :].set(
+            unflagged_pdfs, indices_are_sorted=True, unique_indices=True
+        )
+
+        # we will keep track of all the rows we've already calculated
+        # posteriors for
+        already_done = set(unflagged_idx)
+
+        # now we will loop over the rules in marg_rules
+        for name, rule in marg_rules.items():
+            # ignore the flag, because that's not a column in the data
+            if name == "flag":
+                continue
+
+            # get the list of new rows for which we need to calculate posteriors
+            flagged_idx = list(
+                set(inputs[check_flags(inputs[name])].index.tolist()) - already_done
+            )
+            # if flagged_idx is empty, move on!
+            if not flagged_idx:
+                continue
+
+            # get the marginalization grid for each row
+            marg_grids = (
+                inputs.iloc[flagged_idx]
+                .apply(rule, axis=1, result_type="expand")
+                .to_numpy()
+            )
+            # make a new data frame with the marginalization grids replacing
+            # the values of the flag in the column
+            marg_inputs = pd.DataFrame(
+                np.repeat(
+                    inputs.iloc[flagged_idx].to_numpy(), marg_grids.shape[1], axis=0
+                ),
+                columns=inputs.columns,
+            )
+            marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
+            # remove the error column if it's present
+            marg_inputs.drop(f"{name}_err", axis=1, inplace=True, errors="ignore")
+
+            # calculate posteriors for these
+            marg_pdfs = self.posterior(
+                inputs=marg_inputs,
+                column=column,
+                grid=grid,
+                marg_rules=marg_rules,
+                err_samples=err_samples,
+                seed=seed,
+                batch_size=batch_size,
+                normalize=False,
+                nan_to_zero=nan_to_zero,
+            )
+            # sum over the marginalized dimension
+            marg_pdfs = marg_pdfs.reshape(
+                len(flagged_idx), marg_grids.shape[1], grid.size
+            ).sum(axis=1)
+            # save the new pdfs in the big array
+            pdfs = pdfs.at[flagged_idx, :].set(
+                marg_pdfs, indices_are_sorted=True, unique_indices=True
+            )
+            # add these flagged indices to the list of rows already done
+            already_done.update(flagged_idx)
+
+        return pdfs
+
+    def _posterior_batched(
+        self,
+        inputs: pd.DataFrame,
+        columns: list[str],
+        column: str,
+        idx: int,
+        grid: jnp.ndarray,
+        err_samples: int | None,
+        key: jnp.ndarray | None,
+        batch_size: int,
+        nrows: int,
+    ) -> jnp.ndarray:
+        # empty array to hold pdfs
+        pdfs = jnp.zeros((nrows, len(grid)))
+
+        # loop through batches
+        for batch_idx in range(0, nrows, batch_size):
+            # get the data batch
+            # and, if this is a conditional flow, the corresponding conditions
+            batch = inputs.iloc[batch_idx : batch_idx + batch_size]
+
+            # if not drawing samples, just grab batch and conditions
+            if err_samples is None:
+                conditions = self._get_conditions(batch)
+                batch = jnp.array(batch[columns].to_numpy())
+            # if only drawing condition samples...
+            elif len(self.data_columns) == 1:
+                conditions = self._get_err_samples(
+                    key, batch, err_samples, kind="conditions"
+                )
+                batch = jnp.repeat(batch[columns].to_numpy(), err_samples, axis=0)
+            # if drawing data and condition samples...
+            else:
+                conditions = self._get_err_samples(
+                    key, batch, err_samples, kind="conditions"
+                )
+                batch = self._get_err_samples(
+                    key, batch, err_samples, skip=column, kind="data"
+                )
+
+            # make a new copy of each row for each value of the column
+            # for which we are calculating the posterior
+            batch = jnp.hstack(
+                (
+                    jnp.repeat(batch[:, :idx], len(grid), axis=0),
+                    jnp.tile(grid, len(batch))[:, None],
+                    jnp.repeat(batch[:, idx:], len(grid), axis=0),
+                )
+            )
+
+            # make similar copies of the conditions
+            conditions = jnp.repeat(conditions, len(grid), axis=0)
+
+            # calculate probability densities
+            log_prob = self._log_prob(self._params, batch, conditions).reshape(
+                (-1, len(grid))
+            )
+            prob = jnp.exp(log_prob)
+            # if we were Gaussian sampling, average over the samples
+            if err_samples is not None:
+                prob = prob.reshape(-1, err_samples, len(grid)).mean(axis=1)
+            # add the pdfs to the bigger list
+            pdfs = pdfs.at[batch_idx : batch_idx + batch_size, :].set(
+                prob, indices_are_sorted=True, unique_indices=True
+            )
+
+        return pdfs
+
     def posterior(
         self,
         inputs: pd.DataFrame,
@@ -467,184 +633,21 @@ class Flow:
                 raise ValueError("err_samples must be a positive integer.")
             # set the seed
             seed = np.random.randint(1e18) if seed is None else seed
-            key = random.PRNGKey(seed)
-
-        # empty array to hold pdfs
-        pdfs = jnp.zeros((nrows, len(grid)))
 
         # if marginalization rules were passed, we will loop over the rules
         # and repeatedly call this method
         if marg_rules is not None:
-            # if the flag is NaN, we must use jnp.isnan to check for flags
-            if np.isnan(marg_rules["flag"]):
-
-                def check_flags(data):
-                    return np.isnan(data)
-
-            # else we use jnp.isclose to check for flags
-            else:
-
-                def check_flags(data):
-                    return np.isclose(data, marg_rules["flag"])
-
-            # first calculate pdfs for unflagged rows
-            unflagged_idx = inputs[
-                ~check_flags(inputs[columns]).any(axis=1)
-            ].index.tolist()
-            unflagged_pdfs = self.posterior(
-                inputs=inputs.iloc[unflagged_idx],
-                column=column,
-                grid=grid,
-                err_samples=err_samples,
-                seed=seed,
-                batch_size=batch_size,
-                normalize=False,
-                nan_to_zero=nan_to_zero,
+            pdfs = self._posterior_marg(
+                inputs, columns, column, grid, marg_rules,
+                err_samples, seed, batch_size, nan_to_zero,
             )
-
-            # save these pdfs in the big array
-            pdfs = pdfs.at[unflagged_idx, :].set(
-                unflagged_pdfs,
-                indices_are_sorted=True,
-                unique_indices=True,
-            )
-
-            # we will keep track of all the rows we've already calculated
-            # posteriors for
-            already_done = unflagged_idx
-
-            # now we will loop over the rules in marg_rules
-            for name, rule in marg_rules.items():
-                # ignore the flag, because that's not a column in the data
-                if name == "flag":
-                    continue
-
-                # get the list of new rows for which we need to calculate posteriors
-                flagged_idx = inputs[check_flags(inputs[name])].index.tolist()
-                flagged_idx = list(set(flagged_idx).difference(already_done))
-
-                # if flagged_idx is empty, move on!
-                if len(flagged_idx) == 0:
-                    continue
-
-                # get the marginalization grid for each row
-                marg_grids = (
-                    inputs.iloc[flagged_idx]
-                    .apply(rule, axis=1, result_type="expand")
-                    .to_numpy()
-                )
-
-                # make a new data frame with the marginalization grids replacing
-                # the values of the flag in the column
-                marg_inputs = pd.DataFrame(
-                    np.repeat(
-                        inputs.iloc[flagged_idx].to_numpy(),
-                        marg_grids.shape[1],
-                        axis=0,
-                    ),
-                    columns=inputs.columns,
-                )
-                marg_inputs[name] = marg_grids.reshape(marg_inputs.shape[0], 1)
-
-                # remove the error column if it's present
-                marg_inputs.drop(
-                    f"{name}_err", axis=1, inplace=True, errors="ignore"
-                )
-
-                # calculate posteriors for these
-                marg_pdfs = self.posterior(
-                    inputs=marg_inputs,
-                    column=column,
-                    grid=grid,
-                    marg_rules=marg_rules,
-                    err_samples=err_samples,
-                    seed=seed,
-                    batch_size=batch_size,
-                    normalize=False,
-                    nan_to_zero=nan_to_zero,
-                )
-
-                # sum over the marginalized dimension
-                marg_pdfs = marg_pdfs.reshape(
-                    len(flagged_idx), marg_grids.shape[1], grid.size
-                )
-                marg_pdfs = marg_pdfs.sum(axis=1)
-
-                # save the new pdfs in the big array
-                pdfs = pdfs.at[flagged_idx, :].set(
-                    marg_pdfs,
-                    indices_are_sorted=True,
-                    unique_indices=True,
-                )
-
-                # add these flagged indices to the list of rows already done
-                already_done += flagged_idx
-
         # now for the main posterior calculation loop
         else:
-            # loop through batches
-            for batch_idx in range(0, nrows, batch_size):
-                # get the data batch
-                # and, if this is a conditional flow, the corresponding conditions
-                batch = inputs.iloc[batch_idx : batch_idx + batch_size]
-
-                # if not drawing samples, just grab batch and conditions
-                if err_samples is None:
-                    conditions = self._get_conditions(batch)
-                    batch = jnp.array(batch[columns].to_numpy())
-                # if only drawing condition samples...
-                elif len(self.data_columns) == 1:
-                    conditions = self._get_err_samples(
-                        key, batch, err_samples, kind="conditions"
-                    )
-                    batch = jnp.repeat(
-                        batch[columns].to_numpy(), err_samples, axis=0
-                    )
-                # if drawing data and condition samples...
-                else:
-                    conditions = self._get_err_samples(
-                        key, batch, err_samples, kind="conditions"
-                    )
-                    batch = self._get_err_samples(
-                        key, batch, err_samples, skip=column, kind="data"
-                    )
-
-                # make a new copy of each row for each value of the column
-                # for which we are calculating the posterior
-                batch = jnp.hstack(
-                    (
-                        jnp.repeat(
-                            batch[:, :idx],
-                            len(grid),
-                            axis=0,
-                        ),
-                        jnp.tile(grid, len(batch))[:, None],
-                        jnp.repeat(
-                            batch[:, idx:],
-                            len(grid),
-                            axis=0,
-                        ),
-                    )
-                )
-
-                # make similar copies of the conditions
-                conditions = jnp.repeat(conditions, len(grid), axis=0)
-
-                # calculate probability densities
-                log_prob = self._log_prob(
-                    self._params, batch, conditions
-                ).reshape((-1, len(grid)))
-                prob = jnp.exp(log_prob)
-                # if we were Gaussian sampling, average over the samples
-                if err_samples is not None:
-                    prob = prob.reshape(-1, err_samples, len(grid))
-                    prob = prob.mean(axis=1)
-                # add the pdfs to the bigger list
-                pdfs = pdfs.at[batch_idx : batch_idx + batch_size, :].set(
-                    prob,
-                    indices_are_sorted=True,
-                    unique_indices=True,
-                )
+            key = random.PRNGKey(seed) if err_samples is not None else None
+            pdfs = self._posterior_batched(
+                inputs, columns, column, idx, grid,
+                err_samples, key, batch_size, nrows,
+            )
 
         if normalize:
             # normalize so they integrate to one
