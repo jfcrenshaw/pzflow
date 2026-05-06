@@ -5,9 +5,9 @@ name: build
 
 on:
   push:
-    branches: [main, dev]
+    branches: [ main, dev ]
   pull_request:
-    branches: [main, dev]
+    branches: [ main, dev ]
 
 jobs:
   build:
@@ -15,10 +15,10 @@ jobs:
     #  test linux and mac; several python versions
     # ----------------------------------------------
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        os: [ ubuntu-latest ]
+        python-version: [ "3.12", "3.13", "3.14" ]
     runs-on: ${{ matrix.os }}
 
     steps:
