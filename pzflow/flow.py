@@ -49,7 +49,7 @@ class Flow:
 
     def __init__(
         self,
-        data_columns: Sequence[str] | None = None,
+        data_columns: Sequence[str],
         bijector: tuple[InitFunction, Bijector_Info] | None = None,
         latent: distributions.LatentDist | None = None,
         conditional_columns: Sequence[str] | None = None,
@@ -58,18 +58,14 @@ class Flow:
         autoscale_conditions: bool = True,
         seed: int = 0,
         info: Any = None,
-        file: str | None = None,
-        _dictionary: dict | None = None,
     ) -> None:
         """Instantiate a normalizing flow.
 
-        Note that while all of the init parameters are technically optional,
-        you must provide either data_columns OR file.
-        In addition, if a file is provided, all other parameters must be None.
+        To load a pretrained flow from a file, use Flow.from_file(file).
 
         Parameters
         ----------
-        data_columns : Sequence[str]; optional
+        data_columns : Sequence[str]
             Tuple, list, or other container of column names.
             These are the columns the flow expects/produces in DataFrames.
         bijector : Bijector Call; optional
@@ -119,100 +115,61 @@ class Flow:
             The random seed for initial parameters
         info : Any; optional
             An object to attach to the info attribute.
-        file : str; optional
-            Path to file from which to load a pretrained flow.
-            If a file is provided, all other parameters must be None.
         """
+        if data_columns is None:
+            raise ValueError("data_columns is required.")
+        self.data_columns = tuple(data_columns)
+        self._input_dim = len(self.data_columns)
+        self.info = info
 
-        # validate parameters
-        if data_columns is None and file is None and _dictionary is None:
-            raise ValueError("You must provide data_columns OR file.")
-        if any(
-            (
-                data_columns is not None,
-                bijector is not None,
-                conditional_columns is not None,
-                latent is not None,
-                data_error_model is not None,
-                condition_error_model is not None,
-                info is not None,
-            )
-        ):
-            if file is not None:
-                raise ValueError(
-                    "If providing a file, please do not provide any other parameters."
-                )
-            if _dictionary is not None:
-                raise ValueError(
-                    "If providing a dictionary, please do not provide any other parameters."
-                )
-        if file is not None and _dictionary is not None:
-            raise ValueError("Only provide file or _dictionary, not both.")
-
-        # if file or dictionary is provided, load everything from it
-        if file is not None or _dictionary is not None:
-            if file is not None:
-                with open(file, "rb") as handle:
-                    state = pickle.load(handle)
-                if not isinstance(state, dict):
-                    state = state.__getstate__()
-            else:
-                state = _dictionary  # pragma: no cover
-
-            self.__setstate__(state)
-
-        # if no file is provided, use provided parameters
+        if conditional_columns is not None:
+            self.conditional_columns = tuple(conditional_columns)
+            self._condition_means = jnp.zeros(len(self.conditional_columns))
+            self._condition_stds = jnp.ones(len(self.conditional_columns))
         else:
-            self.data_columns = tuple(data_columns)
-            self._input_dim = len(self.data_columns)
-            self.info = info
+            self.conditional_columns = None
+            self._condition_means = None
+            self._condition_stds = None
 
-            if conditional_columns is None:
-                self.conditional_columns = None
-                self._condition_means = None
-                self._condition_stds = None
-            else:
-                self.conditional_columns = tuple(conditional_columns)
-                self._condition_means = jnp.zeros(
-                    len(self.conditional_columns)
-                )
-                self._condition_stds = jnp.ones(len(self.conditional_columns))
+        self._autoscale_conditions = autoscale_conditions
 
-            # set whether or not to automatically standard scale any
-            # conditions passed to the normalizing flow
-            self._autoscale_conditions = autoscale_conditions
+        self.latent = latent or distributions.CentBeta13(self._input_dim, 5)
+        if self.latent.input_dim != self._input_dim:
+            raise ValueError(
+                f"The latent distribution has {self.latent.input_dim} "
+                f"dimensions, but data_columns has {self._input_dim} "
+                "dimensions. They must match!"
+            )
 
-            # set up the latent distribution
-            if latent is None:
-                self.latent = distributions.CentBeta13(self._input_dim, 5)
-            else:
-                self.latent = latent
-            self._latent_info = self.latent.info
+        self.data_error_model = data_error_model or gaussian_error_model
+        self.condition_error_model = condition_error_model or gaussian_error_model
 
-            # make sure the latent distribution and data_columns have the
-            # same number of dimensions
-            if self.latent.input_dim != len(data_columns):
-                raise ValueError(
-                    f"The latent distribution has {self.latent.input_dim} "
-                    f"dimensions, but data_columns has {len(data_columns)} "
-                    "dimensions. They must match!"
-                )
+        if bijector is not None:
+            self.set_bijector(bijector, seed=seed)
+        else:
+            self._bijector_info = None
 
-            # set up the error models
-            if data_error_model is None:
-                self.data_error_model = gaussian_error_model
-            else:
-                self.data_error_model = data_error_model
-            if condition_error_model is None:
-                self.condition_error_model = gaussian_error_model
-            else:
-                self.condition_error_model = condition_error_model
+    @classmethod
+    def from_file(cls, file: str) -> "Flow":
+        """Load a pretrained flow from a file.
 
-            # set up the bijector
-            if bijector is not None:
-                self.set_bijector(bijector, seed=seed)
-            else:
-                self._bijector_info = None
+        Parameters
+        ----------
+        file : str
+            Path to the file from which to load the flow.
+
+        Returns
+        -------
+        Flow
+            The loaded flow.
+        """
+        with open(file, "rb") as handle:
+            state = pickle.load(handle)
+        if not isinstance(state, dict):
+            state = state.__getstate__()
+        flow = cls.__new__(cls)
+        flow.__setstate__(state)
+        return flow
 
     def _check_bijector(self) -> None:
         if self._bijector_info is None:
@@ -780,7 +737,7 @@ class Flow:
         dict
             Dictionary containing all flow parameters to be saved.
         """
-        state = {"class": self.__class__.__name__}
+        state: dict[str, Any] = {"class": self.__class__.__name__}
         keys = [
             "data_columns",
             "conditional_columns",
@@ -790,7 +747,6 @@ class Flow:
             "condition_error_model",
             "autoscale_conditions",
             "info",
-            "latent_info",
             "bijector_info",
             "params",
         ]
@@ -802,7 +758,7 @@ class Flow:
                     state[key] = getattr(self, "_" + key)
                 except AttributeError:  # pragma: no cover
                     state[key] = None
-
+        state["latent_info"] = self.latent.info
         return state
 
     def __setstate__(self, state: dict) -> None:
@@ -827,9 +783,8 @@ class Flow:
         self.info = state["info"]
 
         # load the latent distribution
-        self._latent_info = state["latent_info"]
-        self.latent = getattr(distributions, self._latent_info[0])(
-            *self._latent_info[1]
+        self.latent = getattr(distributions, state["latent_info"][0])(
+            *state["latent_info"][1]
         )
 
         # load the error models
@@ -855,8 +810,7 @@ class Flow:
     def save(self, file: str) -> None:
         """Saves the flow to a file.
 
-        Pickles the flow and saves it to a file that can be passed as
-        the `file` argument during flow instantiation.
+        Pickles the flow to a file that can be loaded with Flow.from_file().
 
         WARNING: Currently, this method only works for bijectors that are
         implemented in the `bijectors` module. If you want to save a flow

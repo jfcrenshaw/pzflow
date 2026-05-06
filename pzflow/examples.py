@@ -113,5 +113,5 @@ def get_example_flow() -> Flow:
     flow_path = os.path.join(
         this_dir, f"{EXAMPLE_FILE_DIR}/example-flow.pzflow.pkl"
     )
-    flow = Flow(file=flow_path)
+    flow = Flow.from_file(flow_path)
     return flow

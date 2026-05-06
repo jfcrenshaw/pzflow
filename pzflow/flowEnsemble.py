@@ -39,7 +39,7 @@ class FlowEnsemble:
 
     def __init__(
         self,
-        data_columns: Sequence[str] | None = None,
+        data_columns: Sequence[str],
         bijector: tuple[InitFunction, Bijector_Info] | None = None,
         latent: distributions.LatentDist | None = None,
         conditional_columns: Sequence[str] | None = None,
@@ -48,17 +48,14 @@ class FlowEnsemble:
         autoscale_conditions: bool = True,
         N: int = 1,
         info: Any = None,
-        file: str | None = None,
     ) -> None:
         """Instantiate an ensemble of normalizing flows.
 
-        Note that while all of the init parameters are technically optional,
-        you must provide either data_columns and bijector OR file.
-        In addition, if a file is provided, all other parameters must be None.
+        To load a pretrained ensemble from a file, use FlowEnsemble.from_file(file).
 
         Parameters
         ----------
-        data_columns : Sequence[str]; optional
+        data_columns : Sequence[str]
             Tuple, list, or other container of column names.
             These are the columns the flows expect/produce in DataFrames.
         bijector : Bijector Call; optional
@@ -109,60 +106,52 @@ class FlowEnsemble:
             The number of flows in the ensemble.
         info : Any; optional
             An object to attach to the info attribute.
-        file : str; optional
-            Path to file from which to load a pretrained flow ensemble.
-            If a file is provided, all other parameters must be None.
         """
+        if data_columns is None:
+            raise ValueError("data_columns is required.")
 
-        # validate parameters
-        if data_columns is None and file is None:
-            raise ValueError("You must provide data_columns OR file.")
-        if file is not None and any(
-            (
-                data_columns is not None,
-                bijector is not None,
-                conditional_columns is not None,
-                latent is not None,
-                data_error_model is not None,
-                condition_error_model is not None,
-                info is not None,
+        self._ensemble = {
+            f"Flow {i}": Flow(
+                data_columns=data_columns,
+                bijector=bijector,
+                conditional_columns=conditional_columns,
+                latent=latent,
+                data_error_model=data_error_model,
+                condition_error_model=condition_error_model,
+                autoscale_conditions=autoscale_conditions,
+                seed=i,
+                info=f"Flow {i}",
             )
-        ):
-            raise ValueError(
-                "If providing a file, please do not provide any other parameters."
-            )
+            for i in range(N)
+        }
+        self.data_columns = data_columns
+        self.conditional_columns = conditional_columns
+        self.latent = self._ensemble["Flow 0"].latent
+        self.data_error_model = data_error_model
+        self.condition_error_model = condition_error_model
+        self.info = info
 
-        # if file is provided, load everything from the file
-        if file is not None:
-            with open(file, "rb") as handle:
-                state = pickle.load(handle)
-            if not isinstance(state, dict):
-                state = state.__getstate__()
+    @classmethod
+    def from_file(cls, file: str) -> "FlowEnsemble":
+        """Load a pretrained ensemble from a file.
 
-            self.__setstate__(state)
+        Parameters
+        ----------
+        file : str
+            Path to the file from which to load the ensemble.
 
-        # otherwise create a new ensemble from the provided parameters
-        else:
-            self._ensemble = {
-                f"Flow {i}": Flow(
-                    data_columns=data_columns,
-                    bijector=bijector,
-                    conditional_columns=conditional_columns,
-                    latent=latent,
-                    data_error_model=data_error_model,
-                    condition_error_model=condition_error_model,
-                    autoscale_conditions=autoscale_conditions,
-                    seed=i,
-                    info=f"Flow {i}",
-                )
-                for i in range(N)
-            }
-            self.data_columns = data_columns
-            self.conditional_columns = conditional_columns
-            self.latent = self._ensemble["Flow 0"].latent
-            self.data_error_model = data_error_model
-            self.condition_error_model = condition_error_model
-            self.info = info
+        Returns
+        -------
+        FlowEnsemble
+            The loaded ensemble.
+        """
+        with open(file, "rb") as handle:
+            state = pickle.load(handle)
+        if not isinstance(state, dict):
+            state = state.__getstate__()
+        ensemble = cls.__new__(cls)
+        ensemble.__setstate__(state)
+        return ensemble
 
     def log_prob(
         self,
@@ -499,16 +488,14 @@ class FlowEnsemble:
         self.condition_error_model = state["condition_error_model"]
         self.info = state["info"]
 
-        self._latent_info = state["latent_info"]
-        self.latent = getattr(distributions, self._latent_info[0])(
-            *self._latent_info[1]
+        self.latent = getattr(distributions, state["latent_info"][0])(
+            *state["latent_info"][1]
         )
 
     def save(self, file: str) -> None:
         """Saves the ensemble to a file.
 
-        Pickles the ensemble and saves it to a file that can be passed as
-        the `file` argument during flow instantiation.
+        Pickles the ensemble to a file that can be loaded with FlowEnsemble.from_file().
 
         WARNING: Currently, this method only works for bijectors that are
         implemented in the `bijectors` module. If you want to save a flow

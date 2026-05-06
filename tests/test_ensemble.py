@@ -152,7 +152,7 @@ def test_load_ensemble(tmp_path: Any) -> None:
     flowEns.save(str(file))
 
     file = tmp_path / "test-ensemble.pzflow.pkl"
-    flowEns = FlowEnsemble(file=str(file))
+    flowEns = FlowEnsemble.from_file(str(file))
 
     postSave = flowEns.sample(10, seed=0)
 
@@ -164,7 +164,7 @@ def test_load_ensemble(tmp_path: Any) -> None:
     with open(str(file), "wb") as handle:
         pickle.dump(save_dict, handle)
     with pytest.raises(TypeError):
-        FlowEnsemble(file=str(file))
+        FlowEnsemble.from_file(str(file))
 
 
 def test_pickle_ensemble(tmp_path: Any) -> None:
@@ -186,16 +186,13 @@ def test_pickle_ensemble(tmp_path: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    "data_columns,bijector,info,file",
+    "data_columns,bijector",
     [
-        (None, None, None, None),
-        (None, Reverse(), None, None),
-        (("x", "y"), None, None, "file"),
-        (None, Reverse(), None, "file"),
-        (None, None, "fake", "file"),
+        (None, None),
+        (None, Reverse()),
     ],
 )
-def test_bad_inputs(data_columns: Any, bijector: Any, info: Any, file: Any) -> None:
+def test_bad_inputs(data_columns: Any, bijector: Any) -> None:
     """Invalid constructor arguments raise ValueError."""
     with pytest.raises(ValueError):
-        FlowEnsemble(data_columns, bijector=bijector, info=info, file=file)
+        FlowEnsemble(data_columns, bijector=bijector)

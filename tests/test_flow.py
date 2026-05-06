@@ -21,33 +21,17 @@ from pzflow.examples import get_twomoons_data
 
 
 @pytest.mark.parametrize(
-    "data_columns,bijector,info,file,_dictionary",
+    "data_columns,latent",
     [
-        (None, None, None, None, None),
-        (None, Reverse(), None, None, None),
-        (("x", "y"), None, None, "file", None),
-        (None, Reverse(), None, "file", None),
-        (None, None, "fake", "file", None),
-        (("x", "y"), Reverse(), None, None, "dict"),
-        (None, None, None, "file", "dict"),
+        (None, None),
+        (None, Normal(1)),
+        (("x",), Normal(2)),
     ],
 )
-def test_bad_inputs(
-    data_columns: Any,
-    bijector: Any,
-    info: Any,
-    file: Any,
-    _dictionary: Any,
-) -> None:
-    """Invalid constructor argument combinations raise ValueError."""
+def test_bad_inputs(data_columns: Any, latent: Any) -> None:
+    """Invalid constructor arguments raise ValueError."""
     with pytest.raises(ValueError):
-        Flow(
-            data_columns,
-            bijector=bijector,
-            info=info,
-            file=file,
-            _dictionary=_dictionary,
-        )
+        Flow(data_columns, latent=latent)
 
 
 @pytest.mark.parametrize(
@@ -331,7 +315,7 @@ def test_load_flow(tmp_path: Any) -> None:
     file = tmp_path / "test-flow.pzflow.pkl"
     flow.save(str(file))
 
-    flow = Flow(file=str(file))
+    flow = Flow.from_file(str(file))
 
     x = jnp.array([[1, 2], [3, 4]])
     xrev = jnp.array([[2, 1], [4, 3]])
@@ -351,7 +335,7 @@ def test_load_flow(tmp_path: Any) -> None:
     with open(str(file), "wb") as handle:
         pickle.dump(save_dict, handle)
     with pytest.raises(TypeError):
-        Flow(file=str(file))
+        Flow.from_file(str(file))
 
 
 def test_pickle_flow(tmp_path: Any) -> None:
