@@ -403,9 +403,12 @@ class FlowEnsemble:
                         frac=1.0, random_state=int(seed / 1e9)
                     )
                     # split conditions into ~equal sized chunks
-                    chunks = np.array_split(
-                        conditions_shuffled, len(self._ensemble)
+                    split_indices = np.array_split(
+                        np.arange(len(conditions_shuffled)), len(self._ensemble)
                     )
+                    chunks = [
+                        conditions_shuffled.iloc[idx] for idx in split_indices
+                    ]
                     # shuffle the chunks
                     chunks = [
                         chunks[i]

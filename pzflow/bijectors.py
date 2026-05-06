@@ -341,8 +341,8 @@ def InvSoftplus(
         This allows it to be recreated later.
     """
 
-    idx = jnp.atleast_1d(column_idx)
-    k = jnp.atleast_1d(sharpness)
+    idx = jnp.atleast_1d(jnp.array(column_idx))
+    k = jnp.atleast_1d(jnp.array(sharpness))
     if len(idx) != len(k) and len(k) != 1:
         raise ValueError(
             "Please provide either a single sharpness or one for each column index."
