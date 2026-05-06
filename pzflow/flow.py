@@ -1009,13 +1009,6 @@ class Flow:
             def get_batch(sample_key, x, kind):
                 return self._get_err_samples(sample_key, x, 1, kind=kind)
 
-        else:
-
-            def get_batch(sample_key, x, kind):
-                if kind == "conditions":
-                    return self._get_conditions(x)
-                else:
-                    return jnp.array(x[columns].to_numpy())
 
         # number of training rows (used throughout the epoch loop)
         n_train = len(inputs)
