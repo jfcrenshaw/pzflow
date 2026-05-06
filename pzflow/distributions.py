@@ -85,18 +85,11 @@ class CentBeta(LatentDist):
         jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        log_prob = jnp.hstack(
-            [
-                beta.logpdf(
-                    inputs[:, i],
-                    a=jnp.exp(params[i][0]),
-                    b=jnp.exp(params[i][1]),
-                    loc=-self.B,
-                    scale=2 * self.B,
-                ).reshape(-1, 1)
-                for i in range(self.input_dim)
-            ]
-        ).sum(axis=1)
+        a = jnp.exp(jnp.array([p[0] for p in params]))
+        b = jnp.exp(jnp.array([p[1] for p in params]))
+        log_prob = beta.logpdf(inputs, a=a, b=b, loc=-self.B, scale=2 * self.B).sum(
+            axis=1
+        )
 
         return log_prob
 
@@ -121,17 +114,10 @@ class CentBeta(LatentDist):
             Device array of shape (nsamples, self.input_dim).
         """
         seed = np.random.randint(1e18) if seed is None else seed
-        seeds = random.split(random.PRNGKey(seed), self.input_dim)
-        samples = jnp.hstack(
-            [
-                random.beta(
-                    seeds[i],
-                    jnp.exp(params[i][0]),
-                    jnp.exp(params[i][1]),
-                    shape=(nsamples, 1),
-                )
-                for i in range(self.input_dim)
-            ]
+        a = jnp.exp(jnp.array([p[0] for p in params]))
+        b = jnp.exp(jnp.array([p[1] for p in params]))
+        samples = random.beta(
+            random.PRNGKey(seed), a, b, shape=(nsamples, self.input_dim)
         )
         return 2 * self.B * (samples - 0.5)
 
@@ -180,17 +166,8 @@ class CentBeta13(LatentDist):
         jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        log_prob = jnp.hstack(
-            [
-                beta.logpdf(
-                    inputs[:, i],
-                    a=self.a,
-                    b=self.b,
-                    loc=-self.B,
-                    scale=2 * self.B,
-                ).reshape(-1, 1)
-                for i in range(self.input_dim)
-            ]
+        log_prob = beta.logpdf(
+            inputs, a=self.a, b=self.b, loc=-self.B, scale=2 * self.B
         ).sum(axis=1)
 
         return log_prob
@@ -216,17 +193,8 @@ class CentBeta13(LatentDist):
             Device array of shape (nsamples, self.input_dim).
         """
         seed = np.random.randint(1e18) if seed is None else seed
-        seeds = random.split(random.PRNGKey(seed), self.input_dim)
-        samples = jnp.hstack(
-            [
-                random.beta(
-                    seeds[i],
-                    self.a,
-                    self.b,
-                    shape=(nsamples, 1),
-                )
-                for i in range(self.input_dim)
-            ]
+        samples = random.beta(
+            random.PRNGKey(seed), self.a, self.b, shape=(nsamples, self.input_dim)
         )
         return 2 * self.B * (samples - 0.5)
 

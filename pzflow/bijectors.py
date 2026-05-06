@@ -694,21 +694,16 @@ def Scale(scale: float) -> tuple[InitFunction, Bijector_Info]:
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
+        _log_det_fwd = float(jnp.log(scale**input_dim))
+        _log_det_inv = -_log_det_fwd
+
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            outputs = scale * inputs
-            log_det = jnp.log(scale ** inputs.shape[-1]) * jnp.ones(
-                inputs.shape[0]
-            )
-            return outputs, log_det
+            return scale * inputs, jnp.full(inputs.shape[0], _log_det_fwd)
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = 1 / scale * inputs
-            log_det = -jnp.log(scale ** inputs.shape[-1]) * jnp.ones(
-                inputs.shape[0]
-            )
-            return outputs, log_det
+            return inputs / scale, jnp.full(inputs.shape[0], _log_det_inv)
 
         return (), forward_fun, inverse_fun
 
@@ -754,24 +749,20 @@ def ShiftBounds(
 
     mean = (max + min) / 2
     half_range = (max - min) / 2
+    _log_det_fwd = float(jnp.log(jnp.prod(B / half_range)))
+    _log_det_inv = float(jnp.log(jnp.prod(half_range / B)))
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = B * (inputs - mean) / half_range
-            log_det = jnp.log(jnp.prod(B / half_range)) * jnp.ones(
-                inputs.shape[0]
-            )
-            return outputs, log_det
+            return outputs, jnp.full(inputs.shape[0], _log_det_fwd)
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * half_range / B + mean
-            log_det = jnp.log(jnp.prod(half_range / B)) * jnp.ones(
-                inputs.shape[0]
-            )
-            return outputs, log_det
+            return outputs, jnp.full(inputs.shape[0], _log_det_inv)
 
         return (), forward_fun, inverse_fun
 
@@ -845,17 +836,16 @@ def StandardScaler(
 
     @InitFunction
     def init_fun(rng, input_dim, **kwargs):
+        _log_det_fwd = float(jnp.log(1 / jnp.prod(stds)))
+        _log_det_inv = float(jnp.log(jnp.prod(stds)))
+
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            outputs = (inputs - means) / stds
-            log_det = jnp.log(1 / jnp.prod(stds)) * jnp.ones(inputs.shape[0])
-            return outputs, log_det
+            return (inputs - means) / stds, jnp.full(inputs.shape[0], _log_det_fwd)
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = inputs * stds + means
-            log_det = jnp.log(jnp.prod(stds)) * jnp.ones(inputs.shape[0])
-            return outputs, log_det
+            return inputs * stds + means, jnp.full(inputs.shape[0], _log_det_inv)
 
         return (), forward_fun, inverse_fun
 

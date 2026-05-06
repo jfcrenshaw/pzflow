@@ -1002,6 +1002,9 @@ class Flow:
                 else:
                     return jnp.array(x[columns].to_numpy())
 
+        # number of training rows (used throughout the epoch loop)
+        n_train = len(inputs)
+
         # get random seed for training loop
         key = random.PRNGKey(batch_seed)
 
@@ -1060,33 +1063,30 @@ class Flow:
         for epoch in loop:
             # new permutation of batches
             permute_key, sample_key, key = random.split(key, num=3)
-            idx = random.permutation(permute_key, inputs.shape[0])
-            X_shuffled = inputs.iloc[idx]
+            idx = random.permutation(permute_key, n_train)
+            idx_np = np.array(idx)
+            W_shuf = W[idx]
 
             # loop through batches and step optimizer
-            for batch_idx in range(0, len(X_shuffled), batch_size):
-                # if sampling from the error distribution, this returns a
-                # Gaussian sample of the batch. Else just returns batch as a
-                # jax array
-                batch = get_batch(
-                    sample_key,
-                    X_shuffled.iloc[batch_idx : batch_idx + batch_size],
-                    kind="data",
-                )
-                batch_conditions = get_batch(
-                    sample_key,
-                    X_shuffled.iloc[batch_idx : batch_idx + batch_size],
-                    kind="conditions",
-                )
-                batch_weights = W[idx][batch_idx : batch_idx + batch_size]
-
-                model_params, opt_state = step(
-                    model_params,
-                    opt_state,
-                    batch,
-                    batch_conditions,
-                    batch_weights,
-                )
+            if convolve_errs:
+                X_shuffled = inputs.iloc[idx_np]
+                for batch_idx in range(0, n_train, batch_size):
+                    sl = slice(batch_idx, batch_idx + batch_size)
+                    batch = get_batch(sample_key, X_shuffled.iloc[sl], kind="data")
+                    batch_conditions = get_batch(
+                        sample_key, X_shuffled.iloc[sl], kind="conditions"
+                    )
+                    model_params, opt_state = step(
+                        model_params, opt_state, batch, batch_conditions, W_shuf[sl]
+                    )
+            else:
+                X_shuf = X_train[idx_np]
+                C_shuf = C_train[idx_np]
+                for batch_idx in range(0, n_train, batch_size):
+                    sl = slice(batch_idx, batch_idx + batch_size)
+                    model_params, opt_state = step(
+                        model_params, opt_state, X_shuf[sl], C_shuf[sl], W_shuf[sl]
+                    )
 
             # save end-of-epoch training loss on the full training set
             losses.append(loss_fn(model_params, X_train, C_train, W).item())
