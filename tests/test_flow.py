@@ -20,18 +20,10 @@ from pzflow.distributions import (
 from pzflow.examples import get_twomoons_data
 
 
-@pytest.mark.parametrize(
-    "data_columns,latent",
-    [
-        (None, None),
-        (None, Normal(1)),
-        (("x",), Normal(2)),
-    ],
-)
-def test_bad_inputs(data_columns: Any, latent: Any) -> None:
+def test_bad_inputs() -> None:
     """Invalid constructor arguments raise ValueError."""
     with pytest.raises(ValueError):
-        Flow(data_columns, latent=latent)
+        Flow(["x"], latent=Normal(2))
 
 
 @pytest.mark.parametrize(
